@@ -1,0 +1,1 @@
+pyinstaller -F -w --hidden-import=loguru SlideshowPlayer.py
