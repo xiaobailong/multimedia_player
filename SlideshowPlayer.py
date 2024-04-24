@@ -5,14 +5,12 @@ from PyQt5.QtWidgets import QApplication
 import sys, os
 from loguru import logger
 
-from input_and_exe_layout import InputAndExeLayout
-from show_layout import ShowLayout
-
-logger.add("log/file_{time}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
-           level="INFO")
-
+from src.layout.input_and_exe_layout import InputAndExeLayout
+from src.layout.show_layout import ShowLayout
 from src.data_manager.DataManager import DataManager
 
+logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
+           level="INFO")
 
 class MainWindow(QMainWindow):
     pause = False
@@ -69,14 +67,14 @@ class MainWindow(QMainWindow):
     def onTreeClicked(self, qmodelindex):
         path = self.model.filePath(qmodelindex)
         if os.path.isdir(path):
-            # print("it's a directory: " + path)
+            # logger.info("it's a directory: " + path)
             self.inputAndExeLayout.inputPath.setText(path)
             self.inputAndExeLayout.inputPathClicked()
         elif os.path.isfile(path):
-            # print("it's a normal file: " + path)
+            # logger.info("it's a normal file: " + path)
             self.showLayout.fcku(self.model.filePath(qmodelindex))
         else:
-            print("it's a special file(socket,FIFO,device file): " + path)
+            logger.info("it's a special file(socket,FIFO,device file): " + path)
 
     # 检测键盘回车按键，函数名字不要改，这是重写键盘事件
     def keyPressEvent(self, event):
@@ -134,8 +132,8 @@ class MainWindow(QMainWindow):
         if len(self.inputAndExeLayout.list_files) == 0:
             return
         img_path = self.inputAndExeLayout.list_files[self.counter]
-        # print(self.showLayout.pictureQLabel.size())
-        # print(self.showLayout.sizeConstraint())
+        # logger.info(self.showLayout.pictureQLabel.size())
+        # logger.info(self.showLayout.sizeConstraint())
         self.showLayout.fcku(img_path)
         self.counter += 1
 

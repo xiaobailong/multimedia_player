@@ -5,9 +5,8 @@ from PyQt5.QtGui import (QPixmap, QImage)
 from loguru import logger
 from PIL import ImageGrab
 
-logger.add("log/file_{time}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
+logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
            level="INFO")
-
 
 class ShowLayout(QVBoxLayout):
 

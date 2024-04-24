@@ -4,7 +4,7 @@ import os
 
 from loguru import logger
 
-logger.add("log/file_{time}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
+logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
            level="INFO")
 
 
@@ -71,7 +71,7 @@ class InputAndExeLayout(QHBoxLayout):
         self.loadData()
 
     def inputPathClicked(self):
-        # print(self.inputPath.text())
+        # logger.info(self.inputPath.text())
         if len(self.inputPath.text()) == 0:
             selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
             self.inputPath.setText(selected_path)
@@ -96,7 +96,7 @@ class InputAndExeLayout(QHBoxLayout):
             for file in files:
                 img_path = os.path.join(root, file)
                 if img_path.lower().endswith(
-                        ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff')):
+                        ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp')):
                     self.list_files.append(img_path)
         self.main_window.dataManager.saveInputHistory(self.content_path, len(self.list_files))
 
