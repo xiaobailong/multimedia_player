@@ -5,10 +5,12 @@ from PyQt5.QtGui import (QPixmap, QImage)
 from loguru import logger
 from PIL import ImageGrab
 
-logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
+logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
+           filter="",
            level="INFO")
 
-class ShowLayout(QVBoxLayout):
+
+class PicShowLayout(QVBoxLayout):
 
     def __init__(self, main_window, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
@@ -24,14 +26,17 @@ class ShowLayout(QVBoxLayout):
         self.pictureQLabel = QLabel("Picture")
         self.pictureQLabel.setText("Picture")
         self.pictureQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+
         self.qscrollarea = QScrollArea()
+
         screen = ImageGrab.grab()
         screen_width, screen_height = screen.size
-        print(f"屏幕大小为：{screen_width} x {screen_height}")
-        self.screen_width=int(screen_width * 3 / 4)
-        self.screen_height=int(screen_height * 3 / 4)
-        print(self.screen_width, self.screen_height)
+        logger.info(f"屏幕大小为：{screen_width} x {screen_height}")
+        self.screen_width = int(screen_width * 2 / 3)
+        self.screen_height = int(screen_height * 2 / 3)
+        logger.info(str(self.screen_width), str(self.screen_height))
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
+
         self.qscrollarea.setWidgetResizable(True)
         self.qscrollarea.setWidget(self.pictureQLabel)
         self.addWidget(self.qscrollarea)
@@ -63,3 +68,7 @@ class ShowLayout(QVBoxLayout):
         height = int(h * factor)
 
         return pil_image.scaled(width, height)
+
+    def is_pic(self, path):
+        return path.lower().endswith(
+            ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp'))

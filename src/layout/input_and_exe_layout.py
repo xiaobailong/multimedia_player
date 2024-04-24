@@ -4,7 +4,8 @@ import os
 
 from loguru import logger
 
-logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}", filter="",
+logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
+           filter="",
            level="INFO")
 
 
@@ -39,14 +40,14 @@ class InputAndExeLayout(QHBoxLayout):
         self.inputInterval.setPlaceholderText("输入图片更新时间间隔，单位为秒，默认5秒")
         self.addWidget(self.inputInterval)
 
-        self.btn = QPushButton("开始")
+        self.btn = QPushButton("幻灯片")
         self.addWidget(self.btn)
+
+        self.startAndFullScreenBtn = QPushButton("幻灯片并全屏")
+        self.addWidget(self.startAndFullScreenBtn)
 
         self.fullScreenBtn = QPushButton("全屏")
         self.addWidget(self.fullScreenBtn)
-
-        self.startAndFullScreenBtn = QPushButton("开始并全屏")
-        self.addWidget(self.startAndFullScreenBtn)
 
         self.setContentsMargins(0, 0, 0, 0)
 
