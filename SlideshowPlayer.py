@@ -94,7 +94,9 @@ class MainWindow(QMainWindow):
             elif self.pic_show_layout.is_pic(self.path):
                 self.pic_show_layout.fcku(self.model.filePath(qmodelindex))
             else:
-                logger.error('文件格式错误')
+                self.video_show_layout.titleQLabel.setText('文件格式错误!!!')
+                self.pic_show_layout.titleQLabel.setText('文件格式错误!!!')
+                logger.error('文件格式错误!!!')
         else:
             logger.info("it's a special file(socket,FIFO,device file): " + self.path)
 
@@ -207,7 +209,7 @@ class MainWindow(QMainWindow):
             if not self.video_show_qwidget.isVisible():
                 self.video_show_qwidget.setVisible(True)
                 self.pic_show_qwidget.setVisible(False)
-        else:
+        elif self.pic_show_layout.is_pic(path):
             if not self.pic_show_qwidget.isVisible():
                 self.pic_show_qwidget.setVisible(True)
                 self.video_show_qwidget.setVisible(False)
