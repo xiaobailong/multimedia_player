@@ -54,6 +54,9 @@ class MainWindow(QMainWindow):
         # 为部件添加模式
         self.treeView.setModel(self.model)
         self.treeView.setWindowTitle("")
+        self.treeView.setColumnHidden(1, True)
+        self.treeView.setColumnHidden(2, True)
+        self.treeView.setColumnHidden(3, True)
         # 绑定点击事件
         self.treeView.clicked.connect(self.onTreeClicked)
         # 将创建的窗口进行添加
