@@ -42,6 +42,7 @@ class VideoShowLayout(QVBoxLayout):
 
         self.qscrollarea.setWidgetResizable(True)
         self.qscrollarea.setWidget(self.vw)
+
         self.addWidget(self.qscrollarea)
 
     def fcku(self, filePath):
