@@ -64,11 +64,15 @@ class VideoShowLayout(QVBoxLayout):
         self.stop_btn.clicked.connect(self.run_or_stop)
         self.bar_hbox.addWidget(self.stop_btn)
 
+        self.fullScreenBtn = QPushButton("全屏")
+        self.bar_hbox.addWidget(self.fullScreenBtn)
+        self.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
+
         self.bar_hbox_qwidget = QWidget()
         self.bar_hbox_qwidget.setLayout(self.bar_hbox)
-        self.addWidget(self.bar_hbox_qwidget)
 
         self.addWidget(self.qscrollarea)
+        self.addWidget(self.bar_hbox_qwidget)
 
         self.timer = QTimer()  # 定义定时器
         self.maxValue = 1000  # 设置进度条的最大值
@@ -93,7 +97,6 @@ class VideoShowLayout(QVBoxLayout):
 
     def fcku(self, filePath):
         logger.info(filePath)
-        self.main_window.dataManager.saveIndex(self.main_window.counter)
         self.titleQLabel.setText(filePath)
 
         # 选取视频文件，很多同学要求一打开就能播放，就是在这个地方填写默认的播放视频的路径
@@ -120,3 +123,6 @@ class VideoShowLayout(QVBoxLayout):
     def is_video(self, path):
         return path.lower().endswith(
             ('.mp4'))
+
+    def setVisible(self, visible):
+        self.titleQLabel.setVisible(visible)

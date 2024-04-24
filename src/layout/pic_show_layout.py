@@ -5,6 +5,8 @@ from PyQt5.QtGui import (QPixmap, QImage)
 from loguru import logger
 from PIL import ImageGrab
 
+from src.layout.input_and_exe_layout import InputAndExeLayout
+
 logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
            filter="",
            level="INFO")
@@ -16,6 +18,18 @@ class PicShowLayout(QVBoxLayout):
         super(*args, **kwargs).__init__(*args, **kwargs)
 
         self.main_window = main_window
+        self.counter = 0
+        self.path = ''
+
+        self.inputAndExeLayout = InputAndExeLayout(self)
+        self.inputQWidget = QWidget()
+        self.inputAndExeLayout.setContentsMargins(0, 0, 0, 0)
+        self.inputQWidget.setLayout(self.inputAndExeLayout)
+        self.addWidget(self.inputQWidget)
+
+        self.inputAndExeLayout.btn.pressed.connect(self.start_process)
+        self.inputAndExeLayout.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
+        self.inputAndExeLayout.startAndFullScreenBtn.pressed.connect(self.startProcessWithFullScreen)
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -43,7 +57,8 @@ class PicShowLayout(QVBoxLayout):
 
     def fcku(self, filePath):
         logger.info(filePath)
-        self.main_window.dataManager.saveIndex(self.main_window.counter)
+        self.path = filePath
+
         self.titleQLabel.setText(filePath)
 
         fckimage = QImage(filePath)
@@ -72,3 +87,39 @@ class PicShowLayout(QVBoxLayout):
     def is_pic(self, path):
         return path.lower().endswith(
             ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp'))
+
+    def setVisible(self, visible):
+        self.inputQWidget.setVisible(visible)
+        self.titleQLabel.setVisible(visible)
+
+    def refreshPictures(self):
+        self.counter += 1
+        self.refreshPicturesOnly()
+
+    def refreshPicturesOnly(self):
+        if len(self.inputAndExeLayout.list_files) == 0:
+            return
+        img_path = self.inputAndExeLayout.list_files[self.counter]
+        self.fcku(img_path)
+
+    def up(self):
+        self.counter += 1
+        self.refreshPicturesOnly()
+
+    def down(self):
+        self.counter -= 1
+        self.refreshPicturesOnly()
+
+    def start_process(self):
+        self.inputAndExeLayout.timer.start()
+        self.fcku(self.inputAndExeLayout.list_files[self.counter])
+
+    def startProcessWithFullScreen(self):
+        self.start_process()
+        self.main_window.full_screen_custom()
+
+    def pause(self):
+        if self.inputAndExeLayout.timer.isActive():
+            self.inputAndExeLayout.timer.stop()
+        else:
+            self.inputAndExeLayout.timer.start()
