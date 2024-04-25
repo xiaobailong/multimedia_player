@@ -28,6 +28,7 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_end = 0.0
         self.bar_slider_maxvalue = 1000
         self.state = False
+        self.move_type = 'time'
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -60,7 +61,6 @@ class VideoShowLayout(QVBoxLayout):
 
         self.bar_slider = ClickJumpSlider(Qt.Horizontal)
         self.bar_slider.valueChanged.connect(self.slider_progress_moved)
-        # self.bar_slider.sliderMoved.connect(self.slider_progress_moved)
         self.bar_slider.setObjectName("bar_slider")
         self.bar_slider.setMaximum(self.bar_slider_maxvalue)
         self.bar_slider.setMinimum(0)
@@ -132,6 +132,8 @@ class VideoShowLayout(QVBoxLayout):
         self.addWidget(self.cut_bar_hbox_qwidget)
 
         self.timer = QTimer()  # 定义定时器
+        self.timer.setInterval(1000)
+        self.timer.timeout.connect(self.onTimerOut)
 
     def take_screenshot(self):
 
@@ -209,12 +211,16 @@ class VideoShowLayout(QVBoxLayout):
 
     def slider_progress_moved(self):
         # logger.info('slider_progress_moved')
-        # self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
+
+        if self.move_type != 'time':
+            self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
 
         m, s = divmod(self.player.position() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.bar_label.setText(text)
+
+        self.move_type = ''
 
     def cut_slider_progress_clicked(self):
         tangent = self.cut_bar_slider.value() / self.cut_bar_slider.maximum() * self.player.duration()
@@ -242,9 +248,7 @@ class VideoShowLayout(QVBoxLayout):
         self.player.play()
         self.state = True
 
-        self.timer.setInterval(1000)
         self.timer.start()
-        self.timer.timeout.connect(self.onTimerOut)
 
     def onTimerOut(self):
 
@@ -253,6 +257,7 @@ class VideoShowLayout(QVBoxLayout):
 
         value = round(position * self.bar_slider.maximum() / duration)
         self.bar_slider.setValue(value)
+        self.move_type = 'time'
 
         m, s = divmod(self.player.position() / 1000, 60)
         h, m = divmod(m, 60)
