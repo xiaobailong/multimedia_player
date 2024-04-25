@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
         self.path = ''
 
         self.setWindowTitle('多媒体播放器')
-        self.resize(1500, 600)
+        self.resize(1500, 700)
         self.dataManager = DataManager()
 
         self.layout = QHBoxLayout()
