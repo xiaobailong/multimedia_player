@@ -1,3 +1,5 @@
+import cv2
+from PyQt5.QtGui import QPixmap, qRgb
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import *
@@ -19,6 +21,7 @@ class VideoShowLayout(QVBoxLayout):
         super(*args, **kwargs).__init__(*args, **kwargs)
 
         self.main_window = main_window
+        self.path = ''
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -28,10 +31,10 @@ class VideoShowLayout(QVBoxLayout):
 
         self.player = QMediaPlayer()
         # 定义视频显示的widget
-        self.vw = QVideoWidget()
-        self.vw.show()
+        self.video_widget = QVideoWidget()
+        self.video_widget.show()
         # 视频播放输出的widget，就是上面定义的
-        self.player.setVideoOutput(self.vw)
+        self.player.setVideoOutput(self.video_widget)
 
         self.qscrollarea = QScrollArea()
 
@@ -44,7 +47,7 @@ class VideoShowLayout(QVBoxLayout):
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
 
         self.qscrollarea.setWidgetResizable(True)
-        self.qscrollarea.setWidget(self.vw)
+        self.qscrollarea.setWidget(self.video_widget)
 
         self.bar_hbox = QHBoxLayout()
         self.bar_hbox.setObjectName("bar_hbox")
@@ -64,6 +67,10 @@ class VideoShowLayout(QVBoxLayout):
         self.stop_btn.clicked.connect(self.run_or_stop)
         self.bar_hbox.addWidget(self.stop_btn)
 
+        self.screenshot_button = QPushButton('截图')
+        self.screenshot_button.clicked.connect(self.take_screenshot)
+        self.bar_hbox.addWidget(self.screenshot_button)
+
         self.fullScreenBtn = QPushButton("全屏")
         self.bar_hbox.addWidget(self.fullScreenBtn)
         self.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
@@ -78,6 +85,50 @@ class VideoShowLayout(QVBoxLayout):
         self.maxValue = 1000  # 设置进度条的最大值
 
         self.state = False
+
+    def take_screenshot(self):
+
+        try:
+            # 读取视频
+            vc = cv2.VideoCapture(self.path)
+            # 设置读取位置，1000毫秒
+            vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
+            # 读取当前帧，rval用于判断读取是否成功
+            rval, frame = vc.read()
+            if rval:
+                save_path = self.path.replace('.mp4', "_" + str(self.player.position()) + ".jpg")
+                logger.info("save_path: " + save_path)
+                cv2.imencode('.jpg', frame)[1].tofile(save_path)
+                qimg = self.CV2QImage(frame)
+
+                # 将图像复制到粘贴板
+                mime_data = QMimeData()
+                mime_data.setImageData(qimg)
+                QApplication.clipboard().setMimeData(mime_data)
+            else:
+                print("视频加载失败失败")
+        except Exception as e:
+            print(f"获取视频封面图失败: {e}")
+
+    def CV2QImage(self, cv_image):
+
+        width = cv_image.shape[1]  # 获取图片宽度
+        height = cv_image.shape[0]  # 获取图片高度
+
+        pixmap = QPixmap(width, height)  # 根据已知的高度和宽度新建一个空的QPixmap,
+        qimg = pixmap.toImage()  # 将pximap转换为QImage类型的qimg
+
+        # 循环读取cv_image的每个像素的r,g,b值，构成qRgb对象，再设置为qimg内指定位置的像素
+        for row in range(0, height):
+            for col in range(0, width):
+                b = cv_image[row, col, 0]
+                g = cv_image[row, col, 1]
+                r = cv_image[row, col, 2]
+
+                pix = qRgb(r, g, b)
+                qimg.setPixel(col, row, pix)
+
+        return qimg  # 转换完成，返回
 
     def run_or_stop(self):
         if self.state:
@@ -98,6 +149,7 @@ class VideoShowLayout(QVBoxLayout):
     def fcku(self, filePath):
         logger.info(filePath)
         self.titleQLabel.setText(filePath)
+        self.path = filePath
 
         # 选取视频文件，很多同学要求一打开就能播放，就是在这个地方填写默认的播放视频的路径
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
