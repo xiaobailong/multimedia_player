@@ -7,6 +7,7 @@ from PyQt5.QtCore import *
 
 from loguru import logger
 from PIL import ImageGrab
+from moviepy.editor import *
 
 from src.layout.click_jump_slider import ClickJumpSlider
 
@@ -229,38 +230,12 @@ class VideoShowLayout(QVBoxLayout):
 
     def video_cut(self):
 
-        cap = cv2.VideoCapture(self.path)  # 打开视频文件
-        fps = cap.get(cv2.CAP_PROP_FPS)  # 获得视频文件的帧率
-        width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)  # 获得视频文件的帧宽
-        height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)  # 获得视频文件的帧高
-
         file_name = (self.path.replace('.mp4', "_")
                      + str(int(self.cut_start * 1000)).replace('.', '') + '-'
                      + str(int(self.cut_end * 1000)).replace('.', '') + '.mp4')
 
-        size = (int(width), int(height))  # 保存视频的大小
-
-        videoWriter = cv2.VideoWriter(file_name, cv2.VideoWriter_fourcc('X', 'V', 'I', 'D'), fps, size)
-
-        start = int(self.cut_start / 1000 * fps)
-        end = int(self.cut_end / 1000 * fps)
-
-        logger.info(str(start) + '_' + str(end))
-
-        i = 0
-        while True:
-            success, frame = cap.read()
-            if success:
-                i += 1
-                # logger.info('i = ', i)
-                if start <= i <= end:
-                    # logger.info('写入第' + str(i) + '帧')
-                    videoWriter.write(frame)
-            else:
-                # logger.info('end')
-                break
-
-        cap.release()
-        videoWriter.release()
-
-        logger.info('视频截取成功：' + file_name)
+        video = VideoFileClip(self.path)
+        start = int(self.cut_start / 1000)
+        end = int(self.cut_end / 1000)
+        video = video.subclip(start, end)
+        video.write_videofile(file_name)
