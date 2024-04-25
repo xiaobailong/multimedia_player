@@ -28,7 +28,6 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_end = 0.0
         self.bar_slider_maxvalue = 1000
         self.state = False
-        self.move_type = 'time'
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -212,15 +211,13 @@ class VideoShowLayout(QVBoxLayout):
     def slider_progress_moved(self):
         # logger.info('slider_progress_moved')
 
-        if self.move_type != 'time':
+        if self.bar_slider.move_type != 'time':
             self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
 
         m, s = divmod(self.player.position() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.bar_label.setText(text)
-
-        self.move_type = ''
 
     def cut_slider_progress_clicked(self):
         tangent = self.cut_bar_slider.value() / self.cut_bar_slider.maximum() * self.player.duration()
@@ -257,7 +254,7 @@ class VideoShowLayout(QVBoxLayout):
 
         value = round(position * self.bar_slider.maximum() / duration)
         self.bar_slider.setValue(value)
-        self.move_type = 'time'
+        self.bar_slider.move_type = 'time'
 
         m, s = divmod(self.player.position() / 1000, 60)
         h, m = divmod(m, 60)

@@ -1,10 +1,17 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import  QSlider, QStyleOptionSlider, QStyle
+from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle
 
 
 class ClickJumpSlider(QSlider):
 
+    def __init__(self, *__args):
+        super().__init__( *__args)
+        self.move_type = 'click'
+
     def mousePressEvent(self, event):
+
+        self.move_type = 'click'
+
         # 获取上面的拉动块位置
         option = QStyleOptionSlider()
         self.initStyleOption(option)
