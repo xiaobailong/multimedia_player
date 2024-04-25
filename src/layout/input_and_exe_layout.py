@@ -68,7 +68,6 @@ class InputAndExeLayout(QHBoxLayout):
         self.loadData()
 
     def inputPathClicked(self):
-        # logger.info(self.inputPath.text())
         if len(self.inputPath.text()) == 0:
             selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
             self.inputPath.setText(selected_path)
@@ -78,7 +77,6 @@ class InputAndExeLayout(QHBoxLayout):
         logger.info(self.content_path)
 
     def inputInterval_text_edited(self, s):
-        logger.info("inputInterval_text_edited: " + s)
         if self.is_number(s):
             newTime = int(s) * 1000
             self.timer.setInterval(newTime)
@@ -95,7 +93,6 @@ class InputAndExeLayout(QHBoxLayout):
                 if img_path.lower().endswith(
                         ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp')):
                     self.list_files.append(img_path)
-        # self.main_window.dataManager.saveInputHistory(self.content_path, len(self.list_files))
 
     def is_number(self, s):
         try:

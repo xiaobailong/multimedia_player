@@ -28,6 +28,7 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_end = 0.0
         self.bar_slider_maxvalue = 1000
         self.state = False
+        self.pause_count = 0
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -36,20 +37,16 @@ class VideoShowLayout(QVBoxLayout):
         self.addWidget(self.titleQLabel)
 
         self.player = QMediaPlayer()
-        # 定义视频显示的widget
         self.video_widget = QVideoWidget()
         self.video_widget.show()
-        # 视频播放输出的widget，就是上面定义的
         self.player.setVideoOutput(self.video_widget)
 
         self.qscrollarea = QScrollArea()
 
         screen = ImageGrab.grab()
         screen_width, screen_height = screen.size
-        # logger.info(f"屏幕大小为：{screen_width} x {screen_height}")
         self.screen_width = int(screen_width * main_window.left / (main_window.left + main_window.right))
         self.screen_height = int(screen_height * main_window.left / (main_window.left + main_window.right))
-        # logger.info(str(self.screen_width), str(self.screen_height))
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
 
         self.qscrollarea.setWidgetResizable(True)
@@ -64,12 +61,14 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_slider.setMaximum(self.bar_slider_maxvalue)
         self.bar_slider.setMinimum(0)
 
-        self.bar_label = QLabel(self.bar_slider)
-        self.bar_label.setMaximumSize(QSize(50, 10))
-        self.bar_label.setObjectName("bar_label")
+        self.bar_label = QLabel()
+        self.bar_label.setText("已播放:00:00:00")
+        self.bar_label_all = QLabel()
+        self.bar_label_all.setText("总时长:00:00:00")
 
         self.bar_hbox.addWidget(self.bar_slider)
         self.bar_hbox.addWidget(self.bar_label)
+        self.bar_hbox.addWidget(self.bar_label_all)
 
         self.stop_btn = QPushButton()
         self.stop_btn.setText("暂停")
@@ -94,18 +93,24 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_slider.setMaximum(self.bar_slider_maxvalue)
         self.cut_bar_slider.setMinimum(0)
 
-        self.cut_bar_label_start = QLabel(self.cut_bar_slider)
-        self.cut_bar_label_start.setMaximumSize(QSize(50, 10))
-        self.cut_bar_label_start.setObjectName("cut_bar_label_start")
-        self.cut_bar_label_start.setText("开始")
-        self.cut_bar_label_end = QLabel(self.cut_bar_slider)
-        self.cut_bar_label_end.setMaximumSize(QSize(50, 10))
-        self.cut_bar_label_end.setObjectName("cut_bar_label_end")
-        self.cut_bar_label_end.setText("结束")
+        self.cut_bar_label_start = QLabel()
+        self.cut_bar_label_start.setText("开始:")
+        self.cut_bar_edit_start = QLineEdit()
+        self.cut_bar_edit_start.setMaximumSize(QSize(70, 30))
+        self.cut_bar_edit_start.setObjectName("cut_bar_label_start")
+        self.cut_bar_edit_start.setText("00:00:00")
+        self.cut_bar_label_end = QLabel()
+        self.cut_bar_label_end.setText("结束:")
+        self.cut_bar_edit_end = QLineEdit()
+        self.cut_bar_edit_end.setMaximumSize(QSize(70, 30))
+        self.cut_bar_edit_end.setObjectName("cut_bar_label_end")
+        self.cut_bar_edit_end.setText("00:00:00")
 
         self.cut_bar_hbox.addWidget(self.cut_bar_slider)
         self.cut_bar_hbox.addWidget(self.cut_bar_label_start)
+        self.cut_bar_hbox.addWidget(self.cut_bar_edit_start)
         self.cut_bar_hbox.addWidget(self.cut_bar_label_end)
+        self.cut_bar_hbox.addWidget(self.cut_bar_edit_end)
 
         self.cut_btn = QPushButton()
         self.cut_btn.setText("剪切")
@@ -137,11 +142,8 @@ class VideoShowLayout(QVBoxLayout):
     def take_screenshot(self):
 
         try:
-            # 读取视频
             vc = cv2.VideoCapture(self.path)
-            # 设置读取位置，1000毫秒
             vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
-            # 读取当前帧，rval用于判断读取是否成功
             rval, frame = vc.read()
             if rval:
                 save_path = self.path.replace('.mp4', "_" + str(self.player.position()) + ".jpg")
@@ -149,10 +151,11 @@ class VideoShowLayout(QVBoxLayout):
                 cv2.imencode('.jpg', frame)[1].tofile(save_path)
                 qimg = self.CV2QImage(frame)
 
-                # 将图像复制到粘贴板
                 mime_data = QMimeData()
                 mime_data.setImageData(qimg)
                 QApplication.clipboard().setMimeData(mime_data)
+
+                self.main_window.model.refresh()
             else:
                 logger.info("视频加载失败失败")
         except Exception as e:
@@ -160,13 +163,12 @@ class VideoShowLayout(QVBoxLayout):
 
     def CV2QImage(self, cv_image):
 
-        width = cv_image.shape[1]  # 获取图片宽度
-        height = cv_image.shape[0]  # 获取图片高度
+        width = cv_image.shape[1]
+        height = cv_image.shape[0]
 
-        pixmap = QPixmap(width, height)  # 根据已知的高度和宽度新建一个空的QPixmap,
-        qimg = pixmap.toImage()  # 将pximap转换为QImage类型的qimg
+        pixmap = QPixmap(width, height)
+        qimg = pixmap.toImage()
 
-        # 循环读取cv_image的每个像素的r,g,b值，构成qRgb对象，再设置为qimg内指定位置的像素
         for row in range(0, height):
             for col in range(0, width):
                 b = cv_image[row, col, 0]
@@ -177,6 +179,12 @@ class VideoShowLayout(QVBoxLayout):
                 qimg.setPixel(col, row, pix)
 
         return qimg  # 转换完成，返回
+
+    def delete(self):
+        logger.info('delete')
+        if os.path.exists(self.path):
+            self.player.stop()
+            os.remove(self.path)
 
     # 快进
     def up_time(self):
@@ -189,6 +197,13 @@ class VideoShowLayout(QVBoxLayout):
         num = self.player.position() - int(self.player.duration() / 20)
         self.player.setPosition(num)
         self.onTimerOut()
+
+    def pause(self):
+        self.pause_count += 1
+        if self.pause_count % 2 == 0:
+            self.player.pause()
+        else:
+            self.player.play()
 
     def run_or_stop(self):
         if self.state:
@@ -209,7 +224,6 @@ class VideoShowLayout(QVBoxLayout):
                 self.player.play()
 
     def slider_progress_moved(self):
-        # logger.info('slider_progress_moved')
 
         if self.bar_slider.move_type != 'time':
             self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
@@ -217,20 +231,19 @@ class VideoShowLayout(QVBoxLayout):
         m, s = divmod(self.player.position() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
-        self.bar_label.setText(text)
+        self.bar_label.setText('已播放:' + text)
 
     def cut_slider_progress_clicked(self):
         tangent = self.cut_bar_slider.value() / self.cut_bar_slider.maximum() * self.player.duration()
-        # logger.info('cut_slider_progress_clicked: ' + str(self.cut_bar_slider.value()) + ":" + str(tangent))
         m, s = divmod(tangent / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
 
         if self.cut_state % 2 == 0:
-            self.cut_bar_label_start.setText(text)
+            self.cut_bar_edit_start.setText(text)
             self.cut_start = tangent
         else:
-            self.cut_bar_label_end.setText(text)
+            self.cut_bar_edit_end.setText(text)
             self.cut_end = tangent
 
         self.cut_state += 1
@@ -240,7 +253,6 @@ class VideoShowLayout(QVBoxLayout):
         self.titleQLabel.setText(filePath)
         self.path = filePath
 
-        # 选取视频文件，很多同学要求一打开就能播放，就是在这个地方填写默认的播放视频的路径
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
         self.player.play()
         self.state = True
@@ -259,7 +271,11 @@ class VideoShowLayout(QVBoxLayout):
         m, s = divmod(self.player.position() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
-        self.bar_label.setText(text)
+        self.bar_label.setText('已播放:' + text)
+        m, s = divmod(self.player.duration() / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.bar_label_all.setText('总时长:' + text)
 
         if self.player.position() == self.player.duration():
             self.stop_btn.setText("播放")
@@ -279,8 +295,13 @@ class VideoShowLayout(QVBoxLayout):
                      + str(int(self.cut_start * 1000)).replace('.', '') + '-'
                      + str(int(self.cut_end * 1000)).replace('.', '') + '.mp4')
 
+        start_text = self.cut_bar_edit_start.text().split(':')
+        start = int(start_text[0]) * 3600 + int(start_text[1]) * 60 + int(start_text[2])
+        end_text = self.cut_bar_edit_end.text().split(':')
+        end = int(end_text[0]) * 3600 + int(end_text[1]) * 60 + int(end_text[2])
+
         video = VideoFileClip(self.path)
-        start = int(self.cut_start / 1000)
-        end = int(self.cut_end / 1000)
         video = video.subclip(start, end)
         video.write_videofile(file_name)
+
+        self.main_window.model.refresh()
