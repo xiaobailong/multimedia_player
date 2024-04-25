@@ -46,8 +46,8 @@ class PicShowLayout(QVBoxLayout):
         screen = ImageGrab.grab()
         screen_width, screen_height = screen.size
         # logger.info(f"屏幕大小为：{screen_width} x {screen_height}")
-        self.screen_width = int(screen_width * 2 / 3)
-        self.screen_height = int(screen_height * 2 / 3)
+        self.screen_width = int(screen_width * main_window.left / (main_window.left + main_window.right))
+        self.screen_height = int(screen_height * main_window.left / (main_window.left + main_window.right))
         # logger.info(str(self.screen_width), str(self.screen_height))
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
 

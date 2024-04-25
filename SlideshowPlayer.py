@@ -22,6 +22,8 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__(*args, **kwargs)
 
         self.path = ''
+        self.left = 1
+        self.right = 3
 
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
@@ -54,7 +56,7 @@ class MainWindow(QMainWindow):
         # 绑定点击事件
         self.treeView.clicked.connect(self.onTreeClicked)
         # 将创建的窗口进行添加
-        self.layout.addWidget(self.treeView, stretch=1)
+        self.layout.addWidget(self.treeView, stretch=self.left)
 
         self.work = QVBoxLayout()
         self.work.addWidget(self.video_show_qwidget)
@@ -63,7 +65,7 @@ class MainWindow(QMainWindow):
         self.workQWidget = QWidget()
         self.workQWidget.setLayout(self.work)
 
-        self.layout.addWidget(self.workQWidget, stretch=2)
+        self.layout.addWidget(self.workQWidget, stretch=self.right)
         self.layout.setContentsMargins(0, 0, 0, 0)
 
         self.mainQWidget = QWidget()
