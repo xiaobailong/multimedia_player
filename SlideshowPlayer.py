@@ -124,9 +124,11 @@ class MainWindow(QMainWindow):
         #     logger.info('测试：Enter')
         if (event.key() == Qt.Key_Left):
             # logger.info('测试：Key_Left')
+            self.video_show_layout.down_time()
             self.pic_show_layout.down()
         if (event.key() == Qt.Key_Right):
             self.pic_show_layout.up()
+            self.video_show_layout.up_time()
             # logger.info('测试：Key_Right')
         if (event.key() == Qt.Key_Space):
             self.pic_show_layout.pause()

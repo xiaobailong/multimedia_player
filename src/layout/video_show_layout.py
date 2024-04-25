@@ -26,6 +26,8 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_state = 0
         self.cut_start = 0.0
         self.cut_end = 0.0
+        self.bar_slider_maxvalue = 1000
+        self.state = False
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -58,7 +60,10 @@ class VideoShowLayout(QVBoxLayout):
 
         self.bar_slider = ClickJumpSlider(Qt.Horizontal)
         self.bar_slider.valueChanged.connect(self.slider_progress_moved)
+        # self.bar_slider.sliderMoved.connect(self.slider_progress_moved)
         self.bar_slider.setObjectName("bar_slider")
+        self.bar_slider.setMaximum(self.bar_slider_maxvalue)
+        self.bar_slider.setMinimum(0)
 
         self.bar_label = QLabel(self.bar_slider)
         self.bar_label.setMaximumSize(QSize(50, 10))
@@ -72,12 +77,23 @@ class VideoShowLayout(QVBoxLayout):
         self.stop_btn.clicked.connect(self.run_or_stop)
         self.bar_hbox.addWidget(self.stop_btn)
 
+        self.up_btn = QPushButton()
+        self.up_btn.setText("快进")
+        self.up_btn.clicked.connect(self.up_time)
+        self.bar_hbox.addWidget(self.up_btn)
+        self.down_btn = QPushButton()
+        self.down_btn.setText("快退")
+        self.down_btn.clicked.connect(self.down_time)
+        self.bar_hbox.addWidget(self.down_btn)
+
         self.cut_bar_hbox = QHBoxLayout()
         self.cut_bar_hbox.setObjectName("cut_bar_hbox")
 
         self.cut_bar_slider = ClickJumpSlider(Qt.Horizontal)
         self.cut_bar_slider.valueChanged.connect(self.cut_slider_progress_clicked)
         self.cut_bar_slider.setObjectName("cut_bar_slider")
+        self.cut_bar_slider.setMaximum(self.bar_slider_maxvalue)
+        self.cut_bar_slider.setMinimum(0)
 
         self.cut_bar_label_start = QLabel(self.cut_bar_slider)
         self.cut_bar_label_start.setMaximumSize(QSize(50, 10))
@@ -116,9 +132,6 @@ class VideoShowLayout(QVBoxLayout):
         self.addWidget(self.cut_bar_hbox_qwidget)
 
         self.timer = QTimer()  # 定义定时器
-        self.maxValue = 1000  # 设置进度条的最大值
-
-        self.state = False
 
     def take_screenshot(self):
 
@@ -164,6 +177,18 @@ class VideoShowLayout(QVBoxLayout):
 
         return qimg  # 转换完成，返回
 
+    # 快进
+    def up_time(self):
+        num = self.player.position() + int(self.player.duration() / 100)
+        self.player.setPosition(num)
+        self.onTimerOut()
+
+    # 快退
+    def down_time(self):
+        num = self.player.position() - int(self.player.duration() / 20)
+        self.player.setPosition(num)
+        self.onTimerOut()
+
     def run_or_stop(self):
         if self.state:
             self.player.pause()
@@ -171,21 +196,33 @@ class VideoShowLayout(QVBoxLayout):
             self.state = False
             self.stop_btn.setText("播放")
         else:
-            self.player.play()
-            self.timer.start()
-            self.state = True
-            self.stop_btn.setText("暂停")
+            if self.player.position() < self.player.duration():
+                self.player.play()
+                self.timer.start()
+                self.state = True
+                self.stop_btn.setText("暂停")
+            else:
+                self.timer.start()
+                self.bar_slider.setValue(0)
+                self.player.setPosition(0)
+                self.player.play()
 
     def slider_progress_moved(self):
-        self.timer.stop()
-        self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / 100))
+        # logger.info('slider_progress_moved')
+        # self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
+
+        m, s = divmod(self.player.position() / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.bar_label.setText(text)
 
     def cut_slider_progress_clicked(self):
-        tangent = self.cut_bar_slider.value() / 100 * self.player.duration()
+        tangent = self.cut_bar_slider.value() / self.cut_bar_slider.maximum() * self.player.duration()
         # logger.info('cut_slider_progress_clicked: ' + str(self.cut_bar_slider.value()) + ":" + str(tangent))
         m, s = divmod(tangent / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
+
         if self.cut_state % 2 == 0:
             self.cut_bar_label_start.setText(text)
             self.cut_start = tangent
@@ -210,16 +247,22 @@ class VideoShowLayout(QVBoxLayout):
         self.timer.timeout.connect(self.onTimerOut)
 
     def onTimerOut(self):
+
         position = self.player.position()
         duration = self.player.duration()
-        value = round(position * 100 / duration)
+
+        value = round(position * self.bar_slider.maximum() / duration)
         self.bar_slider.setValue(value)
 
         m, s = divmod(self.player.position() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.bar_label.setText(text)
-        # self.widget.doubleClickedItem.connect(self.videoDoubleClicked)
+
+        if self.player.position() == self.player.duration():
+            self.stop_btn.setText("播放")
+            self.state = False
+            self.timer.stop()
 
     def is_video(self, path):
         return path.lower().endswith(

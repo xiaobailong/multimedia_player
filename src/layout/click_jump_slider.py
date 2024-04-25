@@ -1,5 +1,5 @@
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QSlider, QStyleOptionSlider, QStyle, QWidget, QFormLayout, QLabel
+from PyQt5.QtWidgets import  QSlider, QStyleOptionSlider, QStyle
 
 
 class ClickJumpSlider(QSlider):
@@ -8,8 +8,8 @@ class ClickJumpSlider(QSlider):
         # 获取上面的拉动块位置
         option = QStyleOptionSlider()
         self.initStyleOption(option)
-        rect = self.style().subControlRect(
-            QStyle.CC_Slider, option, QStyle.SC_SliderHandle, self)
+        rect = self.style().subControlRect(QStyle.CC_Slider, option, QStyle.SC_SliderHandle, self)
+
         if rect.contains(event.pos()):
             # 如果鼠标点击的位置在滑块上则交给Qt自行处理
             super(ClickJumpSlider, self).mousePressEvent(event)
