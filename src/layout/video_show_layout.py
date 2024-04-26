@@ -10,6 +10,7 @@ from PIL import ImageGrab
 from moviepy.editor import *
 
 from src.layout.click_jump_slider import ClickJumpSlider
+from src.layout.range_slider import QRangeSlider
 
 logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
            filter="",
@@ -23,7 +24,6 @@ class VideoShowLayout(QVBoxLayout):
 
         self.main_window = main_window
         self.path = ''
-        self.cut_state = 0
         self.cut_start = 0.0
         self.cut_end = 0.0
         self.bar_slider_maxvalue = 1000
@@ -87,12 +87,6 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_hbox = QHBoxLayout()
         self.cut_bar_hbox.setObjectName("cut_bar_hbox")
 
-        self.cut_bar_slider = ClickJumpSlider(Qt.Horizontal)
-        self.cut_bar_slider.valueChanged.connect(self.cut_slider_progress_clicked)
-        self.cut_bar_slider.setObjectName("cut_bar_slider")
-        self.cut_bar_slider.setMaximum(self.bar_slider_maxvalue)
-        self.cut_bar_slider.setMinimum(0)
-
         self.cut_bar_label_start = QLabel()
         self.cut_bar_label_start.setText("开始:")
         self.cut_bar_edit_start = QLineEdit()
@@ -105,6 +99,13 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_edit_end.setMaximumSize(QSize(70, 30))
         self.cut_bar_edit_end.setObjectName("cut_bar_label_end")
         self.cut_bar_edit_end.setText("00:00:00")
+
+        self.cut_bar_slider = QRangeSlider()
+        self.cut_bar_slider.startValueChanged.connect(self.slider_start)
+        self.cut_bar_slider.endValueChanged.connect(self.slider_end)
+        self.cut_bar_slider.setMax(self.bar_slider_maxvalue)
+        self.cut_bar_slider.setMin(0)
+        self.cut_bar_slider.setRange(0, self.bar_slider_maxvalue)
 
         self.cut_bar_hbox.addWidget(self.cut_bar_slider)
         self.cut_bar_hbox.addWidget(self.cut_bar_label_start)
@@ -138,6 +139,22 @@ class VideoShowLayout(QVBoxLayout):
         self.timer = QTimer()  # 定义定时器
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.onTimerOut)
+
+    def slider_start(self, value):
+        tangent = value / self.bar_slider_maxvalue * self.player.duration()
+        m, s = divmod(tangent / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.cut_bar_edit_start.setText(text)
+        self.cut_start = int(tangent / 1000)
+
+    def slider_end(self, value):
+        tangent = value / self.bar_slider_maxvalue * self.player.duration()
+        m, s = divmod(tangent / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.cut_bar_edit_end.setText(text)
+        self.cut_end = int(tangent / 1000)
 
     def take_screenshot(self):
 
@@ -195,8 +212,12 @@ class VideoShowLayout(QVBoxLayout):
         self.pause_count += 1
         if self.pause_count % 2 == 0:
             self.player.pause()
+            self.state = False
+            self.stop_btn.setText("播放")
         else:
             self.player.play()
+            self.state = True
+            self.stop_btn.setText("暂停")
 
     def run_or_stop(self):
         if self.state:
@@ -225,21 +246,6 @@ class VideoShowLayout(QVBoxLayout):
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.bar_label.setText('已播放:' + text)
-
-    def cut_slider_progress_clicked(self):
-        tangent = self.cut_bar_slider.value() / self.cut_bar_slider.maximum() * self.player.duration()
-        m, s = divmod(tangent / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-
-        if self.cut_state % 2 == 0:
-            self.cut_bar_edit_start.setText(text)
-            self.cut_start = tangent
-        else:
-            self.cut_bar_edit_end.setText(text)
-            self.cut_end = tangent
-
-        self.cut_state += 1
 
     def fcku(self, filePath):
         logger.info(filePath)
@@ -288,13 +294,8 @@ class VideoShowLayout(QVBoxLayout):
                      + str(int(self.cut_start * 1000)).replace('.', '') + '-'
                      + str(int(self.cut_end * 1000)).replace('.', '') + '.mp4')
 
-        start_text = self.cut_bar_edit_start.text().split(':')
-        start = int(start_text[0]) * 3600 + int(start_text[1]) * 60 + int(start_text[2])
-        end_text = self.cut_bar_edit_end.text().split(':')
-        end = int(end_text[0]) * 3600 + int(end_text[1]) * 60 + int(end_text[2])
-
         video = VideoFileClip(self.path)
-        video = video.subclip(start, end)
+        video = video.subclip(self.cut_start, self.cut_end)
         video.write_videofile(file_name)
 
         self.main_window.model.refresh()
