@@ -1,5 +1,4 @@
 from src.data_manager.Sqlite3Client import Sqlite3Client
-# from Sqlite3Client import Sqlite3Client
 
 import time
 from loguru import logger

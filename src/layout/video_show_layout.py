@@ -1,3 +1,5 @@
+import time
+
 import cv2
 from PyQt5.QtGui import QPixmap, qRgb
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
@@ -7,8 +9,8 @@ from PyQt5.QtCore import *
 
 from loguru import logger
 from PIL import ImageGrab
-from moviepy.editor import *
 
+from src.layout.ProcThread import ProcThread
 from src.layout.click_jump_slider import ClickJumpSlider
 from src.layout.range_slider import QRangeSlider
 
@@ -163,7 +165,9 @@ class VideoShowLayout(QVBoxLayout):
             vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
             rval, frame = vc.read()
             if rval:
-                save_path = self.path.replace('.mp4', "_" + str(self.player.position()) + ".jpg")
+                save_path = self.path.replace('.mp4', "_"
+                                              + str(self.player.position())
+                                              + "_" + time.strftime("%Y%m%d%H%M%S") + ".jpg")
                 logger.info("save_path: " + save_path)
                 cv2.imencode('.jpg', frame)[1].tofile(save_path)
                 qimg = self.CV2QImage(frame)
@@ -282,20 +286,38 @@ class VideoShowLayout(QVBoxLayout):
             self.timer.stop()
 
     def is_video(self, path):
-        return path.lower().endswith(
-            ('.mp4'))
+        return path.lower().endswith(('.mp4'))
 
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
 
     def video_cut(self):
 
-        file_name = (self.path.replace('.mp4', "_")
-                     + str(int(self.cut_start * 1000)).replace('.', '') + '-'
-                     + str(int(self.cut_end * 1000)).replace('.', '') + '.mp4')
+        self.main_window.statusbar.setVisible(True)
 
-        video = VideoFileClip(self.path)
-        video = video.subclip(self.cut_start, self.cut_end)
-        video.write_videofile(file_name)
+        self.proc_thread = ProcThread(self.path, self.cut_start, self.cut_end)
+        self.proc_thread.message.connect(self.video_cut_thread_message)
+        self.proc_thread.progress.connect(self.video_cut_thread_progress)
+        self.proc_thread.finished.connect(self.video_cut_thread_finished)
+        self.proc_thread.start()
 
+    def video_cut_thread_message(self, value):
+        content=str(value)
+        if ':' in str(value):
+            content = str(value).split(':')[0][:-2]
+        else:
+            content = str(value).split('n ')[0][:-2]
+
+        self.main_window.statusLabel.setText(content)
+        # logger.info('thread_message:' + content)
+        # logger.info('thread_message:' + str(value))
+
+    def video_cut_thread_progress(self, value):
+        self.main_window.progressBar.setValue(value)
+        # logger.info('thread_progress:' + str(value))
+
+    def video_cut_thread_finished(self):
+        time.sleep(3)
         self.main_window.model.refresh()
+        self.main_window.statusbar.setVisible(False)
+        # QMessageBox.information(self.main_window, '处理完成', '操作完成', QMessageBox.Yes)

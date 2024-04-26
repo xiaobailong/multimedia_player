@@ -3,6 +3,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import QApplication
 
 import sys, os
+
 from loguru import logger
 
 from src.layout.pic_show_layout import PicShowLayout
@@ -69,6 +70,28 @@ class MainWindow(QMainWindow):
         self.mainQWidget.setLayout(self.layout)
         self.setCentralWidget(self.mainQWidget)
 
+        # 定义状态栏
+        self.statusbar = QStatusBar(self)
+        # 将状态栏设置为当前窗口的状态栏
+        self.setStatusBar(self.statusbar)
+        # 设置状态栏的对象名称
+        self.statusbar.setObjectName("statusbar")
+        # 设置状态栏样式
+        self.statusbar.setStyleSheet('QStatusBar::item {border: none;}')
+        # 定义文本标签
+        self.statusLabel = QLabel()
+        # 设置文本标签显示内容
+        self.statusLabel.setText("进度")
+        # 定义水平进度条
+        self.progressBar = QProgressBar()
+        # 设置进度条的范围，参数1为最小值，参数2为最大值（可以调得更大，比如1000
+        self.progressBar.setRange(0, 100)
+        # 设置进度条的初始值
+        self.progressBar.setValue(0)
+        self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
+        self.statusbar.addPermanentWidget(self.progressBar, stretch=4)
+        self.statusbar.setVisible(False)
+
         self.show()
 
     def right_click_menu(self, pos):
@@ -105,7 +128,6 @@ class MainWindow(QMainWindow):
         except:
             logger.error("文件删除异常!!!")
 
-
     def onTreeClicked(self, qmodelindex):
         self.path = self.model.filePath(qmodelindex)
 
@@ -130,7 +152,6 @@ class MainWindow(QMainWindow):
                 logger.error('文件格式错误!!!')
         else:
             logger.info("it's a special file(socket,FIFO,device file): " + self.path)
-
 
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Escape):
@@ -161,7 +182,6 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
             logger.info("shift + o")
 
-
     def full_screen_custom(self):
         if self.video_show_layout.is_video(self.path):
             self.video_show_layout.setVisible(False)
@@ -169,7 +189,6 @@ class MainWindow(QMainWindow):
             self.pic_show_layout.setVisible(False)
         self.treeView.setVisible(False)
         self.showFullScreen()
-
 
     def change_show(self, path):
         if self.video_show_layout.is_video(path):
