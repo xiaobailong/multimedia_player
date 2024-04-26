@@ -37,7 +37,6 @@ def scale(val, src, dst):
 
 class Ui_Form(object):
     def setupUi(self, Form):
-
         Form.setObjectName("QRangeSlider")
         Form.resize(300, 30)
         Form.setStyleSheet(DEFAULT_CSS)
@@ -102,7 +101,10 @@ class Head(Element):
     def drawText(self, event, qp):
         qp.setPen(self.textColor())
         qp.setFont(QtGui.QFont('Arial', 10))
-        qp.drawText(event.rect(), QtCore.Qt.AlignLeft, str(self.main.min()))
+        m, s = divmod(self.main.min() / self.main.max() * self.main.duration, 60)
+        h, m = divmod(m, 60)
+        text_min = "%02d:%02d:%02d" % (h, m, s)
+        qp.drawText(event.rect(), QtCore.Qt.AlignLeft, text_min)
 
 
 class Tail(Element):
@@ -112,7 +114,10 @@ class Tail(Element):
     def drawText(self, event, qp):
         qp.setPen(self.textColor())
         qp.setFont(QtGui.QFont('Arial', 10))
-        qp.drawText(event.rect(), QtCore.Qt.AlignRight, str(self.main.max()))
+        m, s = divmod(self.main.duration, 60)
+        h, m = divmod(m, 60)
+        text_max = "%02d:%02d:%02d" % (h, m, s)
+        qp.drawText(event.rect(), QtCore.Qt.AlignRight, text_max)
 
 
 class Handle(Element):
@@ -122,8 +127,18 @@ class Handle(Element):
     def drawText(self, event, qp):
         qp.setPen(self.textColor())
         qp.setFont(QtGui.QFont('Arial', 10))
-        qp.drawText(event.rect(), QtCore.Qt.AlignLeft, str(self.main.start()))
-        qp.drawText(event.rect(), QtCore.Qt.AlignRight, str(self.main.end()))
+        m, s = divmod(self.main.start() / self.main.max() * self.main.duration, 60)
+        h, m = divmod(m, 60)
+        text_start = "%02d:%02d:%02d" % (h, m, s)
+        if self.main.duration == 0:
+            text_start = str(self.main.start())
+        qp.drawText(event.rect(), QtCore.Qt.AlignLeft, text_start)
+        m, s = divmod(self.main.end() / self.main.max() * self.main.duration, 60)
+        h, m = divmod(m, 60)
+        text_end = "%02d:%02d:%02d" % (h, m, s)
+        if self.main.duration == 0:
+            text_end = str(self.main.end())
+        qp.drawText(event.rect(), QtCore.Qt.AlignRight, text_end)
 
     def mouseMoveEvent(self, event):
         event.accept()
@@ -149,7 +164,6 @@ class Handle(Element):
 
 
 class QRangeSlider(QtWidgets.QWidget, Ui_Form):
-
     endValueChanged = QtCore.pyqtSignal(int)
     maxValueChanged = QtCore.pyqtSignal(int)
     minValueChanged = QtCore.pyqtSignal(int)
@@ -158,28 +172,37 @@ class QRangeSlider(QtWidgets.QWidget, Ui_Form):
     _SPLIT_START = 1
     _SPLIT_END = 2
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, duration=0):
         super(QRangeSlider, self).__init__(parent)
+
+        self.duration = duration
+
         self.setupUi(self)
         self.setMouseTracking(False)
         self._splitter.splitterMoved.connect(self._handleMoveSplitter)
+
         self._head_layout = QtWidgets.QHBoxLayout()
         self._head_layout.setSpacing(0)
         self._head_layout.setContentsMargins(0, 0, 0, 0)
         self._head.setLayout(self._head_layout)
+
         self.head = Head(self._head, main=self)
         self._head_layout.addWidget(self.head)
+
         self._handle_layout = QtWidgets.QHBoxLayout()
         self._handle_layout.setSpacing(0)
         self._handle_layout.setContentsMargins(0, 0, 0, 0)
         self._handle.setLayout(self._handle_layout)
+
         self.handle = Handle(self._handle, main=self)
         self.handle.setTextColor((150, 255, 150))
         self._handle_layout.addWidget(self.handle)
+
         self._tail_layout = QtWidgets.QHBoxLayout()
         self._tail_layout.setSpacing(0)
         self._tail_layout.setContentsMargins(0, 0, 0, 0)
         self._tail.setLayout(self._tail_layout)
+
         self.tail = Tail(self._tail, main=self)
         self._tail_layout.addWidget(self.tail)
 

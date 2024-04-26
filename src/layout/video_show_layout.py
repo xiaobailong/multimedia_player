@@ -268,6 +268,7 @@ class VideoShowLayout(QVBoxLayout):
 
         position = self.player.position()
         duration = self.player.duration()
+        self.cut_bar_slider.duration = self.player.duration() / 1000
 
         value = round(position * self.bar_slider.maximum() / duration)
         self.bar_slider.setValue(value)
