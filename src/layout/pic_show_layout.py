@@ -20,6 +20,7 @@ class PicShowLayout(QVBoxLayout):
         self.main_window = main_window
         self.counter = 0
         self.path = ''
+        self.scale = (main_window.right * 4 + 3) / ((main_window.right + main_window.left) * 4)
 
         self.inputAndExeLayout = InputAndExeLayout(self)
         self.inputQWidget = QWidget()
@@ -43,10 +44,12 @@ class PicShowLayout(QVBoxLayout):
 
         self.qscrollarea = QScrollArea()
 
-        screen = ImageGrab.grab()
-        screen_width, screen_height = screen.size
-        self.screen_width = int(screen_width * main_window.left / (main_window.left + main_window.right))
-        self.screen_height = int(screen_height * main_window.left / (main_window.left + main_window.right))
+        # screen = ImageGrab.grab()
+        # self.screen_width, self.screen_height = screen.size
+        self.screen_width = int(self.main_window.width() * self.scale)
+        self.screen_height = int(self.main_window.height() * self.scale)
+        # self.screen_height = self.main_window.height()
+        # self.screen_width = self.main_window.width()
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
 
         self.qscrollarea.setWidgetResizable(True)
@@ -61,6 +64,8 @@ class PicShowLayout(QVBoxLayout):
 
         fckimage = QImage(filePath)
 
+        self.screen_width = int(self.main_window.width() * self.scale)
+        self.screen_height = int(self.main_window.height() * self.scale)
         pil_image = self.m_resize(self.screen_width, self.screen_height, fckimage)
 
         pixmap = QPixmap.fromImage(pil_image)

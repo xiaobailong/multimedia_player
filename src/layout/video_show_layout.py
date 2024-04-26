@@ -26,8 +26,8 @@ class VideoShowLayout(QVBoxLayout):
 
         self.main_window = main_window
         self.path = ''
-        self.cut_start = 0.0
-        self.cut_end = 0.0
+        self.cut_start = 0
+        self.cut_end = 1000
         self.bar_slider_maxvalue = 1000
         self.state = False
         self.pause_count = 0
@@ -152,6 +152,8 @@ class VideoShowLayout(QVBoxLayout):
 
     def slider_end(self, value):
         tangent = value / self.bar_slider_maxvalue * self.player.duration()
+        if tangent == 0:
+            return
         m, s = divmod(tangent / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
@@ -208,7 +210,7 @@ class VideoShowLayout(QVBoxLayout):
 
     # 快退
     def down_time(self):
-        num = self.player.position() - int(self.player.duration() / 20)
+        num = self.player.position() - int(self.player.duration() / 40)
         self.player.setPosition(num)
         self.onTimerOut()
 
@@ -295,6 +297,12 @@ class VideoShowLayout(QVBoxLayout):
 
         self.main_window.statusbar.setVisible(True)
 
+        if (self.cut_end - self.cut_start == self.cut_bar_slider.max()) or (self.cut_end == 0 and self.cut_start == 0):
+            times_start = self.cut_bar_edit_start.text().split(':')
+            self.cut_start = int(times_start[0]) * 3600 + int(times_start[1]) * 60 + int(times_start[2])
+            times_end = self.cut_bar_edit_end.text().split(':')
+            self.cut_end = int(times_end[0]) * 3600 + int(times_end[1]) * 60 + int(times_end[2])
+
         self.proc_thread = ProcThread(self.path, self.cut_start, self.cut_end)
         self.proc_thread.message.connect(self.video_cut_thread_message)
         self.proc_thread.progress.connect(self.video_cut_thread_progress)
@@ -302,7 +310,7 @@ class VideoShowLayout(QVBoxLayout):
         self.proc_thread.start()
 
     def video_cut_thread_message(self, value):
-        content=str(value)
+        content = str(value)
         if ':' in str(value):
             content = str(value).split(':')[0][:-2]
         else:

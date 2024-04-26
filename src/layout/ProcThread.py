@@ -18,18 +18,19 @@ class ProcThread(QThread):
 
     def run(self) -> None:
         file_name = (self.input_path.replace('.mp4', "_")
-                     + str(int(self.cut_start * 1000)).replace('.', '') + '-'
-                     + str(int(self.cut_end * 1000)).replace('.', '') + '-'
+                     + str(int(self.cut_start)).replace('.', '') + '-'
+                     + str(int(self.cut_end)).replace('.', '') + '-'
                      + time.strftime("%Y%m%d%H%M%S") + '.mp4')
 
         my_logger = BarLogger(self.message, self.progress)
 
         video = VideoFileClip(self.input_path)
         video = video.subclip(self.cut_start, self.cut_end)
-        video.write_videofile(file_name, threads=5, logger=my_logger)
+        video.write_videofile(file_name, 5, logger=my_logger)
         video.close()
 
         self.finished.emit()
+
 
 class BarLogger(ProgressBarLogger):
     actions_list = []
