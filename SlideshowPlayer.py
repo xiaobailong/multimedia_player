@@ -22,6 +22,7 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__(*args, **kwargs)
 
         self.path = ''
+        self.path_right_click = ''
         self.left = 1
         self.right = 3
 
@@ -46,7 +47,8 @@ class MainWindow(QMainWindow):
         self.model = QDirModel()
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)
-        self.treeView.setWindowTitle("")
+        self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.treeView.customContextMenuRequested.connect(self.right_click_menu)
         self.treeView.setColumnHidden(1, True)
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
@@ -68,6 +70,41 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.mainQWidget)
 
         self.show()
+
+    def right_click_menu(self, pos):
+        try:
+            f = self.treeView.currentIndex()
+            gp = QModelIndex(f)
+            self.path_right_click = self.model.filePath(gp)
+
+            self.treeView.contextMenu = QMenu()
+            self.treeView.contextMenu.action_delete = self.treeView.contextMenu.addAction(u'删除')
+            self.treeView.contextMenu.action_delete.triggered.connect(self.delete)
+            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为幻灯片')
+            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_slideshow)
+            self.treeView.contextMenu.exec_(self.mapToGlobal(pos))
+            self.treeView.contextMenu.show()
+        except Exception as e:
+            logger.error(e)
+
+    def load_for_slideshow(self):
+        if os.path.isfile(self.path_right_click):
+            return
+
+        if not self.pic_show_qwidget.isVisible():
+            self.pic_show_qwidget.setVisible(True)
+            self.video_show_qwidget.setVisible(False)
+        self.inputAndExeLayout.inputPath.setText(self.path_right_click)
+        self.inputAndExeLayout.inputPathClicked()
+
+    def delete(self):
+        try:
+            os.remove(self.path_right_click)
+            logger.info(self.path_right_click + ' 文件已删除!!!')
+            self.model.refresh()
+        except:
+            logger.error("文件删除异常!!!")
+
 
     def onTreeClicked(self, qmodelindex):
         self.path = self.model.filePath(qmodelindex)
@@ -93,6 +130,7 @@ class MainWindow(QMainWindow):
                 logger.error('文件格式错误!!!')
         else:
             logger.info("it's a special file(socket,FIFO,device file): " + self.path)
+
 
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Escape):
@@ -123,6 +161,7 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
             logger.info("shift + o")
 
+
     def full_screen_custom(self):
         if self.video_show_layout.is_video(self.path):
             self.video_show_layout.setVisible(False)
@@ -130,6 +169,7 @@ class MainWindow(QMainWindow):
             self.pic_show_layout.setVisible(False)
         self.treeView.setVisible(False)
         self.showFullScreen()
+
 
     def change_show(self, path):
         if self.video_show_layout.is_video(path):

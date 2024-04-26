@@ -180,13 +180,6 @@ class VideoShowLayout(QVBoxLayout):
 
         return qimg  # 转换完成，返回
 
-    def delete(self):
-        logger.info('delete')
-        if os.path.exists(self.path):
-            self.player.stop()
-            os.remove(self.path)
-
-    # 快进
     def up_time(self):
         num = self.player.position() + int(self.player.duration() / 100)
         self.player.setPosition(num)
