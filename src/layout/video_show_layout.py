@@ -1,3 +1,4 @@
+import os
 import time
 
 import cv2
@@ -167,9 +168,10 @@ class VideoShowLayout(QVBoxLayout):
             vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
             rval, frame = vc.read()
             if rval:
-                save_path = self.path.replace('.mp4', "_"
-                                              + str(self.player.position())
-                                              + "_" + time.strftime("%Y%m%d%H%M%S") + ".jpg")
+                (path, filename) = os.path.split(self.path)
+                (file, ext) = os.path.splitext(filename)
+                new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
+                save_path = new_path + str(self.player.position()) + "_" + time.strftime("%Y%m%d%H%M%S") + '.jpg'
                 logger.info("save_path: " + save_path)
                 cv2.imencode('.jpg', frame)[1].tofile(save_path)
                 qimg = self.CV2QImage(frame)
@@ -270,6 +272,9 @@ class VideoShowLayout(QVBoxLayout):
         duration = self.player.duration()
         self.cut_bar_slider.duration = self.player.duration() / 1000
 
+        if duration == 0:
+            return
+
         value = round(position * self.bar_slider.maximum() / duration)
         self.bar_slider.setValue(value)
         self.bar_slider.move_type = 'time'
@@ -296,37 +301,17 @@ class VideoShowLayout(QVBoxLayout):
 
     def video_cut(self):
 
-        self.main_window.statusbar.setVisible(True)
+        (path, filename) = os.path.split(self.path)
+        (file, ext) = os.path.splitext(filename)
+        new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
+        file_name = (new_path + self.cut_bar_edit_start.text().replace(':', '') + '-' + self.cut_bar_edit_end.text().replace(':', '') + '-' + time.strftime("%Y%m%d%H%M%S") + ext)
+        command = 'ffmpeg -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
+        logger.info(command)
 
-        if (self.cut_end - self.cut_start == self.cut_bar_slider.max()) or (self.cut_end == 0 and self.cut_start == 0):
-            times_start = self.cut_bar_edit_start.text().split(':')
-            self.cut_start = int(times_start[0]) * 3600 + int(times_start[1]) * 60 + int(times_start[2])
-            times_end = self.cut_bar_edit_end.text().split(':')
-            self.cut_end = int(times_end[0]) * 3600 + int(times_end[1]) * 60 + int(times_end[2])
-
-        self.proc_thread = ProcThread(self.path, self.cut_start, self.cut_end)
-        self.proc_thread.message.connect(self.video_cut_thread_message)
-        self.proc_thread.progress.connect(self.video_cut_thread_progress)
+        self.proc_thread = ProcThread(command, file_name)
         self.proc_thread.finished.connect(self.video_cut_thread_finished)
         self.proc_thread.start()
 
-    def video_cut_thread_message(self, value):
-        content = str(value)
-        if ':' in str(value):
-            content = str(value).split(':')[0][:-2]
-        else:
-            content = str(value).split('n ')[0][:-2]
-
-        self.main_window.statusLabel.setText(content)
-        # logger.info('thread_message:' + content)
-        # logger.info('thread_message:' + str(value))
-
-    def video_cut_thread_progress(self, value):
-        self.main_window.progressBar.setValue(value)
-        # logger.info('thread_progress:' + str(value))
-
     def video_cut_thread_finished(self):
-        time.sleep(3)
         self.main_window.model.refresh()
-        self.main_window.statusbar.setVisible(False)
-        # QMessageBox.information(self.main_window, '处理完成', '操作完成', QMessageBox.Yes)
+        QMessageBox.information(self.main_window, '剪切完成', '剪切完成', QMessageBox.Yes)

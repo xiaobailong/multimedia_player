@@ -1,50 +1,24 @@
-import time
+import os
+from loguru import logger
 
 from PyQt5.QtCore import QThread, pyqtSignal
-from moviepy.video.io.VideoFileClip import VideoFileClip
-from proglog import ProgressBarLogger
 
+logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
+           filter="",
+           level="INFO")
 
 class ProcThread(QThread):
-    progress = pyqtSignal(int)
-    message = pyqtSignal(str)
     finished = pyqtSignal()
 
-    def __init__(self, input_path, cut_start, cut_end, parent=None):
+    def __init__(self, command, file_name, parent=None):
         super(ProcThread, self).__init__(parent)
-        self.input_path = input_path
-        self.cut_start = cut_start
-        self.cut_end = cut_end
+        self.command = command
+        self.file_name = file_name
 
     def run(self) -> None:
-        file_name = (self.input_path.replace('.mp4', "_")
-                     + str(int(self.cut_start)).replace('.', '') + '-'
-                     + str(int(self.cut_end)).replace('.', '') + '-'
-                     + time.strftime("%Y%m%d%H%M%S") + '.mp4')
 
-        my_logger = BarLogger(self.message, self.progress)
+        p = os.popen(self.command)
 
-        video = VideoFileClip(self.input_path)
-        video = video.subclip(self.cut_start, self.cut_end)
-        video.write_videofile(file_name, 5, logger=my_logger)
-        video.close()
+        logger.info(p)
 
         self.finished.emit()
-
-
-class BarLogger(ProgressBarLogger):
-    actions_list = []
-
-    def __init__(self, message, progress):
-        self.message = message
-        self.progress = progress
-        super(BarLogger, self).__init__()
-
-    def callback(self, **changes):
-        bars = self.state.get('bars')
-        index = len(bars.values()) - 1
-        if index > -1:
-            bar = list(bars.values())[index]
-            progress = int(bar['index'] / bar['total'] * 100)
-            self.progress.emit(progress)
-        if 'message' in changes: self.message.emit(changes['message'])
