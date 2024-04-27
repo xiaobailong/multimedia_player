@@ -11,7 +11,7 @@ from PyQt5.QtCore import *
 from loguru import logger
 from PIL import ImageGrab
 
-from src.layout.ProcThread import ProcThread
+from src.layout.video_cut_thread import VideoCutThread
 from src.layout.click_jump_slider import ClickJumpSlider
 from src.layout.range_slider import QRangeSlider
 
@@ -143,68 +143,6 @@ class VideoShowLayout(QVBoxLayout):
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.onTimerOut)
 
-    def slider_start(self, value):
-        tangent = value / self.bar_slider_maxvalue * self.player.duration()
-        m, s = divmod(tangent / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.cut_bar_edit_start.setText(text)
-        self.cut_start = int(tangent / 1000)
-
-    def slider_end(self, value):
-        tangent = value / self.bar_slider_maxvalue * self.player.duration()
-        if tangent == 0:
-            return
-        m, s = divmod(tangent / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.cut_bar_edit_end.setText(text)
-        self.cut_end = int(tangent / 1000)
-
-    def take_screenshot(self):
-
-        try:
-            vc = cv2.VideoCapture(self.path)
-            vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
-            rval, frame = vc.read()
-            if rval:
-                (path, filename) = os.path.split(self.path)
-                (file, ext) = os.path.splitext(filename)
-                new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
-                save_path = new_path + str(self.player.position()) + "_" + time.strftime("%Y%m%d%H%M%S") + '.jpg'
-                logger.info("save_path: " + save_path)
-                cv2.imencode('.jpg', frame)[1].tofile(save_path)
-                qimg = self.CV2QImage(frame)
-
-                mime_data = QMimeData()
-                mime_data.setImageData(qimg)
-                QApplication.clipboard().setMimeData(mime_data)
-
-                self.main_window.model.refresh()
-            else:
-                logger.info("视频加载失败失败")
-        except Exception as e:
-            logger.info(f"获取视频封面图失败: {e}")
-
-    def CV2QImage(self, cv_image):
-
-        width = cv_image.shape[1]
-        height = cv_image.shape[0]
-
-        pixmap = QPixmap(width, height)
-        qimg = pixmap.toImage()
-
-        for row in range(0, height):
-            for col in range(0, width):
-                b = cv_image[row, col, 0]
-                g = cv_image[row, col, 1]
-                r = cv_image[row, col, 2]
-
-                pix = qRgb(r, g, b)
-                qimg.setPixel(col, row, pix)
-
-        return qimg  # 转换完成，返回
-
     def up_time(self):
         num = self.player.position() + int(self.player.duration() / 100)
         self.player.setPosition(num)
@@ -212,7 +150,7 @@ class VideoShowLayout(QVBoxLayout):
 
     # 快退
     def down_time(self):
-        num = self.player.position() - int(self.player.duration() / 40)
+        num = self.player.position() - int(self.player.duration() / 80)
         self.player.setPosition(num)
         self.onTimerOut()
 
@@ -245,6 +183,36 @@ class VideoShowLayout(QVBoxLayout):
                 self.player.setPosition(0)
                 self.player.play()
 
+    def play(self, filePath):
+        logger.info(filePath)
+
+        self.titleQLabel.setText(filePath)
+        self.path = filePath
+
+        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
+        self.player.play()
+        self.state = True
+
+        self.timer.start()
+
+    def slider_start(self, value):
+        tangent = value / self.bar_slider_maxvalue * self.player.duration()
+        m, s = divmod(tangent / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.cut_bar_edit_start.setText(text)
+        self.cut_start = int(tangent / 1000)
+
+    def slider_end(self, value):
+        tangent = value / self.bar_slider_maxvalue * self.player.duration()
+        if tangent == 0:
+            return
+        m, s = divmod(tangent / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.cut_bar_edit_end.setText(text)
+        self.cut_end = int(tangent / 1000)
+
     def slider_progress_moved(self):
 
         if self.bar_slider.move_type != 'time':
@@ -254,17 +222,6 @@ class VideoShowLayout(QVBoxLayout):
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.bar_label.setText('已播放:' + text)
-
-    def fcku(self, filePath):
-        logger.info(filePath)
-        self.titleQLabel.setText(filePath)
-        self.path = filePath
-
-        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
-        self.player.play()
-        self.state = True
-
-        self.timer.start()
 
     def onTimerOut(self):
 
@@ -299,6 +256,27 @@ class VideoShowLayout(QVBoxLayout):
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
 
+    def take_screenshot(self):
+        try:
+            vc = cv2.VideoCapture(self.path)
+            vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
+            rval, frame = vc.read()
+
+            if rval:
+                (path, filename) = os.path.split(self.path)
+                (file, ext) = os.path.splitext(filename)
+                new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
+                save_path = new_path + str(self.player.position()) + "_" + time.strftime("%Y%m%d%H%M%S") + '.jpg'
+                cv2.imencode('.jpg', frame)[1].tofile(save_path)
+
+                if os.path.exists(save_path):
+                    self.notice('截图成功，保存到 ' + save_path)
+                    self.main_window.model.refresh()
+            else:
+                logger.info("视频加载失败失败")
+        except Exception as e:
+            logger.info(f"获取视频封面图失败: {e}")
+
     def video_cut(self):
 
         (path, filename) = os.path.split(self.path)
@@ -308,10 +286,17 @@ class VideoShowLayout(QVBoxLayout):
         command = 'ffmpeg -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
         logger.info(command)
 
-        self.proc_thread = ProcThread(command, file_name)
-        self.proc_thread.finished.connect(self.video_cut_thread_finished)
-        self.proc_thread.start()
+        self.video_cut_thread = VideoCutThread(command, file_name)
+        self.video_cut_thread.finished.connect(self.video_cut_thread_finished)
+        self.video_cut_thread.start()
 
-    def video_cut_thread_finished(self):
-        self.main_window.model.refresh()
-        QMessageBox.information(self.main_window, '剪切完成', '剪切完成', QMessageBox.Yes)
+    def video_cut_thread_finished(self, file_name):
+        while not os.path.exists(file_name):
+            time.sleep(1)
+            if os.path.exists(file_name):
+                self.notice('视频剪切成功，保存到 ' + file_name)
+                self.main_window.model.refresh()
+                return
+
+    def notice(self, content):
+        self.main_window.statusLabel.setText(content)

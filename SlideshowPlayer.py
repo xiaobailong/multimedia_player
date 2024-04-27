@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.pic_show_qwidget.setLayout(self.pic_show_layout)
 
         self.model = QDirModel()
+        self.model.sort(3)
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)
         self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -81,16 +82,17 @@ class MainWindow(QMainWindow):
         # 定义文本标签
         self.statusLabel = QLabel()
         # 设置文本标签显示内容
-        self.statusLabel.setText("进度")
-        # 定义水平进度条
-        self.progressBar = QProgressBar()
-        # 设置进度条的范围，参数1为最小值，参数2为最大值（可以调得更大，比如1000
-        self.progressBar.setRange(0, 100)
-        # 设置进度条的初始值
-        self.progressBar.setValue(0)
+        self.statusLabel.setText("状态栏")
         self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
-        self.statusbar.addPermanentWidget(self.progressBar, stretch=4)
-        self.statusbar.setVisible(False)
+        # # 定义水平进度条
+        # self.progressBar = QProgressBar()
+        # # 设置进度条的范围，参数1为最小值，参数2为最大值（可以调得更大，比如1000
+        # self.progressBar.setRange(0, 100)
+        # # 设置进度条的初始值
+        # self.progressBar.setValue(0)
+        # self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
+        # self.statusbar.addPermanentWidget(self.progressBar, stretch=1)
+        # self.statusbar.setVisible(False)
 
         self.show()
 
@@ -143,7 +145,7 @@ class MainWindow(QMainWindow):
         elif os.path.isfile(self.path):
             self.change_show(self.path)
             if self.video_show_layout.is_video(self.path):
-                self.video_show_layout.fcku(self.model.filePath(qmodelindex))
+                self.video_show_layout.play(self.model.filePath(qmodelindex))
             elif self.pic_show_layout.is_pic(self.path):
                 self.pic_show_layout.fcku(self.model.filePath(qmodelindex))
             else:
