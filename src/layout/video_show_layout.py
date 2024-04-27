@@ -11,7 +11,7 @@ from loguru import logger
 from PIL import ImageGrab
 
 from src.layout.video_cut_thread import VideoCutThread
-from src.layout.click_jump_slider import ClickJumpSlider
+from src.layout.custom_slider import CustomSlider
 from src.layout.range_slider import QRangeSlider
 
 logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
@@ -57,7 +57,7 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_hbox = QHBoxLayout()
         self.bar_hbox.setObjectName("bar_hbox")
 
-        self.bar_slider = ClickJumpSlider(Qt.Horizontal)
+        self.bar_slider = CustomSlider(Qt.Horizontal)
         self.bar_slider.valueChanged.connect(self.slider_progress_moved)
         self.bar_slider.setObjectName("bar_slider")
         self.bar_slider.setMaximum(self.bar_slider_maxvalue)

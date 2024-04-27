@@ -2,7 +2,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle
 
 
-class ClickJumpSlider(QSlider):
+class CustomSlider(QSlider):
 
     def __init__(self, *__args):
         super().__init__( *__args)
@@ -17,7 +17,7 @@ class ClickJumpSlider(QSlider):
         rect = self.style().subControlRect(QStyle.CC_Slider, option, QStyle.SC_SliderHandle, self)
 
         if rect.contains(event.pos()):
-            super(ClickJumpSlider, self).mousePressEvent(event)
+            super(CustomSlider, self).mousePressEvent(event)
             return
         if self.orientation() == Qt.Horizontal:
             self.setValue(self.style().sliderValueFromPosition(
