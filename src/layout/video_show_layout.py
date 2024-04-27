@@ -2,7 +2,6 @@ import os
 import time
 
 import cv2
-from PyQt5.QtGui import QPixmap, qRgb
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import *
@@ -184,8 +183,6 @@ class VideoShowLayout(QVBoxLayout):
                 self.player.play()
 
     def play(self, filePath):
-        logger.info(filePath)
-
         self.titleQLabel.setText(filePath)
         self.path = filePath
 
@@ -270,10 +267,10 @@ class VideoShowLayout(QVBoxLayout):
                 cv2.imencode('.jpg', frame)[1].tofile(save_path)
 
                 if os.path.exists(save_path):
-                    self.notice('截图成功，保存到 ' + save_path)
+                    self.main_window.notice('截图成功，保存到 ' + save_path)
                     self.main_window.model.refresh()
             else:
-                logger.info("视频加载失败失败")
+                self.main_window.notice("截图视频加载失败失败!!!")
         except Exception as e:
             logger.info(f"获取视频封面图失败: {e}")
 
@@ -294,9 +291,6 @@ class VideoShowLayout(QVBoxLayout):
         while not os.path.exists(file_name):
             time.sleep(1)
             if os.path.exists(file_name):
-                self.notice('视频剪切成功，保存到 ' + file_name)
+                self.main_window.notice('视频剪切成功，保存到 ' + file_name)
                 self.main_window.model.refresh()
                 return
-
-    def notice(self, content):
-        self.main_window.statusLabel.setText(content)

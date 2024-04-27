@@ -3,7 +3,6 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import (QPixmap, QImage)
 
 from loguru import logger
-from PIL import ImageGrab
 
 from src.layout.input_and_exe_layout import InputAndExeLayout
 
@@ -44,20 +43,15 @@ class PicShowLayout(QVBoxLayout):
 
         self.qscrollarea = QScrollArea()
 
-        # screen = ImageGrab.grab()
-        # self.screen_width, self.screen_height = screen.size
         self.screen_width = int(self.main_window.width() * self.scale)
         self.screen_height = int(self.main_window.height() * self.scale)
-        # self.screen_height = self.main_window.height()
-        # self.screen_width = self.main_window.width()
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
 
         self.qscrollarea.setWidgetResizable(True)
         self.qscrollarea.setWidget(self.pictureQLabel)
         self.addWidget(self.qscrollarea)
 
-    def fcku(self, filePath):
-        logger.info(filePath)
+    def play(self, filePath):
         self.path = filePath
 
         self.titleQLabel.setText(filePath)
@@ -103,7 +97,7 @@ class PicShowLayout(QVBoxLayout):
         if len(self.inputAndExeLayout.list_files) == 0:
             return
         img_path = self.inputAndExeLayout.list_files[self.counter]
-        self.fcku(img_path)
+        self.play(img_path)
 
     def up(self):
         self.counter += 1
@@ -115,7 +109,7 @@ class PicShowLayout(QVBoxLayout):
 
     def start_process(self):
         self.inputAndExeLayout.timer.start()
-        self.fcku(self.inputAndExeLayout.list_files[self.counter])
+        self.play(self.inputAndExeLayout.list_files[self.counter])
 
     def startProcessWithFullScreen(self):
         self.start_process()

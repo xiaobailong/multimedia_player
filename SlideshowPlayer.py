@@ -4,16 +4,9 @@ from PyQt5.QtWidgets import QApplication
 
 import sys, os
 
-from loguru import logger
-
 from src.layout.pic_show_layout import PicShowLayout
 from src.layout.video_show_layout import VideoShowLayout
 from src.data_manager.DataManager import DataManager
-
-logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
-           filter="",
-           level="INFO")
-
 
 class MainWindow(QMainWindow):
     pause = False
@@ -71,28 +64,13 @@ class MainWindow(QMainWindow):
         self.mainQWidget.setLayout(self.layout)
         self.setCentralWidget(self.mainQWidget)
 
-        # 定义状态栏
         self.statusbar = QStatusBar(self)
-        # 将状态栏设置为当前窗口的状态栏
         self.setStatusBar(self.statusbar)
-        # 设置状态栏的对象名称
         self.statusbar.setObjectName("statusbar")
-        # 设置状态栏样式
         self.statusbar.setStyleSheet('QStatusBar::item {border: none;}')
-        # 定义文本标签
         self.statusLabel = QLabel()
-        # 设置文本标签显示内容
         self.statusLabel.setText("状态栏")
         self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
-        # # 定义水平进度条
-        # self.progressBar = QProgressBar()
-        # # 设置进度条的范围，参数1为最小值，参数2为最大值（可以调得更大，比如1000
-        # self.progressBar.setRange(0, 100)
-        # # 设置进度条的初始值
-        # self.progressBar.setValue(0)
-        # self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
-        # self.statusbar.addPermanentWidget(self.progressBar, stretch=1)
-        # self.statusbar.setVisible(False)
 
         self.show()
 
@@ -110,7 +88,7 @@ class MainWindow(QMainWindow):
             self.treeView.contextMenu.exec_(self.mapToGlobal(pos))
             self.treeView.contextMenu.show()
         except Exception as e:
-            logger.error(e)
+            self.notice(e)
 
     def load_for_slideshow(self):
         if os.path.isfile(self.path_right_click):
@@ -125,10 +103,10 @@ class MainWindow(QMainWindow):
     def delete(self):
         try:
             os.remove(self.path_right_click)
-            logger.info(self.path_right_click + ' 文件已删除!!!')
+            self.notice(self.path_right_click + ' 文件已删除!!!')
             self.model.refresh()
         except:
-            logger.error("文件删除异常!!!")
+            self.notice("文件删除异常!!!")
 
     def onTreeClicked(self, qmodelindex):
         self.path = self.model.filePath(qmodelindex)
@@ -147,13 +125,13 @@ class MainWindow(QMainWindow):
             if self.video_show_layout.is_video(self.path):
                 self.video_show_layout.play(self.model.filePath(qmodelindex))
             elif self.pic_show_layout.is_pic(self.path):
-                self.pic_show_layout.fcku(self.model.filePath(qmodelindex))
+                self.pic_show_layout.play(self.model.filePath(qmodelindex))
             else:
                 self.video_show_layout.titleQLabel.setText('文件格式错误!!!')
                 self.pic_show_layout.titleQLabel.setText('文件格式错误!!!')
-                logger.error('文件格式错误!!!')
+                self.notice('文件格式错误!!!')
         else:
-            logger.info("it's a special file(socket,FIFO,device file): " + self.path)
+            self.notice("非法文件路径: " + self.path)
 
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Escape):
@@ -164,7 +142,6 @@ class MainWindow(QMainWindow):
             self.treeView.setVisible(True)
             self.showNormal()
         if (event.key() == Qt.Key_Left):
-            # logger.info('测试：Key_Left')
             self.video_show_layout.down_time()
             self.pic_show_layout.down()
         if (event.key() == Qt.Key_Right):
@@ -182,7 +159,7 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_S):
             self.video_show_layout.take_screenshot()
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
-            logger.info("shift + o")
+            self.notice("shift + o")
 
     def full_screen_custom(self):
         if self.video_show_layout.is_video(self.path):
@@ -201,6 +178,9 @@ class MainWindow(QMainWindow):
             if not self.pic_show_qwidget.isVisible():
                 self.pic_show_qwidget.setVisible(True)
                 self.video_show_qwidget.setVisible(False)
+
+    def notice(self, content):
+        self.statusLabel.setText(content)
 
 
 if __name__ == '__main__':
