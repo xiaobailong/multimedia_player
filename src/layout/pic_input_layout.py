@@ -9,7 +9,7 @@ logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, fo
            level="INFO")
 
 
-class InputAndExeLayout(QHBoxLayout):
+class PicInputLayout(QHBoxLayout):
     list_files = list()
 
     def __init__(self, pic_show_layout, *args, **kwargs):

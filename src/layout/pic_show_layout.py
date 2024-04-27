@@ -4,7 +4,7 @@ from PyQt5.QtGui import (QPixmap, QImage)
 
 from loguru import logger
 
-from src.layout.input_and_exe_layout import InputAndExeLayout
+from src.layout.pic_input_layout import PicInputLayout
 
 logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
            filter="",
@@ -21,7 +21,7 @@ class PicShowLayout(QVBoxLayout):
         self.path = ''
         self.scale = (main_window.right * 4 + 3) / ((main_window.right + main_window.left) * 4)
 
-        self.inputAndExeLayout = InputAndExeLayout(self)
+        self.inputAndExeLayout = PicInputLayout(self)
         self.inputQWidget = QWidget()
         self.inputAndExeLayout.setContentsMargins(0, 0, 0, 0)
         self.inputQWidget.setLayout(self.inputAndExeLayout)
