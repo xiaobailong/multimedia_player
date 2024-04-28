@@ -11,7 +11,11 @@
 
 `https://github.com/Nevcairiel/LAVFilters/releases`
 
-选择合适版本下载即可。
+下载举例如下
+
+![img.png](img/img_lavfilters_download.png)
+
+选择合适版本下载即可，下载后双击文件安装。
 
 ### ffmpeg
 ffmpeg的官方网站是：
