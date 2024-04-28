@@ -10,12 +10,13 @@ logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, fo
 
 
 class PicInputLayout(QHBoxLayout):
-    list_files = list()
+    pic_show_list_key = 'pic.show.list'
 
     def __init__(self, pic_show_layout, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
 
-        self.pic_show_layout=pic_show_layout
+        self.pic_show_layout = pic_show_layout
+        self.list_files = list()
 
         self.inputPathTitle = QLabel()
         self.inputPathTitle.setText("文件路径:")

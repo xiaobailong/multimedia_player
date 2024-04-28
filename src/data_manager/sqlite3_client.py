@@ -5,10 +5,8 @@ from loguru import logger
 
 class Sqlite3Client:
 
-    conn = sqlite3.connect(':memory:')
-
     def __init__(self, *args, **kwargs):
-        self.conn = sqlite3.connect('slideshow_player.db')
+        self.conn = sqlite3.connect('player.db')
 
     def showData(self,sql):
         c = self.conn.cursor()

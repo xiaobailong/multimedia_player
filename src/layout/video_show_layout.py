@@ -10,6 +10,7 @@ from PyQt5.QtCore import *
 from loguru import logger
 from PIL import ImageGrab
 
+from src.data_manager.config_manager import ConfigManager
 from src.layout.video_cut_thread import VideoCutThread
 from src.layout.custom_slider import CustomSlider
 from src.layout.range_slider import QRangeSlider
@@ -20,6 +21,10 @@ logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, fo
 
 
 class VideoShowLayout(QVBoxLayout):
+    video_show_list_key = 'video.show.list'
+    video_show_path_key = 'video.show.path'
+    video_screenshot_path_key = 'video.screenshot.path'
+    video_cut_path_key = 'video.cut.path'
 
     def __init__(self, main_window, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
@@ -31,6 +36,7 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_slider_maxvalue = 1000
         self.state = False
         self.pause_count = 0
+        self.config_manager = ConfigManager()
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -121,7 +127,7 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_hbox.addWidget(self.cut_btn)
 
         self.screenshot_button = QPushButton('截图')
-        self.screenshot_button.clicked.connect(self.take_screenshot)
+        self.screenshot_button.clicked.connect(self.screenshot)
         self.bar_hbox.addWidget(self.screenshot_button)
 
         self.fullScreenBtn = QPushButton("全屏")
@@ -253,7 +259,7 @@ class VideoShowLayout(QVBoxLayout):
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
 
-    def take_screenshot(self):
+    def screenshot(self):
         try:
             vc = cv2.VideoCapture(self.path)
             vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
@@ -263,6 +269,9 @@ class VideoShowLayout(QVBoxLayout):
                 (path, filename) = os.path.split(self.path)
                 (file, ext) = os.path.splitext(filename)
                 new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
+                if self.config_manager.exist(VideoShowLayout.video_screenshot_path_key):
+                    new_path = self.config_manager.get(VideoShowLayout.video_screenshot_path_key) + os.sep + file + '_'
+
                 save_path = new_path + str(self.player.position()) + "_" + time.strftime("%Y%m%d%H%M%S") + '.jpg'
                 cv2.imencode('.jpg', frame)[1].tofile(save_path)
 
@@ -279,7 +288,12 @@ class VideoShowLayout(QVBoxLayout):
         (path, filename) = os.path.split(self.path)
         (file, ext) = os.path.splitext(filename)
         new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
-        file_name = (new_path + self.cut_bar_edit_start.text().replace(':', '') + '-' + self.cut_bar_edit_end.text().replace(':', '') + '-' + time.strftime("%Y%m%d%H%M%S") + ext)
+        if self.config_manager.exist(VideoShowLayout.video_cut_path_key):
+            new_path = self.config_manager.get(VideoShowLayout.video_cut_path_key) + os.sep + file + '_'
+
+        file_name = (new_path + self.cut_bar_edit_start.text().replace(':',
+                                                                       '') + '-' + self.cut_bar_edit_end.text().replace(
+            ':', '') + '-' + time.strftime("%Y%m%d%H%M%S") + ext)
         command = 'ffmpeg -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
         logger.info(command)
 

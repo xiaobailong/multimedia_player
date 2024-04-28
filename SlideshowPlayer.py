@@ -4,9 +4,15 @@ from PyQt5.QtWidgets import QApplication
 
 import sys, os
 
+from src.data_manager.config_manager import ConfigManager
+from src.layout.pic_input_layout import PicInputLayout
 from src.layout.pic_show_layout import PicShowLayout
 from src.layout.video_show_layout import VideoShowLayout
-from src.data_manager.DataManager import DataManager
+
+import warnings
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 
 class MainWindow(QMainWindow):
     pause = False
@@ -19,10 +25,10 @@ class MainWindow(QMainWindow):
         self.path_right_click = ''
         self.left = 1
         self.right = 3
+        self.config_manager = ConfigManager()
 
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
-        self.dataManager = DataManager()
 
         self.layout = QHBoxLayout()
 
@@ -83,16 +89,42 @@ class MainWindow(QMainWindow):
             self.treeView.contextMenu = QMenu()
             self.treeView.contextMenu.action_delete = self.treeView.contextMenu.addAction(u'删除')
             self.treeView.contextMenu.action_delete.triggered.connect(self.delete)
-            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为幻灯片')
-            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_slideshow)
+            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为幻灯片列表')
+            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_pic_show)
+            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为视频列表')
+            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_lise)
+            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置为截图路径')
+            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_screenshot)
+            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置为剪切路径')
+            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_cut)
+
             self.treeView.contextMenu.exec_(self.mapToGlobal(pos))
-            self.treeView.contextMenu.show()
         except Exception as e:
             self.notice(e)
 
-    def load_for_slideshow(self):
+    def load_for_video_screenshot(self):
         if os.path.isfile(self.path_right_click):
             return
+
+        self.config_manager.add_or_update(VideoShowLayout.video_screenshot_path_key, self.path_right_click)
+
+    def load_for_video_cut(self):
+        if os.path.isfile(self.path_right_click):
+            return
+
+        self.config_manager.add_or_update(VideoShowLayout.video_cut_path_key, self.path_right_click)
+
+    def load_for_video_lise(self):
+        if os.path.isfile(self.path_right_click):
+            return
+
+        self.config_manager.add_or_update(VideoShowLayout.video_show_list_key, self.path_right_click)
+
+    def load_for_pic_show(self):
+        if os.path.isfile(self.path_right_click):
+            return
+
+        self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.path_right_click)
 
         if not self.pic_show_qwidget.isVisible():
             self.pic_show_qwidget.setVisible(True)
@@ -157,7 +189,7 @@ class MainWindow(QMainWindow):
             self.video_show_layout.down_time()
             self.pic_show_layout.down()
         if (event.key() == Qt.Key_S):
-            self.video_show_layout.take_screenshot()
+            self.video_show_layout.screenshot()
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
             self.notice("shift + o")
 
