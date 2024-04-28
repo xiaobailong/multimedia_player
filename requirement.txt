@@ -1,6 +1,4 @@
 opencv-python==4.7.0.72
-moviepy=1.0.3
-PyQt5=12.13.0
-loguru=0.7.0
-sqlite3
-pillow=10.0.1
+PyQt5==5.15.10
+loguru==0.7.0
+pillow==10.0.1

@@ -254,7 +254,7 @@ class VideoShowLayout(QVBoxLayout):
             self.timer.stop()
 
     def is_video(self, path):
-        return path.lower().endswith(('.mp4'))
+        return path.lower().endswith(('.mp4','.mkv'))
 
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
