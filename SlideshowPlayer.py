@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
             self.pic_show_qwidget.setVisible(True)
             self.video_show_qwidget.setVisible(False)
         self.inputAndExeLayout.inputPath.setText(self.path_right_click)
-        self.inputAndExeLayout.inputPathClicked()
+        self.inputAndExeLayout.input_path_clicked()
 
     def delete(self):
         try:
@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
                 self.pic_show_qwidget.setVisible(True)
                 self.video_show_qwidget.setVisible(False)
             self.inputAndExeLayout.inputPath.setText(self.path)
-            self.inputAndExeLayout.inputPathClicked()
+            self.inputAndExeLayout.input_path_clicked()
         elif os.path.isfile(self.path):
             self.change_show(self.path)
             if self.video_show_layout.is_video(self.path):

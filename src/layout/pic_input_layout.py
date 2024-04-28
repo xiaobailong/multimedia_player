@@ -4,6 +4,8 @@ import os
 
 from loguru import logger
 
+from src.data_manager.config_manager import ConfigManager
+
 logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
            filter="",
            level="INFO")
@@ -15,8 +17,10 @@ class PicInputLayout(QHBoxLayout):
     def __init__(self, pic_show_layout, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
 
+        self.content_path = ''
         self.pic_show_layout = pic_show_layout
         self.list_files = list()
+        self.config_manager = ConfigManager()
 
         self.inputPathTitle = QLabel()
         self.inputPathTitle.setText("文件路径:")
@@ -26,6 +30,9 @@ class PicInputLayout(QHBoxLayout):
         self.inputPath = QLineEdit()
         self.inputPath.setMaxLength(1000)
         self.inputPath.setPlaceholderText("输入文件路径")
+        if self.config_manager.exist(PicInputLayout.pic_show_list_key):
+            history_path = self.config_manager.get(PicInputLayout.pic_show_list_key)
+            self.inputPath.setText(history_path)
         self.addWidget(self.inputPath)
 
         self.getPathBtn = QPushButton("获取路径")
@@ -53,8 +60,8 @@ class PicInputLayout(QHBoxLayout):
         self.setContentsMargins(0, 0, 0, 0)
 
         self.inputPath.textEdited.connect(self.text_edited)
-        self.getPathBtn.pressed.connect(self.inputPathClicked)
-        self.inputInterval.textEdited.connect(self.inputInterval_text_edited)
+        self.getPathBtn.pressed.connect(self.input_path_clicked)
+        self.inputInterval.textEdited.connect(self.input_interval_text_edited)
 
         self.timer = QTimer()
         self.timer.setInterval(5 * 1000)
@@ -68,16 +75,17 @@ class PicInputLayout(QHBoxLayout):
         self.content_path = s
         self.loadData()
 
-    def inputPathClicked(self):
+    def input_path_clicked(self):
         if len(self.inputPath.text()) == 0:
             selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
             self.inputPath.setText(selected_path)
 
         self.content_path = self.inputPath.text()
+        self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.content_path)
         self.loadData()
         logger.info(self.content_path)
 
-    def inputInterval_text_edited(self, s):
+    def input_interval_text_edited(self, s):
         if self.is_number(s):
             newTime = int(s) * 1000
             self.timer.setInterval(newTime)
