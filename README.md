@@ -46,3 +46,9 @@ ffmpeg安装成功验证：
 下载代码后双击以下文件即可运行
 
 ![img.png](img/img_run.png)
+
+## 感谢
+
+您的鼓励是我的动力，一块两块不嫌少，感谢您的赞助
+
+![pay.jpg](img/pay.jpg)
