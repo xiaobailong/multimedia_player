@@ -119,6 +119,8 @@ class MainWindow(QMainWindow):
             return
 
         self.config_manager.add_or_update(VideoShowLayout.video_show_list_key, self.path_right_click)
+        self.video_show_layout.loadData(self.path_right_click)
+        self.change_show(self.video_show_layout.play_list.pop(self.video_show_layout.play_list_index))
 
     def load_for_pic_show(self):
         if os.path.isfile(self.path_right_click):
@@ -155,6 +157,7 @@ class MainWindow(QMainWindow):
         elif os.path.isfile(self.path):
             self.change_show(self.path)
             if self.video_show_layout.is_video(self.path):
+                self.video_show_layout.play_mode = 0
                 self.video_show_layout.play(self.model.filePath(qmodelindex))
             elif self.pic_show_layout.is_pic(self.path):
                 self.pic_show_layout.play(self.model.filePath(qmodelindex))

@@ -37,6 +37,9 @@ class VideoShowLayout(QVBoxLayout):
         self.state = False
         self.pause_count = 0
         self.config_manager = ConfigManager()
+        self.play_list = []
+        self.play_list_index = 0
+        self.play_mode = 0
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -82,6 +85,11 @@ class VideoShowLayout(QVBoxLayout):
         self.stop_btn.setText("暂停")
         self.stop_btn.clicked.connect(self.run_or_stop)
         self.bar_hbox.addWidget(self.stop_btn)
+
+        self.list_btn = QPushButton()
+        self.list_btn.setText("播放列表")
+        self.list_btn.clicked.connect(self.run_list)
+        self.bar_hbox.addWidget(self.list_btn)
 
         self.up_btn = QPushButton()
         self.up_btn.setText("快进")
@@ -147,6 +155,15 @@ class VideoShowLayout(QVBoxLayout):
         self.timer = QTimer()  # 定义定时器
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.onTimerOut)
+
+    def run_list(self):
+        if len(self.play_list) == 0 or len(self.play_list) == self.play_list_index:
+            self.main_window.notice('列表未加载或已全部播放完毕')
+            self.play_mode = 0
+            return
+        self.play_mode = 1
+        self.play(self.play_list.pop(self.play_list_index))
+        self.play_list_index += 1
 
     def up_time(self):
         num = self.player.position() + int(self.player.duration() / 100)
@@ -249,12 +266,15 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_label_all.setText('总时长:' + text)
 
         if self.player.position() == self.player.duration():
+            if self.play_mode == 1:
+                self.run_list()
+                return
             self.stop_btn.setText("播放")
             self.state = False
             self.timer.stop()
 
     def is_video(self, path):
-        return path.lower().endswith(('.mp4','.mkv'))
+        return path.lower().endswith(('.mp4', '.mkv'))
 
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
@@ -308,3 +328,14 @@ class VideoShowLayout(QVBoxLayout):
                 self.main_window.notice('视频剪切成功，保存到 ' + file_name)
                 self.main_window.model.refresh()
                 return
+
+    def loadData(self, path):
+        if len(self.play_list) > 0:
+            self.play_list.clear()
+            self.play_list_index = 0
+
+        for root, dirs, files in os.walk(r"" + path):
+            for file in files:
+                video_path = os.path.join(root, file)
+                if self.is_video(video_path):
+                    self.play_list.append(video_path)
