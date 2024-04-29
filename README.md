@@ -17,34 +17,6 @@
 
 选择合适版本下载即可，下载后双击文件安装。
 
-### ffmpeg
-ffmpeg的官方网站是：
-
-`http://ffmpeg.org/`
-
-可在Windows可用版本的下载地址列表页面选择需要的版本：
-
-`https://www.gyan.dev/ffmpeg/builds/`
-
-Window版本下载地址：
-
-`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip`
-
-ffmpeg安装:
-
-下载完成后直接进行解压，然后配置环境变量
-![img.png](img/img_files.png)
-![img.png](img/img_computer_properties.png)
-![img.png](img/img_advanced_settings.png)
-![img.png](img/img_environment_variables.png)
-如下，配置为自己的ffmpeg解压路径即可
-![img.png](img/img_path.png)
-
-ffmpeg安装成功验证：
-
-打开命令提示符窗口。输入命令“ffmpeg –version”。如果命令提示窗口返回FFmpeg的版本信息，那么就说明安装成功了。
-![img.png](img/img_ffmpeg_version.png)
-
 ## 软件运行
 
 下载代码后双击以下文件即可运行

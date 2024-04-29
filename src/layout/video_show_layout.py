@@ -357,7 +357,7 @@ class VideoShowLayout(QVBoxLayout):
         file_name = (new_path + self.cut_bar_edit_start.text().replace(':',
                                                                        '') + '-' + self.cut_bar_edit_end.text().replace(
             ':', '') + '-' + time.strftime("%Y%m%d%H%M%S") + ext)
-        command = 'img -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
+        command = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
         logger.info(command)
 
         self.video_cut_thread = VideoCutThread(command, file_name)
