@@ -15,7 +15,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 
 class MainWindow(QMainWindow):
-    pause = False
+    show_type_video = 'video'
+    show_type_pic = 'pic'
 
     def __init__(self, *args, **kwargs):
 
@@ -120,19 +121,16 @@ class MainWindow(QMainWindow):
 
         self.config_manager.add_or_update(VideoShowLayout.video_show_list_key, self.path_right_click)
         self.video_show_layout.loadData(self.path_right_click)
-        self.change_show(self.video_show_layout.play_list.pop(self.video_show_layout.play_list_index))
+        self.change_show(MainWindow.show_type_video)
 
     def load_for_pic_show(self):
         if os.path.isfile(self.path_right_click):
             return
 
         self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.path_right_click)
-
-        if not self.pic_show_qwidget.isVisible():
-            self.pic_show_qwidget.setVisible(True)
-            self.video_show_qwidget.setVisible(False)
+        self.change_show(MainWindow.show_type_pic)
         self.inputAndExeLayout.inputPath.setText(self.path_right_click)
-        self.inputAndExeLayout.input_path_clicked()
+        self.inputAndExeLayout.load_pic_list()
 
     def delete(self):
         try:
@@ -150,16 +148,16 @@ class MainWindow(QMainWindow):
 
         if os.path.isdir(self.path):
             if not self.pic_show_qwidget.isVisible():
-                self.pic_show_qwidget.setVisible(True)
-                self.video_show_qwidget.setVisible(False)
+                self.change_show(MainWindow.show_type_pic)
             self.inputAndExeLayout.inputPath.setText(self.path)
-            self.inputAndExeLayout.input_path_clicked()
+            self.inputAndExeLayout.load_pic_list()
         elif os.path.isfile(self.path):
-            self.change_show(self.path)
             if self.video_show_layout.is_video(self.path):
-                self.video_show_layout.play_mode = 0
+                self.change_show(MainWindow.show_type_video)
+                self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
                 self.video_show_layout.play(self.model.filePath(qmodelindex))
             elif self.pic_show_layout.is_pic(self.path):
+                self.change_show(MainWindow.show_type_pic)
                 self.pic_show_layout.play(self.model.filePath(qmodelindex))
             else:
                 self.video_show_layout.titleQLabel.setText('文件格式错误!!!')
@@ -170,49 +168,64 @@ class MainWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Escape):
-            if self.video_show_layout.is_video(self.path):
+            if self.video_show_qwidget.isVisible():
                 self.video_show_layout.setVisible(True)
-            else:
+            if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.setVisible(True)
             self.treeView.setVisible(True)
             self.showNormal()
         if (event.key() == Qt.Key_Left):
-            self.video_show_layout.down_time()
-            self.pic_show_layout.down()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.down_time()
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.down()
         if (event.key() == Qt.Key_Right):
-            self.pic_show_layout.up()
-            self.video_show_layout.up_time()
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.up()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.up_time()
         if (event.key() == Qt.Key_Space):
-            self.pic_show_layout.pause()
-            self.video_show_layout.pause()
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.pause()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.pause()
+        if (event.key() == Qt.Key_W):
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.previous()
+        if (event.key() == Qt.Key_E):
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.next()
         if (event.key() == Qt.Key_D):
-            self.pic_show_layout.up()
-            self.video_show_layout.up_time()
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.up()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.up_time()
         if (event.key() == Qt.Key_A):
-            self.video_show_layout.down_time()
-            self.pic_show_layout.down()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.down_time()
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.down()
         if (event.key() == Qt.Key_S):
-            self.video_show_layout.screenshot()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.screenshot()
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
             self.notice("shift + o")
 
     def full_screen_custom(self):
-        if self.video_show_layout.is_video(self.path):
+        if self.video_show_qwidget.isVisible():
             self.video_show_layout.setVisible(False)
-        else:
+        if self.pic_show_qwidget.isVisible():
             self.pic_show_layout.setVisible(False)
         self.treeView.setVisible(False)
         self.showFullScreen()
 
-    def change_show(self, path):
-        if self.video_show_layout.is_video(path):
-            if not self.video_show_qwidget.isVisible():
-                self.video_show_qwidget.setVisible(True)
-                self.pic_show_qwidget.setVisible(False)
-        elif self.pic_show_layout.is_pic(path):
-            if not self.pic_show_qwidget.isVisible():
-                self.pic_show_qwidget.setVisible(True)
-                self.video_show_qwidget.setVisible(False)
+    def change_show(self, show_type):
+        if show_type == MainWindow.show_type_pic:
+            self.pic_show_qwidget.setVisible(True)
+            self.video_show_qwidget.setVisible(False)
+        if show_type == MainWindow.show_type_video:
+            self.video_show_qwidget.setVisible(True)
+            self.pic_show_qwidget.setVisible(False)
 
     def notice(self, content):
         self.statusLabel.setText(content)

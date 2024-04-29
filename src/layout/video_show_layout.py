@@ -25,6 +25,8 @@ class VideoShowLayout(QVBoxLayout):
     video_show_path_key = 'video.show.path'
     video_screenshot_path_key = 'video.screenshot.path'
     video_cut_path_key = 'video.cut.path'
+    play_mode_one = 0
+    play_mode_list = 1
 
     def __init__(self, main_window, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
@@ -34,12 +36,12 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_start = 0
         self.cut_end = 1000
         self.bar_slider_maxvalue = 1000
-        self.state = False
+        self.play_state = False
         self.pause_count = 0
         self.config_manager = ConfigManager()
         self.play_list = []
         self.play_list_index = 0
-        self.play_mode = 0
+        self.play_mode = VideoShowLayout.play_mode_one
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -81,24 +83,42 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_hbox.addWidget(self.bar_label)
         self.bar_hbox.addWidget(self.bar_label_all)
 
-        self.stop_btn = QPushButton()
-        self.stop_btn.setText("暂停")
-        self.stop_btn.clicked.connect(self.run_or_stop)
-        self.bar_hbox.addWidget(self.stop_btn)
+        self.controal_hbox = QHBoxLayout()
+        self.controal_hbox.setObjectName("controal_hbox")
 
-        self.list_btn = QPushButton()
-        self.list_btn.setText("播放列表")
-        self.list_btn.clicked.connect(self.run_list)
-        self.bar_hbox.addWidget(self.list_btn)
-
-        self.up_btn = QPushButton()
-        self.up_btn.setText("快进")
-        self.up_btn.clicked.connect(self.up_time)
-        self.bar_hbox.addWidget(self.up_btn)
         self.down_btn = QPushButton()
         self.down_btn.setText("快退")
         self.down_btn.clicked.connect(self.down_time)
-        self.bar_hbox.addWidget(self.down_btn)
+        self.controal_hbox.addWidget(self.down_btn)
+        self.stop_btn = QPushButton()
+        self.stop_btn.setText("播放")
+        self.stop_btn.clicked.connect(self.run_or_stop)
+        self.controal_hbox.addWidget(self.stop_btn)
+        self.up_btn = QPushButton()
+        self.up_btn.setText("快进")
+        self.up_btn.clicked.connect(self.up_time)
+        self.controal_hbox.addWidget(self.up_btn)
+
+        self.previous_btn = QPushButton()
+        self.previous_btn.setText("上一个")
+        self.previous_btn.clicked.connect(self.previous)
+        self.controal_hbox.addWidget(self.previous_btn)
+        self.list_btn = QPushButton()
+        self.list_btn.setText("播放列表")
+        self.list_btn.clicked.connect(self.run_list)
+        self.controal_hbox.addWidget(self.list_btn)
+        self.next_btn = QPushButton()
+        self.next_btn.setText("下一个")
+        self.next_btn.clicked.connect(self.next)
+        self.controal_hbox.addWidget(self.next_btn)
+
+        self.screenshot_button = QPushButton('截图')
+        self.screenshot_button.clicked.connect(self.screenshot)
+        self.controal_hbox.addWidget(self.screenshot_button)
+
+        self.fullScreenBtn = QPushButton("全屏")
+        self.controal_hbox.addWidget(self.fullScreenBtn)
+        self.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
 
         self.cut_bar_hbox = QHBoxLayout()
         self.cut_bar_hbox.setObjectName("cut_bar_hbox")
@@ -134,36 +154,58 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_btn.clicked.connect(self.video_cut)
         self.cut_bar_hbox.addWidget(self.cut_btn)
 
-        self.screenshot_button = QPushButton('截图')
-        self.screenshot_button.clicked.connect(self.screenshot)
-        self.bar_hbox.addWidget(self.screenshot_button)
-
-        self.fullScreenBtn = QPushButton("全屏")
-        self.bar_hbox.addWidget(self.fullScreenBtn)
-        self.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
-
         self.bar_hbox_qwidget = QWidget()
         self.bar_hbox_qwidget.setLayout(self.bar_hbox)
+
+        self.controal_hbox_qwidget = QWidget()
+        self.controal_hbox_qwidget.setLayout(self.controal_hbox)
 
         self.cut_bar_hbox_qwidget = QWidget()
         self.cut_bar_hbox_qwidget.setLayout(self.cut_bar_hbox)
 
         self.addWidget(self.qscrollarea)
         self.addWidget(self.bar_hbox_qwidget)
+        self.addWidget(self.controal_hbox_qwidget)
         self.addWidget(self.cut_bar_hbox_qwidget)
 
         self.timer = QTimer()  # 定义定时器
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.onTimerOut)
 
+    def previous(self):
+        if len(self.play_list) == 0 or len(self.play_list) == self.play_list_index:
+            self.main_window.notice('列表未加载或已全部播放完毕')
+            self.play_mode = VideoShowLayout.play_mode_one
+            return
+        self.play_list_index -= 1
+        if self.play_list_index <= 0:
+            self.play_list_index = 0
+        self.play(self.play_list[self.play_list_index])
+
+    def next(self):
+        if len(self.play_list) == 0 or len(self.play_list) == self.play_list_index:
+            self.main_window.notice('列表未加载或已全部播放完毕')
+            self.play_mode = VideoShowLayout.play_mode_one
+            return
+        self.play_list_index += 1
+        if self.play_list_index >= len(self.play_list):
+            self.play_list_index = len(self.play_list) - 1
+        self.play(self.play_list[self.play_list_index])
+
     def run_list(self):
         if len(self.play_list) == 0 or len(self.play_list) == self.play_list_index:
             self.main_window.notice('列表未加载或已全部播放完毕')
-            self.play_mode = 0
+            self.play_mode = VideoShowLayout.play_mode_one
             return
-        self.play_mode = 1
-        self.play(self.play_list.pop(self.play_list_index))
-        self.play_list_index += 1
+        self.play_state = True
+        self.stop_btn.setText('暂停')
+        self.play_mode = VideoShowLayout.play_mode_list
+        if self.play_list_index >= len(self.play_list):
+            self.play_mode = VideoShowLayout.play_mode_one
+            self.play_state = False
+            self.stop_btn.setText('播放')
+        else:
+            self.play(self.play_list[self.play_list_index])
 
     def up_time(self):
         num = self.player.position() + int(self.player.duration() / 100)
@@ -180,24 +222,24 @@ class VideoShowLayout(QVBoxLayout):
         self.pause_count += 1
         if self.pause_count % 2 == 0:
             self.player.pause()
-            self.state = False
+            self.play_state = False
             self.stop_btn.setText("播放")
         else:
             self.player.play()
-            self.state = True
+            self.play_state = True
             self.stop_btn.setText("暂停")
 
     def run_or_stop(self):
-        if self.state:
+        if self.play_state:
             self.player.pause()
             self.timer.stop()
-            self.state = False
+            self.play_state = False
             self.stop_btn.setText("播放")
         else:
             if self.player.position() < self.player.duration():
                 self.player.play()
                 self.timer.start()
-                self.state = True
+                self.play_state = True
                 self.stop_btn.setText("暂停")
             else:
                 self.timer.start()
@@ -211,7 +253,7 @@ class VideoShowLayout(QVBoxLayout):
 
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
         self.player.play()
-        self.state = True
+        self.play_state = True
 
         self.timer.start()
 
@@ -266,11 +308,12 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_label_all.setText('总时长:' + text)
 
         if self.player.position() == self.player.duration():
-            if self.play_mode == 1:
+            if self.play_mode == VideoShowLayout.play_mode_list:
+                self.play_list_index += 1
                 self.run_list()
                 return
             self.stop_btn.setText("播放")
-            self.state = False
+            self.play_state = False
             self.timer.stop()
 
     def is_video(self, path):

@@ -60,7 +60,7 @@ class PicInputLayout(QHBoxLayout):
         self.setContentsMargins(0, 0, 0, 0)
 
         self.inputPath.textEdited.connect(self.text_edited)
-        self.getPathBtn.pressed.connect(self.input_path_clicked)
+        self.getPathBtn.pressed.connect(self.load_pic_list)
         self.inputInterval.textEdited.connect(self.input_interval_text_edited)
 
         self.timer = QTimer()
@@ -75,7 +75,7 @@ class PicInputLayout(QHBoxLayout):
         self.content_path = s
         self.loadData()
 
-    def input_path_clicked(self):
+    def load_pic_list(self):
         if len(self.inputPath.text()) == 0:
             selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
             self.inputPath.setText(selected_path)
