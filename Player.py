@@ -94,6 +94,8 @@ class MainWindow(QMainWindow):
             self.path_right_click = self.model.filePath(gp)
 
             self.treeView.contextMenu = QMenu()
+            self.treeView.contextMenu.action_refresh = self.treeView.contextMenu.addAction(u'刷新')
+            self.treeView.contextMenu.action_refresh.triggered.connect(self.refresh)
             self.treeView.contextMenu.action_delete = self.treeView.contextMenu.addAction(u'删除')
             self.treeView.contextMenu.action_delete.triggered.connect(self.delete)
             self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为幻灯片列表')
@@ -108,6 +110,9 @@ class MainWindow(QMainWindow):
             self.treeView.contextMenu.exec_(self.mapToGlobal(pos))
         except Exception as e:
             self.notice(e)
+
+    def refresh(self):
+        self.model.refresh()
 
     def load_for_video_screenshot(self):
         if os.path.isfile(self.path_right_click):
