@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
         self.treeView.clicked.connect(self.onTreeClicked)
+        self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.mainQWidget.addWidget(self.treeView)
 
         self.work = QVBoxLayout()
@@ -149,6 +150,15 @@ class MainWindow(QMainWindow):
             self.model.refresh()
         except:
             self.notice("文件删除异常!!!")
+
+    def on_selection_changed(self, selected, deselected):
+        indexes = selected.indexes()
+        for item in indexes:
+            self.path = self.model.filePath(item)
+            if os.path.isdir(self.path):
+                return
+
+            self.onTreeClicked(item)
 
     def onTreeClicked(self, qmodelindex):
         self.path = self.model.filePath(qmodelindex)
