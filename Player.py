@@ -33,6 +33,7 @@ class MainWindow(QMainWindow):
         self.left = 1
         self.right = 3
         self.config_manager = ConfigManager()
+        self.style_sheet = self.styleSheet()
 
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
@@ -184,6 +185,8 @@ class MainWindow(QMainWindow):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.setVisible(True)
             self.treeView.setVisible(True)
+            self.statusbar.setVisible(True)
+            self.mainQWidget.setStyleSheet(self.style_sheet)
             self.showNormal()
         if (event.key() == Qt.Key_Left):
             if self.video_show_qwidget.isVisible():
@@ -227,7 +230,9 @@ class MainWindow(QMainWindow):
             self.video_show_layout.setVisible(False)
         if self.pic_show_qwidget.isVisible():
             self.pic_show_layout.setVisible(False)
+            self.mainQWidget.setStyleSheet("border:none;")
         self.treeView.setVisible(False)
+        self.statusbar.setVisible(False)
         self.showFullScreen()
 
     def change_show(self, show_type):
