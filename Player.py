@@ -155,7 +155,7 @@ class MainWindow(QMainWindow):
         indexes = selected.indexes()
         for item in indexes:
             self.path = self.model.filePath(item)
-            if os.path.isdir(self.path):
+            if os.path.isdir(self.path) or self.video_show_layout.is_video(self.path):
                 return
 
             self.onTreeClicked(item)
