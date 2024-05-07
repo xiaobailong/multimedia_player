@@ -254,6 +254,7 @@ class VideoShowLayout(QVBoxLayout):
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
         self.player.play()
         self.play_state = True
+        self.stop_btn.setText("暂停")
 
         self.timer.start()
 
@@ -321,6 +322,10 @@ class VideoShowLayout(QVBoxLayout):
 
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
+        self.video_widget.setStyleSheet("border:none;")
+        self.bar_hbox_qwidget.setVisible(visible)
+        self.controal_hbox_qwidget.setVisible(visible)
+        self.cut_bar_hbox_qwidget.setVisible(visible)
 
     def screenshot(self):
         try:

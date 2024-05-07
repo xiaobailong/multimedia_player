@@ -86,6 +86,11 @@ class PicShowLayout(QVBoxLayout):
             ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp'))
 
     def setVisible(self, visible):
+        if visible:
+            self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
+        else:
+            self.qscrollarea.setGeometry(
+                QRect(0, 0, self.main_window.mainQWidget.width(), self.main_window.mainQWidget.height()))
         self.inputQWidget.setVisible(visible)
         self.titleQLabel.setVisible(visible)
 
@@ -108,6 +113,8 @@ class PicShowLayout(QVBoxLayout):
         self.refreshPicturesOnly()
 
     def start_process(self):
+        if len(self.inputAndExeLayout.list_files) == 0:
+            return
         self.inputAndExeLayout.timer.start()
         self.play(self.inputAndExeLayout.list_files[self.counter])
 

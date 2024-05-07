@@ -230,9 +230,10 @@ class MainWindow(QMainWindow):
             self.video_show_layout.setVisible(False)
         if self.pic_show_qwidget.isVisible():
             self.pic_show_layout.setVisible(False)
-            self.mainQWidget.setStyleSheet("border:none;")
+
         self.treeView.setVisible(False)
         self.statusbar.setVisible(False)
+        self.mainQWidget.setStyleSheet("border:none;")
         self.showFullScreen()
 
     def change_show(self, show_type):
