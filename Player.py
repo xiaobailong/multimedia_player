@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
 
-        self.layout = QHBoxLayout()
+        self.mainQWidget = QSplitter(Qt.Horizontal)
 
         self.video_show_layout = VideoShowLayout(self)
         self.pic_show_layout = PicShowLayout(self)
@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
         self.treeView.clicked.connect(self.onTreeClicked)
-        self.layout.addWidget(self.treeView, stretch=self.left)
+        self.mainQWidget.addWidget(self.treeView)
 
         self.work = QVBoxLayout()
         self.work.addWidget(self.video_show_qwidget)
@@ -71,11 +71,9 @@ class MainWindow(QMainWindow):
         self.workQWidget = QWidget()
         self.workQWidget.setLayout(self.work)
 
-        self.layout.addWidget(self.workQWidget, stretch=self.right)
-        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.mainQWidget.addWidget(self.workQWidget)
+        self.mainQWidget.setContentsMargins(0, 0, 0, 0)
 
-        self.mainQWidget = QWidget()
-        self.mainQWidget.setLayout(self.layout)
         self.setCentralWidget(self.mainQWidget)
 
         self.statusbar = QStatusBar(self)
