@@ -1,5 +1,6 @@
 import shutil
 
+import send2trash
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import QApplication
@@ -170,10 +171,12 @@ class MainWindow(QMainWindow):
 
     def delete(self):
         try:
+            (path, filename) = os.path.split(self.path_right_click)
+            os.chdir(path)
             if os.path.isfile(self.path_right_click):
-                os.remove(self.path_right_click)
+                send2trash.send2trash(filename)
             if os.path.isdir(self.path_right_click):
-                os.removedirs(self.path_right_click)
+                send2trash.send2trash(filename)
             self.notice(self.path_right_click + ' 文件已删除!!!')
             self.model.refresh()
         except:
