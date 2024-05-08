@@ -170,7 +170,10 @@ class MainWindow(QMainWindow):
 
     def delete(self):
         try:
-            os.remove(self.path_right_click)
+            if os.path.isfile(self.path_right_click):
+                os.remove(self.path_right_click)
+            if os.path.isdir(self.path_right_click):
+                os.removedirs(self.path_right_click)
             self.notice(self.path_right_click + ' 文件已删除!!!')
             self.model.refresh()
         except:
