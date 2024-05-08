@@ -122,8 +122,8 @@ class MainWindow(QMainWindow):
         if os.path.isdir(selected_path):
             (path, filename) = os.path.split(self.path_right_click)
             dst = os.path.join(selected_path, filename)
-            print('src:', self.path_right_click)
-            print('dst:', dst)
+            logger.info('src:', self.path_right_click)
+            logger.info('dst:', dst)
             shutil.copy(self.path_right_click, dst)
 
     def move(self):
@@ -131,8 +131,8 @@ class MainWindow(QMainWindow):
         if os.path.isdir(selected_path):
             (path, filename) = os.path.split(self.path_right_click)
             dst = os.path.join(selected_path, filename)
-            print('src:', self.path_right_click)
-            print('dst:', dst)
+            logger.info('src:', self.path_right_click)
+            logger.info('dst:', dst)
             shutil.move(self.path_right_click, dst)
         self.model.refresh()
 
