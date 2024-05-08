@@ -1,3 +1,5 @@
+import shutil
+
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import QApplication
@@ -94,6 +96,10 @@ class MainWindow(QMainWindow):
             self.path_right_click = self.model.filePath(gp)
 
             self.treeView.contextMenu = QMenu()
+            self.treeView.contextMenu.action_copy = self.treeView.contextMenu.addAction(u'复制到')
+            self.treeView.contextMenu.action_copy.triggered.connect(self.copy)
+            self.treeView.contextMenu.action_move = self.treeView.contextMenu.addAction(u'移动')
+            self.treeView.contextMenu.action_move.triggered.connect(self.move)
             self.treeView.contextMenu.action_refresh = self.treeView.contextMenu.addAction(u'刷新')
             self.treeView.contextMenu.action_refresh.triggered.connect(self.refresh)
             self.treeView.contextMenu.action_delete = self.treeView.contextMenu.addAction(u'删除')
@@ -110,6 +116,25 @@ class MainWindow(QMainWindow):
             self.treeView.contextMenu.exec_(self.mapToGlobal(pos))
         except Exception as e:
             self.notice(e)
+
+    def copy(self):
+        selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
+        if os.path.isdir(selected_path):
+            (path, filename) = os.path.split(self.path_right_click)
+            dst = os.path.join(selected_path, filename)
+            print('src:', self.path_right_click)
+            print('dst:', dst)
+            shutil.copy(self.path_right_click, dst)
+
+    def move(self):
+        selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
+        if os.path.isdir(selected_path):
+            (path, filename) = os.path.split(self.path_right_click)
+            dst = os.path.join(selected_path, filename)
+            print('src:', self.path_right_click)
+            print('dst:', dst)
+            shutil.move(self.path_right_click, dst)
+        self.model.refresh()
 
     def refresh(self):
         self.model.refresh()
