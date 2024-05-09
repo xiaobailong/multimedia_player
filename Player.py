@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
         self.treeView.setColumnHidden(1, True)
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
-        self.treeView.clicked.connect(self.onTreeClicked)
+        self.treeView.clicked.connect(self.on_tree_clicked)
         self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.mainQWidget.addWidget(self.treeView)
 
@@ -196,9 +196,9 @@ class MainWindow(QMainWindow):
         for item in indexes:
             self.path = self.model.filePath(item)
             if self.pic_show_layout.is_pic(self.path):
-                self.onTreeClicked(item)
+                self.on_tree_clicked(item)
 
-    def onTreeClicked(self, qmodelindex):
+    def on_tree_clicked(self, qmodelindex):
         self.path = self.model.filePath(qmodelindex)
 
         if self.inputAndExeLayout.timer.isActive():
