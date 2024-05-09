@@ -97,20 +97,28 @@ class MainWindow(QMainWindow):
             self.path_right_click = self.model.filePath(gp)
 
             self.treeView.contextMenu = QMenu()
+
             self.treeView.contextMenu.action_copy = self.treeView.contextMenu.addAction(u'复制到')
             self.treeView.contextMenu.action_copy.triggered.connect(self.copy)
+
             self.treeView.contextMenu.action_move = self.treeView.contextMenu.addAction(u'移动')
             self.treeView.contextMenu.action_move.triggered.connect(self.move)
+
             self.treeView.contextMenu.action_refresh = self.treeView.contextMenu.addAction(u'刷新')
             self.treeView.contextMenu.action_refresh.triggered.connect(self.refresh)
+
             self.treeView.contextMenu.action_delete = self.treeView.contextMenu.addAction(u'删除')
             self.treeView.contextMenu.action_delete.triggered.connect(self.delete)
+
             self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为幻灯片列表')
             self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_pic_show)
+
             self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为视频列表')
             self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_lise)
+
             self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置为截图路径')
             self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_screenshot)
+
             self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置为剪切路径')
             self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_cut)
 
