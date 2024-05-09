@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
             logger.info('src:', self.path_right_click)
             logger.info('dst:', dst)
             shutil.copy(self.path_right_click, dst)
+        self.model.refresh()
 
     def move(self):
         selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
@@ -194,10 +195,8 @@ class MainWindow(QMainWindow):
         indexes = selected.indexes()
         for item in indexes:
             self.path = self.model.filePath(item)
-            if os.path.isdir(self.path) or self.video_show_layout.is_video(self.path):
-                return
-
-            self.onTreeClicked(item)
+            if self.pic_show_layout.is_pic(self.path):
+                self.onTreeClicked(item)
 
     def onTreeClicked(self, qmodelindex):
         self.path = self.model.filePath(qmodelindex)
