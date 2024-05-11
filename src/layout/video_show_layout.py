@@ -340,7 +340,7 @@ class VideoShowLayout(QVBoxLayout):
                 if self.config_manager.exist(VideoShowLayout.video_screenshot_path_key):
                     new_path = self.config_manager.get(VideoShowLayout.video_screenshot_path_key) + os.sep + file + '_'
 
-                save_path = new_path + str(self.player.position()) + "_" + time.strftime("%Y%m%d%H%M%S") + '.jpg'
+                save_path = new_path + '_' + str(self.player.position()) + '.jpg'
                 cv2.imencode('.jpg', frame)[1].tofile(save_path)
 
                 if os.path.exists(save_path):
@@ -359,9 +359,7 @@ class VideoShowLayout(QVBoxLayout):
         if self.config_manager.exist(VideoShowLayout.video_cut_path_key):
             new_path = self.config_manager.get(VideoShowLayout.video_cut_path_key) + os.sep + file + '_'
 
-        file_name = (new_path + self.cut_bar_edit_start.text().replace(':',
-                                                                       '') + '-' + self.cut_bar_edit_end.text().replace(
-            ':', '') + '-' + time.strftime("%Y%m%d%H%M%S") + ext)
+        file_name = new_path + self.cut_bar_edit_start.text().replace(':', '') + '-' + self.cut_bar_edit_end.text().replace(':', '') + ext
         ffmpeg_path = self.get_ffmpeg_path()
         if not os.path.exists(ffmpeg_path):
             self.main_window.notice('ffmpeg路径获取错误： ' + ffmpeg_path)
