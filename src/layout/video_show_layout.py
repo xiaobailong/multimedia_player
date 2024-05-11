@@ -362,7 +362,7 @@ class VideoShowLayout(QVBoxLayout):
         file_name = (new_path + self.cut_bar_edit_start.text().replace(':',
                                                                        '') + '-' + self.cut_bar_edit_end.text().replace(
             ':', '') + '-' + time.strftime("%Y%m%d%H%M%S") + ext)
-        ffmpeg_path=os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
+        ffmpeg_path = self.get_ffmpeg_path()
         if not os.path.exists(ffmpeg_path):
             self.main_window.notice('ffmpeg路径获取错误： ' + ffmpeg_path)
             return
@@ -372,6 +372,22 @@ class VideoShowLayout(QVBoxLayout):
         self.video_cut_thread = VideoCutThread(command, file_name)
         self.video_cut_thread.finished.connect(self.video_cut_thread_finished)
         self.video_cut_thread.start()
+
+    def get_ffmpeg_path(self):
+        ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
+        if os.path.exists(ffmpeg_path):
+            return ffmpeg_path
+        else:
+            value = os.environ.get('Path')
+            for item in value.split(";"):
+                if '\\bin' in item or 'ffmpeg' in item:
+                    ffmpeg_path = os.path.join(item, 'ffmpeg.exe')
+                    if os.path.exists(ffmpeg_path):
+                        return ffmpeg_path
+                    else:
+                        ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
+
+        return ffmpeg_path
 
     def video_cut_thread_finished(self, file_name):
         while not os.path.exists(file_name):
