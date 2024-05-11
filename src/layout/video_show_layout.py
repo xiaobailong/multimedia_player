@@ -366,12 +366,21 @@ class VideoShowLayout(QVBoxLayout):
         if not os.path.exists(ffmpeg_path):
             self.main_window.notice('ffmpeg路径获取错误： ' + ffmpeg_path)
             return
+        get_video_max_time = self.get_video_max_time()
+        if self.cut_bar_edit_start.text() >= self.cut_bar_edit_end.text() or self.cut_bar_edit_end.text() > get_video_max_time:
+            self.main_window.notice('时间设置错误： ' + self.cut_bar_edit_start.text() + '-' + self.cut_bar_edit_end.text())
+            return
         command = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
         logger.info(command)
 
         self.video_cut_thread = VideoCutThread(command, file_name)
         self.video_cut_thread.finished.connect(self.video_cut_thread_finished)
         self.video_cut_thread.start()
+
+    def get_video_max_time(self):
+        m, s = divmod(self.player.duration() / 1000, 60)
+        h, m = divmod(m, 60)
+        return "%02d:%02d:%02d" % (h, m, s)
 
     def get_ffmpeg_path(self):
         ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
