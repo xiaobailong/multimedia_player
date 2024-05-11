@@ -362,6 +362,10 @@ class VideoShowLayout(QVBoxLayout):
         file_name = (new_path + self.cut_bar_edit_start.text().replace(':',
                                                                        '') + '-' + self.cut_bar_edit_end.text().replace(
             ':', '') + '-' + time.strftime("%Y%m%d%H%M%S") + ext)
+        ffmpeg_path=os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
+        if os.path.exists(ffmpeg_path):
+            self.main_window.notice('ffmpeg路径获取错误： ' + ffmpeg_path)
+            return
         command = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
         logger.info(command)
 
