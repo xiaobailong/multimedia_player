@@ -25,6 +25,7 @@ class VideoShowLayout(QVBoxLayout):
     video_show_path_key = 'video.show.path'
     video_screenshot_path_key = 'video.screenshot.path'
     video_cut_path_key = 'video.cut.path'
+    ffmpeg_path_key = "video.ffmpeg.path"
     play_mode_one = 0
     play_mode_list = 1
 
@@ -42,6 +43,8 @@ class VideoShowLayout(QVBoxLayout):
         self.play_list = []
         self.play_list_index = 0
         self.play_mode = VideoShowLayout.play_mode_one
+
+        self.get_ffmpeg_path()
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
@@ -381,8 +384,17 @@ class VideoShowLayout(QVBoxLayout):
         return "%02d:%02d:%02d" % (h, m, s)
 
     def get_ffmpeg_path(self):
+        if self.config_manager.exist(self.ffmpeg_path_key):
+            ffmpeg_path = self.config_manager.get(self.ffmpeg_path_key)
+            if os.path.exists(ffmpeg_path):
+                return ffmpeg_path
+            else:
+                self.config_manager.remove(self.ffmpeg_path_key)
+
         ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
         if os.path.exists(ffmpeg_path):
+            if not self.config_manager.exist(self.ffmpeg_path_key):
+                self.config_manager.add_or_update(self.ffmpeg_path_key, ffmpeg_path)
             return ffmpeg_path
         else:
             value = os.environ.get('Path')
@@ -390,6 +402,8 @@ class VideoShowLayout(QVBoxLayout):
                 if '\\bin' in item or 'ffmpeg' in item:
                     ffmpeg_path = os.path.join(item, 'ffmpeg.exe')
                     if os.path.exists(ffmpeg_path):
+                        if not self.config_manager.exist(self.ffmpeg_path_key):
+                            self.config_manager.add_or_update(self.ffmpeg_path_key, ffmpeg_path)
                         return ffmpeg_path
                     else:
                         ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
