@@ -7,8 +7,9 @@ logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, fo
            filter="",
            level="INFO")
 
+
 class VideoCutThread(QThread):
-    finished = pyqtSignal(str)
+    finished = pyqtSignal(str, int)
 
     def __init__(self, command, file_name, parent=None):
         super(VideoCutThread, self).__init__(parent)
@@ -17,8 +18,11 @@ class VideoCutThread(QThread):
 
     def run(self) -> None:
 
-        p = os.popen(self.command)
+        try:
+            p = os.popen(self.command)
 
-        logger.info(p)
+            logger.info(p)
 
-        self.finished.emit(self.file_name)
+            self.finished.emit(self.file_name, 0)
+        except Exception as e:
+            logger.error(f"视频剪切失败: {e}")

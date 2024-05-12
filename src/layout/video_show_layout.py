@@ -349,7 +349,7 @@ class VideoShowLayout(QVBoxLayout):
             else:
                 self.main_window.notice("截图视频加载失败失败!!!")
         except Exception as e:
-            logger.info(f"获取视频封面图失败: {e}")
+            logger.error(f"获取视频封面图失败: {e}")
 
     def video_cut(self):
 
@@ -407,13 +407,16 @@ class VideoShowLayout(QVBoxLayout):
 
         return ffmpeg_path
 
-    def video_cut_thread_finished(self, file_name):
+    def video_cut_thread_finished(self, file_name, count):
         while not os.path.exists(file_name):
+            if count > 60:
+                return
             time.sleep(1)
             if os.path.exists(file_name):
                 self.main_window.notice('视频剪切成功，保存到 ' + file_name)
                 self.main_window.model.refresh()
                 return
+            count + -1
 
     def loadData(self, path):
         if len(self.play_list) > 0:
