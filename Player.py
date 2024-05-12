@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
         self.mainQWidget.addWidget(self.treeView)
 
         self.work = QVBoxLayout()
+        self.work.setContentsMargins(0, 0, 0, 0)
         self.work.addWidget(self.video_show_qwidget)
         self.video_show_qwidget.setVisible(False)
         self.work.addWidget(self.pic_show_qwidget)
@@ -76,7 +77,6 @@ class MainWindow(QMainWindow):
         self.workQWidget.setLayout(self.work)
 
         self.mainQWidget.addWidget(self.workQWidget)
-        self.mainQWidget.setContentsMargins(0, 0, 0, 0)
 
         self.setCentralWidget(self.mainQWidget)
 

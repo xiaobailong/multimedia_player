@@ -54,7 +54,6 @@ class VideoShowLayout(QVBoxLayout):
 
         self.player = QMediaPlayer()
         self.video_widget = QVideoWidget()
-        self.video_widget.show()
         self.player.setVideoOutput(self.video_widget)
 
         self.qscrollarea = QScrollArea()

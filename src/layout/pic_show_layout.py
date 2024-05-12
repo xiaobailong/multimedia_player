@@ -60,6 +60,7 @@ class PicShowLayout(QVBoxLayout):
 
         self.screen_width = int(self.main_window.width() * self.scale)
         self.screen_height = int(self.main_window.height() * self.scale)
+
         pil_image = self.m_resize(self.screen_width, self.screen_height, fckimage)
 
         pixmap = QPixmap.fromImage(pil_image)
@@ -70,6 +71,9 @@ class PicShowLayout(QVBoxLayout):
     def m_resize(self, w_box, h_box, pil_image):  # 参数是：要适应的窗口宽、高、Image.open后的图片
 
         w, h = pil_image.width(), pil_image.height()  # 获取图像的原始大小
+
+        if w == 0 or h == 0:
+            return pil_image.scaled(w_box, h_box)
 
         f1 = 1.0 * w_box / w
         f2 = 1.0 * h_box / h
