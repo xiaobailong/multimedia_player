@@ -26,6 +26,8 @@ logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, fo
 class MainWindow(QMainWindow):
     show_type_video = 'video'
     show_type_pic = 'pic'
+    normal = 0
+    full = 1
 
     def __init__(self, *args, **kwargs):
 
@@ -37,6 +39,7 @@ class MainWindow(QMainWindow):
         self.right = 3
         self.config_manager = ConfigManager()
         self.style_sheet = self.styleSheet()
+        self.full_screen_state = MainWindow.normal
 
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
@@ -224,16 +227,25 @@ class MainWindow(QMainWindow):
         else:
             self.notice("非法文件路径: " + self.path)
 
+    def change_screen_full(self):
+        if self.full_screen_state % 2 == MainWindow.full:
+            self.full_screen_custom()
+        else:
+            self.screen_normal()
+
+    def screen_normal(self):
+        if self.video_show_qwidget.isVisible():
+            self.video_show_layout.setVisible(True)
+        if self.pic_show_qwidget.isVisible():
+            self.pic_show_layout.setVisible(True)
+        self.treeView.setVisible(True)
+        self.statusbar.setVisible(True)
+        self.mainQWidget.setStyleSheet(self.style_sheet)
+        self.showNormal()
+
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Escape):
-            if self.video_show_qwidget.isVisible():
-                self.video_show_layout.setVisible(True)
-            if self.pic_show_qwidget.isVisible():
-                self.pic_show_layout.setVisible(True)
-            self.treeView.setVisible(True)
-            self.statusbar.setVisible(True)
-            self.mainQWidget.setStyleSheet(self.style_sheet)
-            self.showNormal()
+            self.screen_normal()
         if (event.key() == Qt.Key_Left):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.down_time()
@@ -255,6 +267,9 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_E):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.next()
+        if (event.key() == Qt.Key_F):
+            self.full_screen_state += 1
+            self.change_screen_full()
         if (event.key() == Qt.Key_D):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()

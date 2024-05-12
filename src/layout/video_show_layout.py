@@ -38,7 +38,6 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_end = 1000
         self.bar_slider_maxvalue = 1000
         self.play_state = False
-        self.pause_count = 0
         self.config_manager = ConfigManager()
         self.play_list = []
         self.play_list_index = 0
@@ -221,8 +220,7 @@ class VideoShowLayout(QVBoxLayout):
         self.onTimerOut()
 
     def pause(self):
-        self.pause_count += 1
-        if self.pause_count % 2 == 0:
+        if self.play_state:
             self.player.pause()
             self.play_state = False
             self.stop_btn.setText("播放")
@@ -370,7 +368,7 @@ class VideoShowLayout(QVBoxLayout):
         if self.cut_bar_edit_start.text() >= self.cut_bar_edit_end.text() or self.cut_bar_edit_end.text() > get_video_max_time:
             self.main_window.notice('时间设置错误： ' + self.cut_bar_edit_start.text() + '-' + self.cut_bar_edit_end.text())
             return
-        command = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
+        command = ffmpeg_path + ' -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
         logger.info(command)
 
         self.video_cut_thread = VideoCutThread(command, file_name)
