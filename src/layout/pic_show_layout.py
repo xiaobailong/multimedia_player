@@ -89,6 +89,8 @@ class PicShowLayout(QVBoxLayout):
         return pil_image.scaled(width, height)
 
     def is_pic(self, path):
+        if len(self.path) == 0:
+            return False
         return path.lower().endswith(
             ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp'))
 
@@ -137,6 +139,8 @@ class PicShowLayout(QVBoxLayout):
 
     def delete(self):
         try:
+            if not self.is_pic(self.path):
+                return
             (path, filename) = os.path.split(self.path)
             os.chdir(path)
             send2trash.send2trash(filename)

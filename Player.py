@@ -271,7 +271,8 @@ class MainWindow(QMainWindow):
             self.full_screen_state += 1
             self.change_screen_full()
         if (event.key() == Qt.Key_Delete):
-            self.pic_show_layout.delete()
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.delete()
         if (event.key() == Qt.Key_D):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()
