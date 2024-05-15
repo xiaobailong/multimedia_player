@@ -191,8 +191,8 @@ class MainWindow(QMainWindow):
                 send2trash.send2trash(filename)
             self.notice(self.path_right_click + ' 文件已删除!!!')
             self.model.refresh()
-        except:
-            self.notice("文件删除异常!!!")
+        except Exception as e:
+            self.notice("文件删除异常!!!" + str(e))
 
     def on_selection_changed(self, selected, deselected):
         indexes = selected.indexes()
@@ -270,6 +270,8 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_F):
             self.full_screen_state += 1
             self.change_screen_full()
+        if (event.key() == Qt.Key_Delete):
+            self.pic_show_layout.delete()
         if (event.key() == Qt.Key_D):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()

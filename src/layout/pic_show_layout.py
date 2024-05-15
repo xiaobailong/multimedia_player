@@ -1,3 +1,6 @@
+import os
+
+import send2trash
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import (QPixmap, QImage)
@@ -131,3 +134,13 @@ class PicShowLayout(QVBoxLayout):
             self.inputAndExeLayout.timer.stop()
         else:
             self.inputAndExeLayout.timer.start()
+
+    def delete(self):
+        try:
+            (path, filename) = os.path.split(self.path)
+            os.chdir(path)
+            send2trash.send2trash(filename)
+            self.main_window.notice(self.path + ' 文件已删除!!!')
+            self.main_window.model.refresh()
+        except Exception as e:
+            self.main_window.notice("文件删除异常!!!" + str(e))
