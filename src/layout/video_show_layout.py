@@ -2,6 +2,7 @@ import os
 import time
 
 import cv2
+import send2trash
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import *
@@ -428,3 +429,15 @@ class VideoShowLayout(QVBoxLayout):
                 video_path = os.path.join(root, file)
                 if self.is_video(video_path):
                     self.play_list.append(video_path)
+
+    def delete(self):
+        self.player.setMedia(QMediaContent())
+        if len(self.path) > 0 and self.is_video(self.path):
+            try:
+                (path, filename) = os.path.split(self.path)
+                os.chdir(path)
+                send2trash.send2trash(filename)
+                self.main_window.notice(self.path + ' 文件已删除!!!')
+                self.main_window.model.refresh()
+            except Exception as e:
+                self.main_window.notice("文件删除异常!!!" + str(e))

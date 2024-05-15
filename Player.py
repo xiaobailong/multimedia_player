@@ -273,6 +273,8 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_Delete):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.delete()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.delete()
         if (event.key() == Qt.Key_D):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()
