@@ -140,14 +140,17 @@ class MainWindow(QMainWindow):
         self.model.refresh()
 
     def move(self):
-        selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
-        if os.path.isdir(selected_path):
-            (path, filename) = os.path.split(self.path_right_click)
-            dst = os.path.join(selected_path, filename)
-            logger.info('src:', self.path_right_click)
-            logger.info('dst:', dst)
-            shutil.move(self.path_right_click, dst)
-        self.model.refresh()
+        try:
+            selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
+            if os.path.isdir(selected_path):
+                (path, filename) = os.path.split(self.path_right_click)
+                dst = os.path.join(selected_path, filename)
+                logger.info('src:', self.path_right_click)
+                logger.info('dst:', dst)
+                shutil.move(self.path_right_click, dst)
+            self.model.refresh()
+        except Exception as e:
+            self.notice("文件移动异常!!!" + str(e))
 
     def refresh(self):
         self.model.refresh()
