@@ -125,13 +125,15 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_hbox = QHBoxLayout()
         self.cut_bar_hbox.setObjectName("cut_bar_hbox")
 
-        self.cut_bar_label_start = QLabel()
+        self.cut_bar_label_start = QPushButton()
         self.cut_bar_label_start.setText("开始:")
+        self.cut_bar_label_start.clicked.connect(self.get_video_start)
         self.cut_bar_edit_start = QLineEdit()
         self.cut_bar_edit_start.setMaximumSize(QSize(70, 30))
         self.cut_bar_edit_start.setObjectName("cut_bar_label_start")
         self.cut_bar_edit_start.setText("00:00:00")
-        self.cut_bar_label_end = QLabel()
+        self.cut_bar_label_end = QPushButton()
+        self.cut_bar_label_end.clicked.connect(self.get_video_end)
         self.cut_bar_label_end.setText("结束:")
         self.cut_bar_edit_end = QLineEdit()
         self.cut_bar_edit_end.setMaximumSize(QSize(70, 30))
@@ -351,6 +353,19 @@ class VideoShowLayout(QVBoxLayout):
                 self.main_window.notice("截图视频加载失败失败!!!")
         except Exception as e:
             logger.error(f"获取视频封面图失败: {e}")
+
+    def get_video_start(self):
+        m, s = divmod(self.player.position() / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.cut_bar_edit_start.setText(text)
+
+    def get_video_end(self):
+        m, s = divmod(self.player.position() / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.cut_bar_edit_end.setText(text)
+
 
     def video_cut(self):
 
