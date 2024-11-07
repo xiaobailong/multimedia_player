@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
         self.workQWidget.setLayout(self.work)
 
         self.mainQWidget.addWidget(self.workQWidget)
-        sizes = [5000 * self.left, 5000 * self.right]
+        sizes = [10000 * self.left, 10000 * self.right]
         self.mainQWidget.setSizes(sizes)
 
         self.setCentralWidget(self.mainQWidget)
