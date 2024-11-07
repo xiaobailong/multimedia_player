@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
         self.path = ''
         self.path_right_click = ''
         self.left = 1
-        self.right = 3
+        self.right = 4
         self.config_manager = ConfigManager()
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
@@ -70,7 +70,6 @@ class MainWindow(QMainWindow):
         self.treeView.clicked.connect(self.on_tree_clicked)
         self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.mainQWidget.addWidget(self.treeView)
-        self.mainQWidget.setStretchFactor(0,self.left)
 
         self.work = QVBoxLayout()
         self.work.setContentsMargins(0, 0, 0, 0)
@@ -80,9 +79,9 @@ class MainWindow(QMainWindow):
         self.workQWidget = QWidget()
         self.workQWidget.setLayout(self.work)
 
-
         self.mainQWidget.addWidget(self.workQWidget)
-        self.mainQWidget.setStretchFactor(1,self.right)
+        sizes = [5000 * self.left, 5000 * self.right]
+        self.mainQWidget.setSizes(sizes)
 
         self.setCentralWidget(self.mainQWidget)
 
