@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self.treeView.clicked.connect(self.on_tree_clicked)
         self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.mainQWidget.addWidget(self.treeView)
+        self.mainQWidget.setStretchFactor(0,self.left)
 
         self.work = QVBoxLayout()
         self.work.setContentsMargins(0, 0, 0, 0)
@@ -79,7 +80,9 @@ class MainWindow(QMainWindow):
         self.workQWidget = QWidget()
         self.workQWidget.setLayout(self.work)
 
+
         self.mainQWidget.addWidget(self.workQWidget)
+        self.mainQWidget.setStretchFactor(1,self.right)
 
         self.setCentralWidget(self.mainQWidget)
 
