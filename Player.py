@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
         self.path = ''
         self.path_right_click = ''
         self.left = 1
-        self.right = 4
+        self.right = 6
         self.config_manager = ConfigManager()
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
