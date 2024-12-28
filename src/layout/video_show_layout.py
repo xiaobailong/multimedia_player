@@ -1,4 +1,4 @@
-import os
+import os,glob
 import time
 
 import cv2
@@ -366,7 +366,6 @@ class VideoShowLayout(QVBoxLayout):
         text = "%02d:%02d:%02d" % (h, m, s)
         self.cut_bar_edit_end.setText(text)
 
-
     def video_cut(self):
 
         (path, filename) = os.path.split(self.path)
@@ -375,14 +374,17 @@ class VideoShowLayout(QVBoxLayout):
         if self.config_manager.exist(VideoShowLayout.video_cut_path_key):
             new_path = self.config_manager.get(VideoShowLayout.video_cut_path_key) + os.sep + file + '_'
 
-        file_name = new_path + self.cut_bar_edit_start.text().replace(':', '') + '-' + self.cut_bar_edit_end.text().replace(':', '') + ext
+        file_name = new_path + self.cut_bar_edit_start.text().replace(':',
+                                                                      '') + '-' + self.cut_bar_edit_end.text().replace(
+            ':', '') + ext
         ffmpeg_path = self.get_ffmpeg_path()
         if not os.path.exists(ffmpeg_path):
             self.main_window.notice('ffmpeg路径获取错误： ' + ffmpeg_path)
             return
         get_video_max_time = self.get_video_max_time()
         if self.cut_bar_edit_start.text() >= self.cut_bar_edit_end.text() or self.cut_bar_edit_end.text() > get_video_max_time:
-            self.main_window.notice('时间设置错误： ' + self.cut_bar_edit_start.text() + '-' + self.cut_bar_edit_end.text())
+            self.main_window.notice(
+                '时间设置错误： ' + self.cut_bar_edit_start.text() + '-' + self.cut_bar_edit_end.text())
             return
         command = ffmpeg_path + ' -ss ' + self.cut_bar_edit_start.text() + ' -to ' + self.cut_bar_edit_end.text() + ' -i "' + self.path + '" -vcodec copy -acodec copy "' + file_name + '"'
         logger.info(command)
@@ -439,11 +441,14 @@ class VideoShowLayout(QVBoxLayout):
             self.play_list.clear()
             self.play_list_index = 0
 
-        for root, dirs, files in os.walk(r"" + path):
-            for file in files:
-                video_path = os.path.join(root, file)
-                if self.is_video(video_path):
-                    self.play_list.append(video_path)
+        files = filter(os.path.isfile,glob.glob(path + "\\*.mp4"))
+
+        file_date_tuple_list = [(x,os.path.getmtime(x)) for x in files]
+        file_date_tuple_list.sort(key=lambda x: x[1])
+
+        for file in file_date_tuple_list:
+            if self.is_video(file[0]):
+                self.play_list.append(file[0])
 
     def delete(self):
         self.player.setMedia(QMediaContent())
@@ -456,3 +461,5 @@ class VideoShowLayout(QVBoxLayout):
                 self.main_window.model.refresh()
             except Exception as e:
                 self.main_window.notice("文件删除异常!!!" + str(e))
+
+        self.next()
