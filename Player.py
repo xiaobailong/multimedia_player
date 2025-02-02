@@ -107,7 +107,6 @@ class MainWindow(QMainWindow):
             if path != os.path.dirname(path):
                 path = os.path.dirname(path)
                 self.treeView.setExpanded(self.model.index(path), True)
-                # print("当前目录的父目录_方式一： " + path)
             else:
                 break
 
