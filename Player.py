@@ -24,6 +24,7 @@ logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, fo
 
 
 class MainWindow(QMainWindow):
+    expand_path_config_key = 'default.expand.path'
     show_type_video = 'video'
     show_type_pic = 'pic'
     normal = 0
@@ -59,7 +60,7 @@ class MainWindow(QMainWindow):
         self.pic_show_qwidget.setLayout(self.pic_show_layout)
 
         self.model = QDirModel()
-        self.model.sort(3,order=Qt.SortOrder.DescendingOrder)
+        self.model.sort(3, order=Qt.SortOrder.DescendingOrder)
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)
         self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         self.treeView.setColumnHidden(1, True)
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
+        # self.treeView.setRootIndex(self.model.index("")) #设置默认加载的目录
         self.treeView.clicked.connect(self.on_tree_clicked)
         self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.mainQWidget.addWidget(self.treeView)
@@ -94,6 +96,20 @@ class MainWindow(QMainWindow):
         self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
 
         self.show()
+
+        if self.config_manager.exist(MainWindow.expand_path_config_key):
+            expand_path_config = self.config_manager.get(MainWindow.expand_path_config_key)
+            self.expand_path(expand_path_config)
+
+    def expand_path(self, path):
+        self.treeView.setExpanded(self.model.index(path), True)
+        while True:
+            if path != os.path.dirname(path):
+                path = os.path.dirname(path)
+                self.treeView.setExpanded(self.model.index(path), True)
+                # print("当前目录的父目录_方式一： " + path)
+            else:
+                break
 
     def right_click_menu(self, pos):
         try:
@@ -127,9 +143,16 @@ class MainWindow(QMainWindow):
             self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置为剪切路径')
             self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_cut)
 
+            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置默认展开')
+            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.set_expand_path)
+
             self.treeView.contextMenu.exec_(self.mapToGlobal(pos))
         except Exception as e:
             self.notice(e)
+
+    def set_expand_path(self, path):
+        if os.path.isdir(self.path_right_click):
+            self.config_manager.add_or_update(MainWindow.expand_path_config_key,self.path_right_click)
 
     def copy(self):
         selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
