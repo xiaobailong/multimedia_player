@@ -36,7 +36,7 @@ class MainWindow(QMainWindow):
         self.path = ''
         self.path_right_click = ''
         self.left = 1
-        self.right = 4
+        self.right = 6
         self.config_manager = ConfigManager()
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
         self.pic_show_qwidget.setLayout(self.pic_show_layout)
 
         self.model = QDirModel()
-        self.model.sort(3)
+        self.model.sort(3,order=Qt.SortOrder.DescendingOrder)
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)
         self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -147,8 +147,6 @@ class MainWindow(QMainWindow):
             if os.path.isdir(selected_path):
                 (path, filename) = os.path.split(self.path_right_click)
                 dst = os.path.join(selected_path, filename)
-                logger.info('src:', self.path_right_click)
-                logger.info('dst:', dst)
                 shutil.move(self.path_right_click, dst)
             self.model.refresh()
         except Exception as e:

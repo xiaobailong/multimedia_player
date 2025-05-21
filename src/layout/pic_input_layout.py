@@ -96,12 +96,14 @@ class PicInputLayout(QHBoxLayout):
         if len(self.list_files) > 0:
             self.list_files.clear()
             self.pic_show_layout.counter = 0
+
         for root, dirs, files in os.walk(r"" + self.content_path):
-            for file in files:
-                img_path = os.path.join(root, file)
-                if img_path.lower().endswith(
+            file_date_tuple_list = [(os.path.join(root,x),os.path.getmtime(os.path.join(root,x))) for x in files]
+            file_date_tuple_list.sort(key=lambda x: x[1])
+            for img_path in file_date_tuple_list:
+                if img_path[0].lower().endswith(
                         ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp')):
-                    self.list_files.append(img_path)
+                    self.list_files.append(img_path[0])
 
     def is_number(self, s):
         try:
