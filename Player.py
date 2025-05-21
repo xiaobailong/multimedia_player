@@ -293,6 +293,12 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_S):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.screenshot()
+        if (event.key() == Qt.Key_Z):
+            self.video_show_layout.get_video_start()
+        if (event.key() == Qt.Key_X):
+            self.video_show_layout.get_video_end()
+        if (event.key() == Qt.Key_C):
+            self.video_show_layout.video_cut()
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
             self.notice("shift + o")
 
