@@ -1,0 +1,1 @@
+'/usr/local/bin/python3'  '/Users/gaoqingyue/WorkSpace/Code/multimedia_player/Player.py'
