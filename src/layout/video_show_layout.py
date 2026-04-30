@@ -1,7 +1,7 @@
-import os,glob
+import os, glob
 import time
+import subprocess
 
-import cv2
 import send2trash
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
@@ -9,7 +9,6 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 
 from loguru import logger
-from PIL import ImageGrab
 
 from src.data_manager.config_manager import ConfigManager
 from src.layout.video_cut_thread import VideoCutThread
@@ -55,8 +54,10 @@ class VideoShowLayout(QVBoxLayout):
 
         self.qscrollarea = QScrollArea()
 
-        screen = ImageGrab.grab()
-        screen_width, screen_height = screen.size
+        # Use PyQt5 QDesktopWidget instead of PIL.ImageGrab for screen size
+        desktop = QApplication.desktop()
+        screen_width = desktop.width()
+        screen_height = desktop.height()
         self.screen_width = int(screen_width * main_window.left / (main_window.left + main_window.right))
         self.screen_height = int(screen_height * main_window.left / (main_window.left + main_window.right))
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
@@ -169,7 +170,7 @@ class VideoShowLayout(QVBoxLayout):
         self.addWidget(self.controal_hbox_qwidget)
         self.addWidget(self.cut_bar_hbox_qwidget)
 
-        self.timer = QTimer()  # 定义定时器
+        self.timer = QTimer()
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.onTimerOut)
 
@@ -213,7 +214,6 @@ class VideoShowLayout(QVBoxLayout):
         self.player.setPosition(num)
         self.onTimerOut()
 
-    # 快退
     def down_time(self):
         num = self.player.position() - int(self.player.duration() / 80)
         self.player.setPosition(num)
@@ -277,7 +277,6 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_end = int(tangent / 1000)
 
     def slider_progress_moved(self):
-
         if self.bar_slider.move_type != 'time':
             self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
 
@@ -287,7 +286,6 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_label.setText('已播放:' + text)
 
     def onTimerOut(self):
-
         position = self.player.position()
         duration = self.player.duration()
         self.cut_bar_slider.duration = self.player.duration() / 1000
@@ -329,27 +327,41 @@ class VideoShowLayout(QVBoxLayout):
 
     def screenshot(self):
         try:
-            vc = cv2.VideoCapture(self.path)
-            vc.set(cv2.CAP_PROP_POS_MSEC, self.player.position())
-            rval, frame = vc.read()
+            (path, filename) = os.path.split(self.path)
+            (file, ext) = os.path.splitext(filename)
+            new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
+            if self.config_manager.exist(VideoShowLayout.video_screenshot_path_key):
+                new_path = self.config_manager.get(VideoShowLayout.video_screenshot_path_key) + os.sep + file + '_'
 
-            if rval:
-                (path, filename) = os.path.split(self.path)
-                (file, ext) = os.path.splitext(filename)
-                new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
-                if self.config_manager.exist(VideoShowLayout.video_screenshot_path_key):
-                    new_path = self.config_manager.get(VideoShowLayout.video_screenshot_path_key) + os.sep + file + '_'
+            save_path = new_path + '_' + str(self.player.position()) + '.jpg'
 
-                save_path = new_path + '_' + str(self.player.position()) + '.jpg'
-                cv2.imencode('.jpg', frame)[1].tofile(save_path)
+            ffmpeg_path = self.get_ffmpeg_path()
+            if not os.path.exists(ffmpeg_path):
+                self.main_window.notice('ffmpeg路径获取错误： ' + ffmpeg_path)
+                return
 
-                if os.path.exists(save_path):
-                    self.main_window.notice('截图成功，保存到 ' + save_path)
-                    self.main_window.model.refresh()
+            position_sec = self.player.position() / 1000
+            command = [
+                ffmpeg_path,
+                '-ss', str(position_sec),
+                '-i', self.path,
+                '-vframes', '1',
+                '-q:v', '2',
+                '-y',
+                save_path
+            ]
+            subprocess.run(command, capture_output=True, timeout=30)
+
+            if os.path.exists(save_path):
+                self.main_window.notice('截图成功，保存到 ' + save_path)
+                self.main_window.model.refresh()
             else:
-                self.main_window.notice("截图视频加载失败失败!!!")
+                self.main_window.notice("截图失败!!!")
+        except subprocess.TimeoutExpired:
+            self.main_window.notice("截图超时!!!")
         except Exception as e:
-            logger.error(f"获取视频封面图失败: {e}")
+            logger.error(f"截图失败: {e}")
+            self.main_window.notice(f"截图失败: {e}")
 
     def get_video_start(self):
         m, s = divmod(self.player.position() / 1000, 60)
@@ -364,7 +376,6 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_edit_end.setText(text)
 
     def video_cut(self):
-
         (path, filename) = os.path.split(self.path)
         (file, ext) = os.path.splitext(filename)
         new_path = os.path.expanduser('~') + os.sep + 'Downloads' + os.sep + file + '_'
@@ -396,7 +407,6 @@ class VideoShowLayout(QVBoxLayout):
         return "%02d:%02d:%02d" % (h, m, s)
 
     def get_ffmpeg_path(self):
-        # 优先使用用户配置的 ffmpeg 路径
         if self.config_manager.exist(self.ffmpeg_path_key):
             ffmpeg_path = self.config_manager.get(self.ffmpeg_path_key)
             if os.path.exists(ffmpeg_path):
@@ -404,14 +414,12 @@ class VideoShowLayout(QVBoxLayout):
             else:
                 self.config_manager.remove(self.ffmpeg_path_key)
 
-        # 使用 utils 中的路径解析（支持打包环境）
         ffmpeg_path = utils_get_ffmpeg_path()
         if os.path.exists(ffmpeg_path):
             if not self.config_manager.exist(self.ffmpeg_path_key):
                 self.config_manager.add_or_update(self.ffmpeg_path_key, ffmpeg_path)
             return ffmpeg_path
 
-        # 最后尝试在 PATH 中搜索
         path_env = os.environ.get('PATH') or os.environ.get('Path', '')
         for item in path_env.split(os.pathsep):
             candidate = os.path.join(item, 'ffmpeg')
@@ -440,7 +448,7 @@ class VideoShowLayout(QVBoxLayout):
 
         files = filter(os.path.isfile, glob.glob(os.path.join(path, "*.mp4")))
 
-        file_date_tuple_list = [(x,os.path.getmtime(x)) for x in files]
+        file_date_tuple_list = [(x, os.path.getmtime(x)) for x in files]
         file_date_tuple_list.sort(key=lambda x: x[1])
 
         for file in file_date_tuple_list:

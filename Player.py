@@ -1,4 +1,5 @@
 import shutil
+import tempfile
 
 import send2trash
 from PyQt5.QtWidgets import *
@@ -351,9 +352,11 @@ class MainWindow(QMainWindow):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
 
-    # 单实例锁：防止重复启动多个副本
-    shared_memory = QSharedMemory("多媒体播放器-SingleInstance")
-    if not shared_memory.create(1):
+    # 单实例锁：使用 QLockFile 防止重复启动多个副本
+    # QLockFile 基于文件锁，进程退出时 OS 自动释放，不会残留
+    lock_file_path = os.path.join(tempfile.gettempdir(), "多媒体播放器.lock")
+    lock_file = QLockFile(lock_file_path)
+    if not lock_file.tryLock(100):
         logger.warning("已有实例在运行，退出当前进程")
         sys.exit(0)
 
