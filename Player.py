@@ -345,6 +345,20 @@ class MainWindow(QMainWindow):
             self.video_show_qwidget.setVisible(True)
             self.pic_show_qwidget.setVisible(False)
 
+    def closeEvent(self, event):
+        """关闭窗口时清理视频播放器资源，防止 macOS AVFoundation 崩溃"""
+        # 停止定时器
+        if hasattr(self, 'video_show_layout'):
+            if self.video_show_layout.timer.isActive():
+                self.video_show_layout.timer.stop()
+            # 停止播放并释放媒体资源
+            self.video_show_layout.player.stop()
+            self.video_show_layout.player.setMedia(QMediaContent())
+            # 断开视频输出，防止 CVDisplayLink 回调访问已释放对象
+            self.video_show_layout.player.setVideoOutput(None)
+
+        event.accept()
+
     def notice(self, content):
         self.statusLabel.setText(content)
 
