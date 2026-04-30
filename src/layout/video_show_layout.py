@@ -406,22 +406,20 @@ class VideoShowLayout(QVBoxLayout):
             else:
                 self.config_manager.remove(self.ffmpeg_path_key)
 
-        ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
+        ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg'
         if os.path.exists(ffmpeg_path):
             if not self.config_manager.exist(self.ffmpeg_path_key):
                 self.config_manager.add_or_update(self.ffmpeg_path_key, ffmpeg_path)
             return ffmpeg_path
         else:
-            value = os.environ.get('Path')
-            for item in value.split(";"):
-                if '\\bin' in item or 'ffmpeg' in item:
-                    ffmpeg_path = os.path.join(item, 'ffmpeg.exe')
+            path_env = os.environ.get('PATH') or os.environ.get('Path', '')
+            for item in path_env.split(os.pathsep):
+                if 'ffmpeg' in item:
+                    ffmpeg_path = os.path.join(item, 'ffmpeg')
                     if os.path.exists(ffmpeg_path):
                         if not self.config_manager.exist(self.ffmpeg_path_key):
                             self.config_manager.add_or_update(self.ffmpeg_path_key, ffmpeg_path)
                         return ffmpeg_path
-                    else:
-                        ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg.exe'
 
         return ffmpeg_path
 
@@ -441,7 +439,7 @@ class VideoShowLayout(QVBoxLayout):
             self.play_list.clear()
             self.play_list_index = 0
 
-        files = filter(os.path.isfile,glob.glob(path + "\\*.mp4"))
+        files = filter(os.path.isfile, glob.glob(os.path.join(path, "*.mp4")))
 
         file_date_tuple_list = [(x,os.path.getmtime(x)) for x in files]
         file_date_tuple_list.sort(key=lambda x: x[1])
