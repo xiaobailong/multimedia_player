@@ -2,10 +2,9 @@ import os
 from loguru import logger
 
 from PyQt5.QtCore import QThread, pyqtSignal
+from src.utils import get_log_path
 
-logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
-           filter="",
-           level="INFO")
+log_dir = get_log_path()
 
 
 class VideoCutThread(QThread):

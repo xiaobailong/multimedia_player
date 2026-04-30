@@ -15,10 +15,7 @@ from src.data_manager.config_manager import ConfigManager
 from src.layout.video_cut_thread import VideoCutThread
 from src.layout.custom_slider import CustomSlider
 from src.layout.range_slider import QRangeSlider
-
-logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
-           filter="",
-           level="INFO")
+from src.utils import get_log_path, get_ffmpeg_path as utils_get_ffmpeg_path
 
 
 class VideoShowLayout(QVBoxLayout):
@@ -399,6 +396,7 @@ class VideoShowLayout(QVBoxLayout):
         return "%02d:%02d:%02d" % (h, m, s)
 
     def get_ffmpeg_path(self):
+        # 优先使用用户配置的 ffmpeg 路径
         if self.config_manager.exist(self.ffmpeg_path_key):
             ffmpeg_path = self.config_manager.get(self.ffmpeg_path_key)
             if os.path.exists(ffmpeg_path):
@@ -406,20 +404,21 @@ class VideoShowLayout(QVBoxLayout):
             else:
                 self.config_manager.remove(self.ffmpeg_path_key)
 
-        ffmpeg_path = os.getcwd() + '/libs/ffmpeg/ffmpeg'
+        # 使用 utils 中的路径解析（支持打包环境）
+        ffmpeg_path = utils_get_ffmpeg_path()
         if os.path.exists(ffmpeg_path):
             if not self.config_manager.exist(self.ffmpeg_path_key):
                 self.config_manager.add_or_update(self.ffmpeg_path_key, ffmpeg_path)
             return ffmpeg_path
-        else:
-            path_env = os.environ.get('PATH') or os.environ.get('Path', '')
-            for item in path_env.split(os.pathsep):
-                if 'ffmpeg' in item:
-                    ffmpeg_path = os.path.join(item, 'ffmpeg')
-                    if os.path.exists(ffmpeg_path):
-                        if not self.config_manager.exist(self.ffmpeg_path_key):
-                            self.config_manager.add_or_update(self.ffmpeg_path_key, ffmpeg_path)
-                        return ffmpeg_path
+
+        # 最后尝试在 PATH 中搜索
+        path_env = os.environ.get('PATH') or os.environ.get('Path', '')
+        for item in path_env.split(os.pathsep):
+            candidate = os.path.join(item, 'ffmpeg')
+            if os.path.exists(candidate):
+                if not self.config_manager.exist(self.ffmpeg_path_key):
+                    self.config_manager.add_or_update(self.ffmpeg_path_key, candidate)
+                return candidate
 
         return ffmpeg_path
 

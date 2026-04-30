@@ -2,12 +2,15 @@
 
 import apsw
 from loguru import logger
+from src.utils import get_db_path
 
 
 class Sqlite3Client:
 
     def __init__(self, *args, **kwargs):
-        self.conn = apsw.Connection('player.db')
+        db_path = get_db_path()
+        self.conn = apsw.Connection(db_path)
+        logger.info(f"数据库路径: {db_path}")
 
     def showData(self, sql):
         c = self.conn.cursor()

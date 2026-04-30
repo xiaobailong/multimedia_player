@@ -13,14 +13,17 @@ from src.data_manager.config_manager import ConfigManager
 from src.layout.pic_input_layout import PicInputLayout
 from src.layout.pic_show_layout import PicShowLayout
 from src.layout.video_show_layout import VideoShowLayout
+from src.utils import get_log_path
 
 import warnings
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
+log_dir = get_log_path()
+logger.add(os.path.join(log_dir, "file_{time:YYYY-MM-DD}.log"), rotation="500 MB", format="{time} {level} {message}",
            filter="",
            level="INFO")
+logger.info(f"日志目录: {log_dir}")
 
 
 class MainWindow(QMainWindow):
@@ -347,6 +350,12 @@ class MainWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+
+    # 单实例锁：防止重复启动多个副本
+    shared_memory = QSharedMemory("多媒体播放器-SingleInstance")
+    if not shared_memory.create(1):
+        logger.warning("已有实例在运行，退出当前进程")
+        sys.exit(0)
 
     window = MainWindow()
     window.show()

@@ -5,10 +5,7 @@ import os
 from loguru import logger
 
 from src.data_manager.config_manager import ConfigManager
-
-logger.add("log/file_{time:YYYY-MM-DD}.log", rotation="500 MB", enqueue=True, format="{time} {level} {message}",
-           filter="",
-           level="INFO")
+from src.utils import get_log_path
 
 
 class PicInputLayout(QHBoxLayout):
