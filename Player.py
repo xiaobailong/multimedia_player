@@ -4,6 +4,7 @@ import tempfile
 import send2trash
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
+from PyQt5.QtMultimedia import QMediaContent
 from PyQt5.QtWidgets import QApplication
 
 import sys, os
