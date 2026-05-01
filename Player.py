@@ -29,13 +29,19 @@ logger.info(f"日志目录: {log_dir}")
 
 
 class FileDisplayDelegate(QStyledItemDelegate):
-    """自定义委托：文件名只显示前20字符，悬浮显示全名和文件大小"""
+    """自定义委托：文件名只显示前20字符，sizeHint返回完整宽度触发滚动条，悬浮显示全名和文件大小"""
 
     def displayText(self, value, locale):
         text = value
         if len(text) > 20:
             text = text[:20] + "..."
         return text
+
+    def sizeHint(self, option, index):
+        text = index.model().fileName(index)
+        font_metrics = QFontMetrics(option.font)
+        text_width = font_metrics.horizontalAdvance(text) + 40  # 完整文件名宽度 + 图标/边距余量
+        return QSize(text_width, super().sizeHint(option, index).height())
 
     def helpEvent(self, event, view, option, index):
         if event.type() == QEvent.ToolTip:
@@ -105,8 +111,19 @@ class MainWindow(QMainWindow):
         self.treeView.setColumnHidden(1, True)
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
-        # 启用水平滚动条
-        self.treeView.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # 固定第一列宽度，禁用自动拉伸，使内容可溢出触发水平滚动条
+        header = self.treeView.header()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        self.treeView.setColumnWidth(0, 180)
+        # 启用水平滚动条，始终显示
+        self.treeView.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        # 水平滚动条默认在最右侧（展示截断效果），范围变化时自动修正
+        self.treeView.horizontalScrollBar().rangeChanged.connect(
+            lambda: self.treeView.horizontalScrollBar().setValue(
+                self.treeView.horizontalScrollBar().maximum()
+            )
+        )
         # 自定义委托：文件名截断 + 悬浮显示
         self.treeView.setItemDelegate(FileDisplayDelegate(self.treeView))
         # self.treeView.setRootIndex(self.model.index("")) #设置默认加载的目录
