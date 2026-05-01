@@ -271,10 +271,12 @@ class MainWindow(QMainWindow):
         self.treeView.setVisible(True)
         self.statusbar.setVisible(True)
         self.mainQWidget.setStyleSheet(self.style_sheet)
+        self.full_screen_state = MainWindow.normal
         self.showNormal()
 
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Escape):
+            self.full_screen_state = MainWindow.normal
             self.screen_normal()
         if (event.key() == Qt.Key_Left):
             if self.video_show_qwidget.isVisible():
@@ -336,6 +338,7 @@ class MainWindow(QMainWindow):
         self.treeView.setVisible(False)
         self.statusbar.setVisible(False)
         self.mainQWidget.setStyleSheet("border:none;")
+        self.full_screen_state = MainWindow.full
         self.showFullScreen()
 
     def change_show(self, show_type):
