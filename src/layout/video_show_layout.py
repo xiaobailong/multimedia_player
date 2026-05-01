@@ -112,6 +112,11 @@ class VideoShowLayout(QVBoxLayout):
         self.next_btn.clicked.connect(self.next)
         self.controal_hbox.addWidget(self.next_btn)
 
+        self.delete_btn = QPushButton()
+        self.delete_btn.setText("删除")
+        self.delete_btn.clicked.connect(self.delete)
+        self.controal_hbox.addWidget(self.delete_btn)
+
         self.screenshot_button = QPushButton('截图')
         self.screenshot_button.clicked.connect(self.screenshot)
         self.controal_hbox.addWidget(self.screenshot_button)
@@ -456,15 +461,69 @@ class VideoShowLayout(QVBoxLayout):
                 self.play_list.append(file[0])
 
     def delete(self):
-        self.player.setMedia(QMediaContent())
         if len(self.path) > 0 and self.is_video(self.path):
-            try:
-                (path, filename) = os.path.split(self.path)
-                os.chdir(path)
-                send2trash.send2trash(filename)
-                self.main_window.notice(self.path + ' 文件已删除!!!')
-                self.main_window.model.refresh()
-            except Exception as e:
-                self.main_window.notice("文件删除异常!!!" + str(e))
+            (path, filename) = os.path.split(self.path)
+            deleted_file_path = self.path
+            deleted_file_index = -1
+            # 记录被删除文件在播放列表中的位置
+            for i, p in enumerate(self.play_list):
+                if p == deleted_file_path:
+                    deleted_file_index = i
+                    break
+            # 从播放列表中移除被删除的文件
+            if deleted_file_index >= 0:
+                self.play_list.pop(deleted_file_index)
+                if self.play_list_index > deleted_file_index:
+                    self.play_list_index -= 1
+                elif self.play_list_index == deleted_file_index:
+                    # 当前播放的被删除了，尝试播放下一个
+                    if self.play_list_index >= len(self.play_list):
+                        self.play_list_index = len(self.play_list) - 1
 
-        self.next()
+            # 释放媒体资源，删除和播放下一个延迟到媒体释放完成后执行
+            self.player.setMedia(QMediaContent())
+            self.player.setVideoOutput(None)
+            QTimer.singleShot(200, lambda: self._do_delete(path, filename, deleted_file_path))
+        else:
+            self.next()
+
+    def _do_delete(self, path, filename, deleted_file_path):
+        """实际执行文件删除并播放下一个（在媒体释放后调用）"""
+        try:
+            os.chdir(path)
+            send2trash.send2trash(filename)
+            self.main_window.notice(deleted_file_path + ' 文件已删除!!!')
+            self.main_window.model.refresh()
+
+            # 首先尝试从播放列表播放下一个
+            if len(self.play_list) > 0 and 0 <= self.play_list_index < len(self.play_list):
+                self.player.setVideoOutput(self.video_widget)
+                self.play(self.play_list[self.play_list_index])
+            else:
+                # 播放列表为空，扫描目录找下一个视频
+                files = filter(os.path.isfile, glob.glob(os.path.join(path, "*.mp4")))
+                file_date_tuple_list = [(x, os.path.getmtime(x)) for x in files]
+                file_date_tuple_list.sort(key=lambda x: x[1])
+
+                # 找到删除文件的位置，播放下一个
+                found = False
+                next_file = None
+                for file in file_date_tuple_list:
+                    if found:
+                        next_file = file[0]
+                        break
+                    if file[0] == deleted_file_path:
+                        found = True
+
+                # 如果没有下一个，播放下一个前一个
+                if not next_file and len(file_date_tuple_list) > 0:
+                    next_file = file_date_tuple_list[-1][0]
+
+                if next_file and os.path.exists(next_file):
+                    self.player.setVideoOutput(self.video_widget)
+                    self.play(next_file)
+                else:
+                    self.player.setVideoOutput(self.video_widget)
+        except Exception as e:
+            self.player.setVideoOutput(self.video_widget)
+            self.main_window.notice("文件删除异常!!!" + str(e))

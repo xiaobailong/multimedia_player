@@ -314,7 +314,12 @@ class MainWindow(QMainWindow):
                 self.pic_show_layout.delete()
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.delete()
-        if (event.key() == Qt.Key_D):
+        elif (event.key() == Qt.Key_D and QApplication.keyboardModifiers() == Qt.ControlModifier):
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.delete()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.delete()
+        elif (event.key() == Qt.Key_D):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()
             if self.video_show_qwidget.isVisible():
