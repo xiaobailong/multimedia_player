@@ -11,6 +11,7 @@ from PyQt5.QtCore import *
 from loguru import logger
 
 from src.data_manager.config_manager import ConfigManager
+from src.data_manager.sqlite3_client import Sqlite3Client
 from src.layout.video_cut_thread import VideoCutThread
 from src.layout.custom_slider import CustomSlider
 from src.layout.range_slider import QRangeSlider
@@ -39,6 +40,11 @@ class VideoShowLayout(QVBoxLayout):
         self.play_list = []
         self.play_list_index = 0
         self.play_mode = VideoShowLayout.play_mode_one
+
+        # 播放位置记忆
+        self._position_save_count = 0  # 每 5 秒保存一次
+        self.db_client = Sqlite3Client()
+        self._init_position_table()
 
         self.get_ffmpeg_path()
 
@@ -226,6 +232,7 @@ class VideoShowLayout(QVBoxLayout):
 
     def pause(self):
         if self.play_state:
+            self._save_position()  # 暂停时保存位置
             self.player.pause()
             self.play_state = False
             self.stop_btn.setText("播放")
@@ -236,6 +243,7 @@ class VideoShowLayout(QVBoxLayout):
 
     def run_or_stop(self):
         if self.play_state:
+            self._save_position()  # 停止时保存位置
             self.player.pause()
             self.timer.stop()
             self.play_state = False
@@ -261,7 +269,18 @@ class VideoShowLayout(QVBoxLayout):
         self.play_state = True
         self.stop_btn.setText("暂停")
 
+        # 从数据库加载上次播放位置，延迟等媒体加载完成后跳转
+        saved_pos = self._load_position()
+        if saved_pos > 0:
+            QTimer.singleShot(500, lambda: self._seek_to_saved_position(saved_pos))
+
         self.timer.start()
+
+    def _seek_to_saved_position(self, saved_pos):
+        """跳转到保存的播放位置"""
+        if saved_pos < self.player.duration():
+            self.player.setPosition(saved_pos)
+            self.main_window.notice(f"已恢复上次播放位置")
 
     def slider_start(self, value):
         tangent = value / self.bar_slider_maxvalue * self.player.duration()
@@ -310,6 +329,12 @@ class VideoShowLayout(QVBoxLayout):
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.bar_label_all.setText('总时长:' + text)
+
+        # 每 5 秒保存一次播放位置
+        self._position_save_count += 1
+        if self._position_save_count >= 5:
+            self._position_save_count = 0
+            self._save_position()
 
         if self.player.position() == self.player.duration():
             if self.play_mode == VideoShowLayout.play_mode_list:
@@ -487,9 +512,54 @@ class VideoShowLayout(QVBoxLayout):
         else:
             self.next()
 
+    def _init_position_table(self):
+        """创建播放位置记忆表（如果不存在）"""
+        sql = """CREATE TABLE IF NOT EXISTS video_play_position (
+            file_path TEXT PRIMARY KEY NOT NULL,
+            position INTEGER NOT NULL,
+            duration INTEGER NOT NULL,
+            update_time TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+        )"""
+        self.db_client.exeUpdate(sql)
+
+    def _save_position(self):
+        """保存当前播放位置到数据库"""
+        if not self.path or not os.path.exists(self.path):
+            return
+        position = self.player.position()
+        duration = self.player.duration()
+        if position <= 30:  # 刚开始几秒不保存
+            return
+        # 使用 INSERT OR REPLACE 更新记录
+        sql = f"""INSERT OR REPLACE INTO video_play_position (file_path, position, duration, update_time)
+                  VALUES ('{self.path.replace("'", "''")}', {position}, {duration}, datetime('now','localtime'))"""
+        try:
+            self.db_client.exeUpdate(sql)
+        except Exception as e:
+            logger.warning(f"保存播放位置失败: {e}")
+
+    def _load_position(self):
+        """从数据库加载播放位置，返回 position（毫秒），无记录则返回 0"""
+        if not self.path:
+            return 0
+        escaped_path = self.path.replace("'", "''")
+        sql = f"SELECT position FROM video_play_position WHERE file_path = '{escaped_path}'"
+        try:
+            cursor = self.db_client.exeQuery(sql)
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        except Exception as e:
+            logger.warning(f"加载播放位置失败: {e}")
+        return 0
+
     def _do_delete(self, path, filename, deleted_file_path):
         """实际执行文件删除并播放下一个（在媒体释放后调用）"""
         try:
+            # 清理数据库中的播放位置记录
+            escaped_path = deleted_file_path.replace("'", "''")
+            self.db_client.exeUpdate(f"DELETE FROM video_play_position WHERE file_path = '{escaped_path}'")
+
             os.chdir(path)
             send2trash.send2trash(filename)
             self.main_window.notice(deleted_file_path + ' 文件已删除!!!')

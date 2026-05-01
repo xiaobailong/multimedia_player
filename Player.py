@@ -28,6 +28,38 @@ logger.add(os.path.join(log_dir, "file_{time:YYYY-MM-DD}.log"), rotation="500 MB
 logger.info(f"日志目录: {log_dir}")
 
 
+class FileDisplayDelegate(QStyledItemDelegate):
+    """自定义委托：文件名只显示前20字符，悬浮显示全名和文件大小"""
+
+    def displayText(self, value, locale):
+        text = value
+        if len(text) > 20:
+            text = text[:20] + "..."
+        return text
+
+    def helpEvent(self, event, view, option, index):
+        if event.type() == QEvent.ToolTip:
+            file_path = index.model().filePath(index)
+            file_name = index.model().fileName(index)
+            if os.path.isfile(file_path):
+                size_bytes = os.path.getsize(file_path)
+                size_str = self._format_size(size_bytes)
+                QToolTip.showText(event.globalPos(), f"{file_name}\n大小: {size_str}")
+            else:
+                QToolTip.showText(event.globalPos(), file_name)
+            return True
+        return super().helpEvent(event, view, option, index)
+
+    @staticmethod
+    def _format_size(bytes_size):
+        """格式化文件大小"""
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if bytes_size < 1024:
+                return f"{bytes_size:.1f} {unit}"
+            bytes_size /= 1024
+        return f"{bytes_size:.1f} TB"
+
+
 class MainWindow(QMainWindow):
     expand_path_config_key = 'default.expand.path'
     show_type_video = 'video'
@@ -73,6 +105,10 @@ class MainWindow(QMainWindow):
         self.treeView.setColumnHidden(1, True)
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
+        # 启用水平滚动条
+        self.treeView.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # 自定义委托：文件名截断 + 悬浮显示
+        self.treeView.setItemDelegate(FileDisplayDelegate(self.treeView))
         # self.treeView.setRootIndex(self.model.index("")) #设置默认加载的目录
         self.treeView.clicked.connect(self.on_tree_clicked)
         self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
@@ -99,6 +135,15 @@ class MainWindow(QMainWindow):
         self.statusLabel = QLabel()
         self.statusLabel.setText("状态栏")
         self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
+
+        self.toggle_tree_btn = QPushButton("◀ 隐藏列表")
+        self.toggle_tree_btn.setFixedSize(90, 22)
+        self.toggle_tree_btn.clicked.connect(self.toggle_tree)
+        self.statusbar.addPermanentWidget(self.toggle_tree_btn)
+
+        self.tree_visible = True
+        # 记录展开时的窗口比例，用于恢复
+        self.tree_sizes = [10000 * self.left, 10000 * self.right]
 
         self.show()
 
@@ -338,6 +383,8 @@ class MainWindow(QMainWindow):
             self.video_show_layout.get_video_end()
         if (event.key() == Qt.Key_C):
             self.video_show_layout.video_cut()
+        if (event.key() == Qt.Key_B) and QApplication.keyboardModifiers() == Qt.ControlModifier:
+            self.toggle_tree()
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
             self.notice("shift + o")
 
@@ -376,6 +423,20 @@ class MainWindow(QMainWindow):
             self.video_show_layout.player.setVideoOutput(None)
 
         event.accept()
+
+    def toggle_tree(self):
+        if self.tree_visible:
+            # 隐藏前保存当前比例
+            self.tree_sizes = self.mainQWidget.sizes()
+            self.treeView.setVisible(False)
+            self.toggle_tree_btn.setText("▶ 展开列表")
+            self.tree_visible = False
+        else:
+            self.treeView.setVisible(True)
+            self.toggle_tree_btn.setText("◀ 隐藏列表")
+            self.tree_visible = True
+            # 恢复展开时的比例
+            self.mainQWidget.setSizes(self.tree_sizes)
 
     def notice(self, content):
         self.statusLabel.setText(content)
