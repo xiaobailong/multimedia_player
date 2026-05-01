@@ -272,7 +272,14 @@ class MainWindow(QMainWindow):
         self.statusbar.setVisible(True)
         self.mainQWidget.setStyleSheet(self.style_sheet)
         self.full_screen_state = MainWindow.normal
-        self.showNormal()
+        if hasattr(self, 'normal_rect'):
+            x, y, w, h = self.normal_rect
+            self.showNormal()
+            # macOS 退出原生全屏有动画，动画完成后会重置窗口尺寸
+            # 延迟 1 秒确保动画完全结束后再恢复原始大小和位置
+            QTimer.singleShot(1000, lambda: self.setGeometry(x, y, w, h))
+        else:
+            self.showNormal()
 
     def keyPressEvent(self, event):
         if (event.key() == Qt.Key_Escape):
@@ -339,6 +346,8 @@ class MainWindow(QMainWindow):
         self.statusbar.setVisible(False)
         self.mainQWidget.setStyleSheet("border:none;")
         self.full_screen_state = MainWindow.full
+        # 保存当前窗口大小和位置，用于退出全屏时恢复
+        self.normal_rect = (self.x(), self.y(), self.width(), self.height())
         self.showFullScreen()
 
     def change_show(self, show_type):
