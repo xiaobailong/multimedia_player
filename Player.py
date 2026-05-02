@@ -324,6 +324,10 @@ class MainWindow(QMainWindow):
             self.screen_normal()
 
     def screen_normal(self):
+        # 先退出全屏模式（将控制控件从悬浮面板恢复到主布局）
+        if hasattr(self, 'video_show_layout') and self.video_show_layout._is_fullscreen:
+            self.video_show_layout.exit_fullscreen_mode()
+
         if self.video_show_qwidget.isVisible():
             self.video_show_layout.setVisible(True)
         if self.pic_show_qwidget.isVisible():
@@ -369,6 +373,16 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_F):
             self.full_screen_state += 1
             self.change_screen_full()
+        if (event.key() == Qt.Key_M) and self.full_screen_state != MainWindow.normal:
+            # M 键在全屏时切换控制面板的显示/隐藏
+            if hasattr(self, 'video_show_layout') and hasattr(self.video_show_layout, 'floating_panel'):
+                panel = self.video_show_layout.floating_panel
+                if panel.isVisible():
+                    panel.hide_panel()
+                else:
+                    panel.resizeToFitContent()
+                    panel.repositionDefault()
+                    panel.show_panel()
         if (event.key() == Qt.Key_Delete):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.delete()
@@ -416,6 +430,10 @@ class MainWindow(QMainWindow):
         # 保存当前窗口大小和位置，用于退出全屏时恢复
         self.normal_rect = (self.x(), self.y(), self.width(), self.height())
         self.showFullScreen()
+
+        # 视频全屏时使用悬浮控制面板
+        if self.video_show_qwidget.isVisible():
+            QTimer.singleShot(300, self.video_show_layout.enter_fullscreen_mode)
 
     def change_show(self, show_type):
         if show_type == MainWindow.show_type_pic:

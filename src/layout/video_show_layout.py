@@ -11,6 +11,7 @@ from PyQt5.QtCore import *
 from loguru import logger
 
 from src.data_manager.config_manager import ConfigManager
+from src.layout.floating_control_panel import FloatingControlPanel
 from src.data_manager.sqlite3_client import Sqlite3Client
 from src.layout.video_cut_thread import VideoCutThread
 from src.layout.custom_slider import CustomSlider
@@ -177,13 +178,82 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_hbox_qwidget.setLayout(self.cut_bar_hbox)
 
         self.addWidget(self.qscrollarea)
+        # 记录控制控件的插入位置（在 qscrollarea 之后）
+        self._control_widget_start_index = self.count()
         self.addWidget(self.bar_hbox_qwidget)
         self.addWidget(self.controal_hbox_qwidget)
         self.addWidget(self.cut_bar_hbox_qwidget)
 
+        # 全屏悬浮控制面板（初始不添加控件）
+        self.floating_panel = FloatingControlPanel(main_window)
+        self.floating_panel.setWindowOpacity(1.0)
+        self.floating_panel.hide()
+        self._is_fullscreen = False
+
         self.timer = QTimer()
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.onTimerOut)
+
+    def enter_fullscreen_mode(self):
+        """进入全屏模式：将控制控件移动到悬浮面板，只保留视频画面"""
+        self._is_fullscreen = True
+        # 隐藏标题（全屏时不需要显示文件路径）
+        self.titleQLabel.setVisible(False)
+
+        # 将控制控件从主布局移除并添加到悬浮面板
+        self._move_controls_to_panel()
+
+        # 显示悬浮面板
+        QTimer.singleShot(500, self._show_floating_panel)
+
+    def exit_fullscreen_mode(self):
+        """退出全屏模式：恢复到普通布局"""
+        self._is_fullscreen = False
+        # 隐藏悬浮面板并从面板中移除控件
+        self.floating_panel.hide()
+        self.floating_panel.clearControlWidgets()
+
+        # 将控制控件恢复到主布局中的正确位置
+        self._restore_controls_from_panel()
+
+        # 恢复标题显示
+        self.titleQLabel.setVisible(True)
+        self.bar_hbox_qwidget.setVisible(True)
+        self.controal_hbox_qwidget.setVisible(True)
+        self.cut_bar_hbox_qwidget.setVisible(True)
+
+    def _move_controls_to_panel(self):
+        """将控制控件从主布局移动到悬浮面板"""
+        # 从主布局移除
+        for w in [self.bar_hbox_qwidget, self.controal_hbox_qwidget, self.cut_bar_hbox_qwidget]:
+            self.removeWidget(w)
+            w.setParent(None)
+
+        # 添加到悬浮面板（确保它们可见，因为之前可能被 setVisible(False) 隐藏了）
+        self.floating_panel.addControlWidget(self.bar_hbox_qwidget)
+        self.floating_panel.addControlWidget(self.controal_hbox_qwidget)
+        self.floating_panel.addControlWidget(self.cut_bar_hbox_qwidget)
+        self.bar_hbox_qwidget.setVisible(True)
+        self.controal_hbox_qwidget.setVisible(True)
+        self.cut_bar_hbox_qwidget.setVisible(True)
+
+    def _restore_controls_from_panel(self):
+        """将控制控件从悬浮面板恢复到主布局"""
+        # 控件已在 clearControlWidgets 中被移出 panel，只需插入回主布局
+        # 按原有顺序插入到 qscrollarea 之后
+        index = self._control_widget_start_index
+        self.insertWidget(index, self.bar_hbox_qwidget)
+        self.insertWidget(index + 1, self.controal_hbox_qwidget)
+        self.insertWidget(index + 2, self.cut_bar_hbox_qwidget)
+
+    def _show_floating_panel(self):
+        """延迟显示悬浮面板（等待全屏切换完成）"""
+        if not self._is_fullscreen:
+            return
+        self.floating_panel.resizeToFitContent()
+        self.floating_panel.repositionDefault()
+        self.floating_panel.setWindowOpacity(1.0)
+        self.floating_panel.show()
 
     def previous(self):
         if len(self.play_list) == 0 or len(self.play_list) == self.play_list_index:
