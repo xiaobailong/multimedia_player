@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
 from loguru import logger
 
 
@@ -22,7 +22,7 @@ class CustomTitleBar(QWidget):
 
         self._icon_label = QLabel("\U0001f3ac")
         self._icon_label.setFixedSize(20, 20)
-        self._icon_label.setAlignment(Qt.AlignCenter)
+        self._icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._icon_label)
 
         self._title_label = QLabel("多媒体播放器")
@@ -71,7 +71,7 @@ class CustomTitleBar(QWidget):
             }
         """)
         # 确保按钮接受鼠标事件
-        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
 
     def _create_btn(self, text):
         btn = QPushButton(text)
@@ -102,7 +102,7 @@ class CustomTitleBar(QWidget):
             self._max_btn.setText("\u2740")
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             child = self.childAt(event.pos())
             if child is not None and child is not self:
                 logger.debug(f"[TitleBar] click on child: {child}")
@@ -118,7 +118,7 @@ class CustomTitleBar(QWidget):
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             child = self.childAt(event.pos())
             if child is not None and child is not self:
                 super().mouseDoubleClickEvent(event)

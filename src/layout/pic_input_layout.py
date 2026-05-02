@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
 import os
 
 from loguru import logger
@@ -12,7 +12,7 @@ class PicInputLayout(QHBoxLayout):
     pic_show_list_key = 'pic.show.list'
 
     def __init__(self, pic_show_layout, *args, **kwargs):
-        super(*args, **kwargs).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.content_path = ''
         self.pic_show_layout = pic_show_layout
@@ -21,7 +21,7 @@ class PicInputLayout(QHBoxLayout):
 
         self.inputPathTitle = QLabel()
         self.inputPathTitle.setText("文件路径:")
-        self.inputPathTitle.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.inputPathTitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self.addWidget(self.inputPathTitle)
 
         self.inputPath = QLineEdit()
@@ -37,7 +37,7 @@ class PicInputLayout(QHBoxLayout):
 
         self.inputIntervalPathTitle = QLabel()
         self.inputIntervalPathTitle.setText("图片刷新时间间隔:")
-        self.inputIntervalPathTitle.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.inputIntervalPathTitle.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self.addWidget(self.inputIntervalPathTitle)
 
         self.inputInterval = QLineEdit()

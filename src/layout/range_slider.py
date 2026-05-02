@@ -1,4 +1,4 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets
 
 __all__ = ['QRangeSlider']
 
@@ -60,7 +60,7 @@ class Ui_Form(object):
         self._splitter = QtWidgets.QSplitter(Form)
         self._splitter.setMinimumSize(QtCore.QSize(0, 0))
         self._splitter.setMaximumSize(QtCore.QSize(16777215, 16777215))
-        self._splitter.setOrientation(QtCore.Qt.Horizontal)
+        self._splitter.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self._splitter.setObjectName("splitter")
         self._head = QtWidgets.QGroupBox(self._splitter)
         self._head.setTitle("")
@@ -116,7 +116,7 @@ class Head(Element):
         m, s = divmod(self.main.min() / self.main.max() * self.main.duration, 60)
         h, m = divmod(m, 60)
         text_min = "%02d:%02d:%02d" % (h, m, s)
-        qp.drawText(event.rect(), QtCore.Qt.AlignLeft, text_min)
+        qp.drawText(event.rect(), QtCore.Qt.AlignmentFlag.AlignLeft, text_min)
 
 
 class Tail(Element):
@@ -129,7 +129,7 @@ class Tail(Element):
         m, s = divmod(self.main.duration, 60)
         h, m = divmod(m, 60)
         text_max = "%02d:%02d:%02d" % (h, m, s)
-        qp.drawText(event.rect(), QtCore.Qt.AlignRight, text_max)
+        qp.drawText(event.rect(), QtCore.Qt.AlignmentFlag.AlignRight, text_max)
 
 
 class Handle(Element):
@@ -144,13 +144,13 @@ class Handle(Element):
         text_start = "%02d:%02d:%02d" % (h, m, s)
         if self.main.duration == 0:
             text_start = str(self.main.start())
-        qp.drawText(event.rect(), QtCore.Qt.AlignLeft, text_start)
+        qp.drawText(event.rect(), QtCore.Qt.AlignmentFlag.AlignLeft, text_start)
         m, s = divmod(self.main.end() / self.main.max() * self.main.duration, 60)
         h, m = divmod(m, 60)
         text_end = "%02d:%02d:%02d" % (h, m, s)
         if self.main.duration == 0:
             text_end = str(self.main.end())
-        qp.drawText(event.rect(), QtCore.Qt.AlignRight, text_end)
+        qp.drawText(event.rect(), QtCore.Qt.AlignmentFlag.AlignRight, text_end)
 
     def mouseMoveEvent(self, event):
         event.accept()
@@ -277,10 +277,10 @@ class QRangeSlider(QtWidgets.QWidget, Ui_Form):
 
     def keyPressEvent(self, event):
         key = event.key()
-        if key == QtCore.Qt.Key_Left:
+        if key == QtCore.Qt.Key.Key_Left:
             s = self.start() - 1
             e = self.end() - 1
-        elif key == QtCore.Qt.Key_Right:
+        elif key == QtCore.Qt.Key.Key_Right:
             s = self.start() + 1
             e = self.end() + 1
         else:

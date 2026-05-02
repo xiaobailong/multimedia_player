@@ -1,5 +1,5 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QSlider, QStyleOptionSlider, QStyle
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QSlider, QStyleOptionSlider, QStyle
 
 
 class CustomSlider(QSlider):
@@ -14,12 +14,12 @@ class CustomSlider(QSlider):
 
         option = QStyleOptionSlider()
         self.initStyleOption(option)
-        rect = self.style().subControlRect(QStyle.CC_Slider, option, QStyle.SC_SliderHandle, self)
+        rect = self.style().subControlRect(QStyle.ComplexControl.CC_Slider, option, QStyle.SubControl.SC_SliderHandle, self)
 
         if rect.contains(event.pos()):
             super(CustomSlider, self).mousePressEvent(event)
             return
-        if self.orientation() == Qt.Horizontal:
+        if self.orientation() == Qt.Orientation.Horizontal:
             self.setValue(self.style().sliderValueFromPosition(
                 self.minimum(), self.maximum(),
                 event.x() if not self.invertedAppearance() else (self.width(

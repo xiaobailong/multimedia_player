@@ -1,7 +1,7 @@
 import sys
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
-from PyQt5.QtGui import *
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import *
 
 
 class FloatingControlPanel(QWidget):
@@ -9,9 +9,9 @@ class FloatingControlPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
         # 拖拽相关
         self._dragging = False
@@ -113,7 +113,7 @@ class FloatingControlPanel(QWidget):
         anim.start()
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = True
             self._mouse_press_pos = event.globalPos()
             self._drag_pos = self.pos()
@@ -125,7 +125,7 @@ class FloatingControlPanel(QWidget):
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if self._dragging and event.buttons() == Qt.LeftButton:
+        if self._dragging and event.buttons() == Qt.MouseButton.LeftButton:
             delta = event.globalPos() - self._mouse_press_pos
             new_pos = self._drag_pos + delta
             # 限制在父窗口范围内
@@ -147,7 +147,7 @@ class FloatingControlPanel(QWidget):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self._dragging = False
             # 拖拽结束后重新启动自动隐藏
             self._auto_hide_timer.start()
@@ -168,7 +168,7 @@ class FloatingControlPanel(QWidget):
 
     def keyPressEvent(self, event):
         """捕获键盘事件，将 Esc 转发给 MainWindow 退出全屏"""
-        if event.key() == Qt.Key_Escape:
+        if event.key() == Qt.Key.Key_Escape:
             # 不让事件继续传播，直接转发给父窗口（MainWindow）
             if self.parent():
                 self.parent().keyPressEvent(event)

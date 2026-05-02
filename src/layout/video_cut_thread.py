@@ -1,7 +1,7 @@
 import os
 from loguru import logger
 
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal
 from src.utils import get_log_path
 
 log_dir = get_log_path()

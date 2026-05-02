@@ -5,11 +5,9 @@ import tempfile
 
 import send2trash
 
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
-from PyQt5.QtGui import QFontMetrics, QPainter, QPen, QColor
-from PyQt5.QtMultimedia import QMediaContent
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import QFontMetrics, QPainter, QPen, QColor
 
 from loguru import logger
 
@@ -49,7 +47,7 @@ class FileDisplayDelegate(QStyledItemDelegate):
         return QSize(text_width, super().sizeHint(option, index).height())
 
     def helpEvent(self, event, view, option, index):
-        if event.type() == QEvent.ToolTip and index.model() is not None:
+        if event.type() == QEvent.Type.ToolTip and index.model() is not None:
             file_path = index.model().filePath(index)
             file_name = index.model().fileName(index)
             if os.path.isfile(file_path):
@@ -91,7 +89,7 @@ class MainWindow(QMainWindow):
         self.full_screen_state = MainWindow.normal
 
         # -- 无边框窗口设置 --
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
 
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
@@ -241,7 +239,7 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        self.mainQWidget = QSplitter(Qt.Horizontal)
+        self.mainQWidget = QSplitter(Qt.Orientation.Horizontal)
 
         self.video_show_layout = VideoShowLayout(self)
         self.pic_show_layout = PicShowLayout(self)
@@ -259,7 +257,7 @@ class MainWindow(QMainWindow):
         self.model.sort(3, order=Qt.SortOrder.DescendingOrder)
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)
-        self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.treeView.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.treeView.customContextMenuRequested.connect(self.right_click_menu)
         self.treeView.setColumnHidden(1, True)
         self.treeView.setColumnHidden(2, True)
@@ -267,11 +265,11 @@ class MainWindow(QMainWindow):
         # 固定第一列宽度，禁用自动拉伸，使内容可溢出触发水平滚动条
         header = self.treeView.header()
         header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         header.setVisible(False)  # 隐藏 Name 表头
         self.treeView.setColumnWidth(0, 360)
         # 启用水平滚动条，始终显示
-        self.treeView.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.treeView.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         # 水平滚动条默认在最左侧（Qt 原生行为），不做任何 setValue 干预
         # 自定义委托：文件名截断 + 悬浮显示
         self.treeView.setItemDelegate(FileDisplayDelegate(self.treeView))
@@ -542,65 +540,65 @@ class MainWindow(QMainWindow):
             self.showNormal()
 
     def keyPressEvent(self, event):
-        if (event.key() == Qt.Key_Escape):
+        if (event.key() == Qt.Key.Key_Escape):
             self.full_screen_state = MainWindow.normal
             self.screen_normal()
-        if (event.key() == Qt.Key_Left):
+        if (event.key() == Qt.Key.Key_Left):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.down_time()
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.down()
-        if (event.key() == Qt.Key_Right):
+        if (event.key() == Qt.Key.Key_Right):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.up_time()
-        if (event.key() == Qt.Key_Space):
+        if (event.key() == Qt.Key.Key_Space):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.pause()
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.pause()
-        if (event.key() == Qt.Key_W):
+        if (event.key() == Qt.Key.Key_W):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.previous()
-        if (event.key() == Qt.Key_E):
+        if (event.key() == Qt.Key.Key_E):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.next()
-        if (event.key() == Qt.Key_F):
+        if (event.key() == Qt.Key.Key_F):
             self.full_screen_state += 1
             self.change_screen_full()
-        if (event.key() == Qt.Key_Delete):
+        if (event.key() == Qt.Key.Key_Delete):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.delete()
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.delete()
-        elif (event.key() == Qt.Key_D and QApplication.keyboardModifiers() == Qt.ControlModifier):
+        elif (event.key() == Qt.Key.Key_D and QApplication.keyboardModifiers() == Qt.KeyboardModifier.ControlModifier):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.delete()
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.delete()
-        elif (event.key() == Qt.Key_D):
+        elif (event.key() == Qt.Key.Key_D):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.up_time()
-        if (event.key() == Qt.Key_A):
+        if (event.key() == Qt.Key.Key_A):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.down_time()
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.down()
-        if (event.key() == Qt.Key_S):
+        if (event.key() == Qt.Key.Key_S):
             if self.video_show_qwidget.isVisible():
                 self.video_show_layout.screenshot()
-        if (event.key() == Qt.Key_Z):
+        if (event.key() == Qt.Key.Key_Z):
             self.video_show_layout.get_video_start()
-        if (event.key() == Qt.Key_X):
+        if (event.key() == Qt.Key.Key_X):
             self.video_show_layout.get_video_end()
-        if (event.key() == Qt.Key_C):
+        if (event.key() == Qt.Key.Key_C):
             self.video_show_layout.video_cut()
-        if (event.key() == Qt.Key_B) and QApplication.keyboardModifiers() == Qt.ControlModifier:
+        if (event.key() == Qt.Key.Key_B) and QApplication.keyboardModifiers() == Qt.KeyboardModifier.ControlModifier:
             self.toggle_tree()
-        if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
+        if (event.key() == Qt.Key.Key_O) and QApplication.keyboardModifiers() == Qt.KeyboardModifier.ShiftModifier:
             self.notice("shift + o")
 
     def full_screen_custom(self):
@@ -657,7 +655,8 @@ class MainWindow(QMainWindow):
                 self.video_show_layout.timer.stop()
             # 停止播放并释放媒体资源
             self.video_show_layout.player.stop()
-            self.video_show_layout.player.setMedia(QMediaContent())
+            # PyQt6: setMedia(QMediaContent()) → setSource(QUrl())
+            self.video_show_layout.player.setSource(QUrl())
             # 断开视频输出，防止 CVDisplayLink 回调访问已释放对象
             self.video_show_layout.player.setVideoOutput(None)
 
@@ -679,14 +678,14 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):
         """全局事件过滤器：全屏模式下始终能捕获键盘快捷键，不受焦点控件影响"""
-        if event.type() == QEvent.KeyPress:
+        if event.type() == QEvent.Type.KeyPress:
             # Esc：退出全屏
-            if event.key() == Qt.Key_Escape and self.full_screen_state == MainWindow.full:
+            if event.key() == Qt.Key.Key_Escape and self.full_screen_state == MainWindow.full:
                 self.full_screen_state = MainWindow.normal
                 self.screen_normal()
                 return True
             # M：全屏时切换悬浮控制面板显示/隐藏
-            if event.key() == Qt.Key_M and self.full_screen_state != MainWindow.normal:
+            if event.key() == Qt.Key.Key_M and self.full_screen_state != MainWindow.normal:
                 if hasattr(self, 'video_show_layout') and hasattr(self.video_show_layout, 'floating_panel'):
                     panel = self.video_show_layout.floating_panel
                     if panel.isVisible():
@@ -704,7 +703,7 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, event):
         """窗口状态变化时更新标题栏按钮图标"""
-        if event.type() == QEvent.WindowStateChange:
+        if event.type() == QEvent.Type.WindowStateChange:
             self.title_bar.updateMaximizeIcon()
         super().changeEvent(event)
 

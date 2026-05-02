@@ -2,9 +2,9 @@ import os
 
 import send2trash
 from PIL import Image
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
-from PyQt5.QtGui import (QPixmap, QImage, QMovie)
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import (QPixmap, QImage)
 
 from loguru import logger
 
@@ -34,19 +34,19 @@ class PicShowLayout(QVBoxLayout):
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
-        self.titleQLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.titleQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.titleQLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.titleQLabel.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self.titleQLabel.setVisible(False)  # 路径已移至窗口标题栏显示
         self.addWidget(self.titleQLabel)
 
         self.pictureQLabel = QLabel("Picture")
         self.pictureQLabel.setText("Picture")
-        self.pictureQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.pictureQLabel.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
 
         self.qscrollarea = QScrollArea()
         # 禁用滚动条：图片已自动等比缩放至填满区域，无需滚动
-        self.qscrollarea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.qscrollarea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.qscrollarea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.qscrollarea.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.screen_width = int(self.main_window.width() * self.scale)
         self.screen_height = int(self.main_window.height() * self.scale)
@@ -157,7 +157,7 @@ class PicShowLayout(QVBoxLayout):
                 # 当前帧 → RGBA → QImage → QPixmap
                 frame_rgba = pil_img.convert("RGBA")
                 data = frame_rgba.tobytes("raw", "RGBA")
-                qimg = QImage(data, frame_rgba.width, frame_rgba.height, QImage.Format_RGBA8888)
+                qimg = QImage(data, frame_rgba.width, frame_rgba.height, QImage.Format.Format_RGBA8888)
                 frames.append(QPixmap.fromImage(qimg))
 
                 # 帧延迟（毫秒），PIL 返回的是百分秒（centiseconds），Qt5 QMovie 默认 100ms 兜底
@@ -190,7 +190,7 @@ class PicShowLayout(QVBoxLayout):
             screen_h = int(self.main_window.height() * self.scale)
             self.pictureQLabel.resize(screen_w, screen_h)
             self.pictureQLabel.setPixmap(self._gif_frames[0].scaled(
-                screen_w, screen_h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                screen_w, screen_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         except Exception as e:
             logger.error(f"GIF 解码失败: {e}")
             self._advance_slideshow()
@@ -234,7 +234,7 @@ class PicShowLayout(QVBoxLayout):
                 return
 
             self.pictureQLabel.setPixmap(self._gif_frames[self._gif_idx].scaled(
-                target_w, target_h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                target_w, target_h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
             # 继续下一帧
             self._gif_timer.start(self._gif_durations[self._gif_idx])
@@ -358,7 +358,7 @@ class PicShowLayout(QVBoxLayout):
 
     def eventFilter(self, obj, event):
         """监听窗口大小变化事件，自动等比例缩放当前显示的图片"""
-        if event.type() == QEvent.Resize:
+        if event.type() == QEvent.Type.Resize:
             # 窗口缩放时重绘静态图片
             if hasattr(self, '_current_static_image') and self._current_static_image is not None:
                 self._render_static_image()

@@ -3,10 +3,11 @@ import time
 import subprocess
 
 import send2trash
-from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
+from PyQt6.QtMultimedia import QMediaPlayer
+from PyQt6.QtMultimediaWidgets import QVideoWidget
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import *
+from PyQt6.QtGui import QIcon
 
 from loguru import logger
 
@@ -51,8 +52,8 @@ class VideoShowLayout(QVBoxLayout):
 
         self.titleQLabel = QLabel("Title")
         self.titleQLabel.setText("Title")
-        self.titleQLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.titleQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.titleQLabel.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.titleQLabel.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         self.titleQLabel.setVisible(False)  # 路径已移至窗口标题栏显示
         self.addWidget(self.titleQLabel)
 
@@ -62,10 +63,10 @@ class VideoShowLayout(QVBoxLayout):
 
         self.qscrollarea = QScrollArea()
 
-        # Use PyQt5 QDesktopWidget instead of PIL.ImageGrab for screen size
-        desktop = QApplication.desktop()
-        screen_width = desktop.width()
-        screen_height = desktop.height()
+        # PyQt6: QDesktopWidget removed, use QApplication.primaryScreen() instead
+        screen = QApplication.primaryScreen()
+        screen_width = screen.size().width() if screen else 1920
+        screen_height = screen.size().height() if screen else 1080
         self.screen_width = int(screen_width * main_window.left / (main_window.left + main_window.right))
         self.screen_height = int(screen_height * main_window.left / (main_window.left + main_window.right))
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
@@ -76,7 +77,7 @@ class VideoShowLayout(QVBoxLayout):
         self.bar_hbox = QHBoxLayout()
         self.bar_hbox.setObjectName("bar_hbox")
 
-        self.bar_slider = CustomSlider(Qt.Horizontal)
+        self.bar_slider = CustomSlider(Qt.Orientation.Horizontal)
         self.bar_slider.valueChanged.connect(self.slider_progress_moved)
         self.bar_slider.setObjectName("bar_slider")
         self.bar_slider.setMaximum(self.bar_slider_maxvalue)
@@ -341,7 +342,8 @@ class VideoShowLayout(QVBoxLayout):
         # 更新标题栏：显示文件名和播放进度
         self._update_title_bar(filePath)
 
-        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
+        # PyQt6: QMediaPlayer.setMedia(QMediaContent) → setSource(QUrl)
+        self.player.setSource(QUrl.fromLocalFile(filePath))
         self.player.play()
         self.play_state = True
         self.stop_btn.setText("暂停")
@@ -599,8 +601,8 @@ class VideoShowLayout(QVBoxLayout):
                     if self.play_list_index >= len(self.play_list):
                         self.play_list_index = len(self.play_list) - 1
 
-            # 释放媒体资源，删除和播放下一个延迟到媒体释放完成后执行
-            self.player.setMedia(QMediaContent())
+            # PyQt6: setMedia(QMediaContent()) → setSource(QUrl()) for clearing
+            self.player.setSource(QUrl())
             self.player.setVideoOutput(None)
             QTimer.singleShot(200, lambda: self._do_delete(path, filename, deleted_file_path))
         else:
@@ -649,7 +651,7 @@ class VideoShowLayout(QVBoxLayout):
 
     def eventFilter(self, obj, event):
         """监听窗口大小变化事件，视频 QVideoWidget 自适应"""
-        if event.type() == QEvent.Resize:
+        if event.type() == QEvent.Type.Resize:
             # QScrollArea 的 setWidgetResizable(True) 会自动处理
             pass  # 交由 QScrollArea 自身处理自适应
         return super().eventFilter(obj, event)
