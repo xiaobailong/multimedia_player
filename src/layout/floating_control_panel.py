@@ -34,9 +34,9 @@ class FloatingControlPanel(QWidget):
         self._container.setObjectName("floatingContainer")
         self._container.setStyleSheet("""
             #floatingContainer {
-                background-color: rgba(30, 30, 30, 200);
-                border-radius: 8px;
-                border: 1px solid rgba(255, 255, 255, 30);
+                background-color: rgba(24, 24, 37, 220);
+                border-radius: 10px;
+                border: 1px solid rgba(137, 180, 250, 60);
             }
         """)
         self._container_layout = QVBoxLayout(self._container)
@@ -165,6 +165,15 @@ class FloatingControlPanel(QWidget):
         # 鼠标离开面板区域，重新启动自动隐藏
         self._auto_hide_timer.start()
         super().leaveEvent(event)
+
+    def keyPressEvent(self, event):
+        """捕获键盘事件，将 Esc 转发给 MainWindow 退出全屏"""
+        if event.key() == Qt.Key_Escape:
+            # 不让事件继续传播，直接转发给父窗口（MainWindow）
+            if self.parent():
+                self.parent().keyPressEvent(event)
+            return
+        super().keyPressEvent(event)
 
     def hide_panel(self):
         """手动隐藏面板（通过点击✕按钮）"""

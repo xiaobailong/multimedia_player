@@ -8,25 +8,37 @@ QRangeSlider * {
     padding: 0px;
 }
 QRangeSlider #Head {
-    background: #222;
+    background: #313244;
+    border-radius: 4px;
 }
 QRangeSlider #Span {
-    background: #393;
+    background: #89b4fa;
+    border-radius: 4px;
 }
 QRangeSlider #Span:active {
-    background: #282;
+    background: #74c7ec;
 }
 QRangeSlider #Tail {
-    background: #222;
+    background: #313244;
+    border-radius: 4px;
 }
 QRangeSlider > QSplitter::handle {
-    background: #393;
+    background: #89b4fa;
+    width: 6px;
+    border-radius: 3px;
+    margin: 2px 0;
 }
 QRangeSlider > QSplitter::handle:vertical {
     height: 4px;
 }
 QRangeSlider > QSplitter::handle:pressed {
-    background: #ca5;
+    background: #f5c2e7;
+}
+QRangeSlider > QSplitter::handle:hover {
+    background: #74c7ec;
+}
+QRangeSlider QGroupBox {
+    border: none;
 }
 """
 

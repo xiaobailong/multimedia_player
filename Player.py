@@ -91,6 +91,151 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
 
+        # ---- 全局暗色主题 ----
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+            }
+            QLabel {
+                background: transparent;
+                color: #cdd6f4;
+            }
+            QPushButton {
+                background-color: #313244;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 4px;
+                padding: 4px 12px;
+                min-height: 22px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background-color: #45475a;
+                border-color: #585b70;
+            }
+            QPushButton:pressed {
+                background-color: #585b70;
+            }
+            QLineEdit {
+                background-color: #313244;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 4px;
+                padding: 2px 6px;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #89b4fa;
+            }
+            QScrollBar:horizontal {
+                background-color: #181825;
+                height: 10px;
+                border: none;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal {
+                background-color: #45475a;
+                min-width: 30px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background-color: #585b70;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+            QScrollBar:vertical {
+                background-color: #181825;
+                width: 10px;
+                border: none;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #45475a;
+                min-height: 30px;
+                border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #585b70;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QTreeView {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                border: none;
+                outline: none;
+                font-size: 13px;
+            }
+            QTreeView::item {
+                min-height: 26px;
+                padding: 2px 4px;
+            }
+            QTreeView::item:selected {
+                background-color: #45475a;
+                color: #cdd6f4;
+            }
+            QTreeView::item:hover {
+                background-color: #313244;
+            }
+            QTreeView::branch:has-children:closed {
+                border-image: none;
+            }
+            QHeaderView::section {
+                background-color: #181825;
+                color: #a6adc8;
+                border: none;
+                border-bottom: 1px solid #313244;
+                padding: 4px;
+                font-size: 13px;
+            }
+            QSplitter::handle {
+                background-color: #313244;
+                width: 2px;
+            }
+            QStatusBar {
+                background-color: #181825;
+                color: #a6adc8;
+                border-top: 1px solid #313244;
+                font-size: 13px;
+            }
+            QStatusBar::item {
+                border: none;
+            }
+            QScrollArea {
+                border: none;
+                background-color: #1e1e2e;
+            }
+            QVideoWidget {
+                background-color: #000000;
+            }
+            QSlider::groove:horizontal {
+                background-color: #313244;
+                height: 6px;
+                border-radius: 3px;
+            }
+            QSlider::handle:horizontal {
+                background-color: #89b4fa;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::handle:horizontal:hover {
+                background-color: #b4d0fb;
+                width: 16px;
+                height: 16px;
+                margin: -6px 0;
+                border-radius: 8px;
+            }
+            QSlider::sub-page:horizontal {
+                background-color: #89b4fa;
+                border-radius: 3px;
+            }
+        """)
+
         self.mainQWidget = QSplitter(Qt.Horizontal)
 
         self.video_show_layout = VideoShowLayout(self)
@@ -118,6 +263,7 @@ class MainWindow(QMainWindow):
         header = self.treeView.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.Fixed)
+        header.setVisible(False)  # 隐藏 Name 表头
         self.treeView.setColumnWidth(0, 360)
         # 启用水平滚动条，始终显示
         self.treeView.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
@@ -146,7 +292,6 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar(self)
         self.setStatusBar(self.statusbar)
         self.statusbar.setObjectName("statusbar")
-        self.statusbar.setStyleSheet('QStatusBar::item {border: none;}')
         self.statusLabel = QLabel()
         self.statusLabel.setText("状态栏")
         self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
@@ -159,6 +304,9 @@ class MainWindow(QMainWindow):
         self.tree_visible = True
         # 记录展开时的窗口比例，用于恢复
         self.tree_sizes = [10000 * self.left, 10000 * self.right]
+
+        # 全屏模式下，安装全局事件过滤器确保 Esc 键始终能退出全屏
+        QApplication.instance().installEventFilter(self)
 
         self.show()
 
@@ -336,7 +484,11 @@ class MainWindow(QMainWindow):
         self.statusbar.setVisible(True)
         self.mainQWidget.setStyleSheet(self.style_sheet)
         self.full_screen_state = MainWindow.normal
-        if hasattr(self, 'normal_rect'):
+
+        # 如果全屏前是最大化状态，恢复最大化
+        if getattr(self, '_was_maximized_before_fullscreen', False):
+            self.showMaximized()
+        elif hasattr(self, 'normal_rect'):
             x, y, w, h = self.normal_rect
             self.showNormal()
             # macOS 退出原生全屏有动画，动画完成后会重置窗口尺寸
@@ -427,8 +579,19 @@ class MainWindow(QMainWindow):
         self.statusbar.setVisible(False)
         self.mainQWidget.setStyleSheet("border:none;")
         self.full_screen_state = MainWindow.full
-        # 保存当前窗口大小和位置，用于退出全屏时恢复
-        self.normal_rect = (self.x(), self.y(), self.width(), self.height())
+        # 保存窗口状态用于退出全屏时恢复（支持正常/最大化/全屏等多种状态）
+        self._saved_window_state = self.saveGeometry()
+        # 如果当前是最大化状态，额外保存客户区几何参数用于 setGeometry 恢复
+        if self.isMaximized():
+            self._was_maximized_before_fullscreen = True
+            # 先取消最大化获取正常几何参数
+            self.showNormal()
+            self.normal_rect = (self.x(), self.y(), self.width(), self.height())
+            # 再回到最大化状态以便进入全屏
+            self.showMaximized()
+        else:
+            self._was_maximized_before_fullscreen = False
+            self.normal_rect = (self.x(), self.y(), self.width(), self.height())
         self.showFullScreen()
 
         # 视频全屏时使用悬浮控制面板
@@ -470,6 +633,15 @@ class MainWindow(QMainWindow):
             self.tree_visible = True
             # 恢复展开时的比例
             self.mainQWidget.setSizes(self.tree_sizes)
+
+    def eventFilter(self, obj, event):
+        """全局事件过滤器：全屏模式下始终能捕获 Esc 键退出全屏"""
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
+            if self.full_screen_state == MainWindow.full:
+                self.full_screen_state = MainWindow.normal
+                self.screen_normal()
+                return True
+        return super().eventFilter(obj, event)
 
     def notice(self, content):
         self.statusLabel.setText(content)
