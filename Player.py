@@ -1,14 +1,15 @@
 import shutil
+import sys
+import os
 import tempfile
 
 import send2trash
+
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-from PyQt5.QtGui import QFontMetrics
+from PyQt5.QtGui import QFontMetrics, QPainter, QPen, QColor
 from PyQt5.QtMultimedia import QMediaContent
 from PyQt5.QtWidgets import QApplication
-
-import sys, os
 
 from loguru import logger
 
@@ -16,6 +17,7 @@ from src.data_manager.config_manager import ConfigManager
 from src.layout.pic_input_layout import PicInputLayout
 from src.layout.pic_show_layout import PicShowLayout
 from src.layout.video_show_layout import VideoShowLayout
+from src.layout.custom_title_bar import CustomTitleBar
 from src.utils import get_log_path
 
 import warnings
@@ -87,6 +89,9 @@ class MainWindow(QMainWindow):
         self.config_manager = ConfigManager()
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
+
+        # -- 无边框窗口设置 --
+        self.setWindowFlags(Qt.FramelessWindowHint)
 
         self.setWindowTitle('多媒体播放器')
         self.resize(1500, 700)
@@ -287,10 +292,15 @@ class MainWindow(QMainWindow):
         sizes = [10000 * self.left, 10000 * self.right]
         self.mainQWidget.setSizes(sizes)
 
-        self.setCentralWidget(self.mainQWidget)
+        # -- 自定义标题栏 --
+        self.title_bar = CustomTitleBar(self)
+        self.title_bar.windowMinimized.connect(self.showMinimized)
+        self.title_bar.windowMaximized.connect(self.showMaximized)
+        self.title_bar.windowRestored.connect(self._on_restored)
+        self.title_bar.windowClosed.connect(self.close)
 
+        # -- 状态栏 --
         self.statusbar = QStatusBar(self)
-        self.setStatusBar(self.statusbar)
         self.statusbar.setObjectName("statusbar")
         self.statusLabel = QLabel()
         self.statusLabel.setText("状态栏")
@@ -304,6 +314,25 @@ class MainWindow(QMainWindow):
         self.tree_visible = True
         # 记录展开时的窗口比例，用于恢复
         self.tree_sizes = [10000 * self.left, 10000 * self.right]
+
+        # -- 主布局: 标题列 + mainQWidget + 状态栏 --
+        self._central_widget = QWidget()
+        self._central_widget.setObjectName("centralWidget")
+        self._central_widget.setStyleSheet("""
+            #centralWidget {
+                background-color: #1e1e2e;
+                border: 1px solid #45475a;
+                border-radius: 8px;
+            }
+        """)
+        central_layout = QVBoxLayout(self._central_widget)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.title_bar)
+        central_layout.addWidget(self.mainQWidget, stretch=1)
+        central_layout.addWidget(self.statusbar)
+
+        self.setCentralWidget(self._central_widget)
 
         # 全屏模式下，安装全局事件过滤器确保 Esc 键始终能退出全屏
         QApplication.instance().installEventFilter(self)
@@ -482,6 +511,15 @@ class MainWindow(QMainWindow):
             self.pic_show_layout.setVisible(True)
         self.treeView.setVisible(True)
         self.statusbar.setVisible(True)
+        # 恢复标题栏
+        self.title_bar.setVisible(True)
+        self._central_widget.setStyleSheet("""
+            #centralWidget {
+                background-color: #1e1e2e;
+                border: 1px solid #45475a;
+                border-radius: 8px;
+            }
+        """)
         self.mainQWidget.setStyleSheet(self.style_sheet)
         self.full_screen_state = MainWindow.normal
 
@@ -577,6 +615,15 @@ class MainWindow(QMainWindow):
 
         self.treeView.setVisible(False)
         self.statusbar.setVisible(False)
+        # 隐藏标题栏
+        self.title_bar.setVisible(False)
+        self._central_widget.setStyleSheet("""
+            #centralWidget {
+                background-color: #1e1e2e;
+                border: none;
+                border-radius: 0px;
+            }
+        """)
         self.mainQWidget.setStyleSheet("border:none;")
         self.full_screen_state = MainWindow.full
         # 保存窗口状态用于退出全屏时恢复（支持正常/最大化/全屏等多种状态）
@@ -642,6 +689,16 @@ class MainWindow(QMainWindow):
                 self.screen_normal()
                 return True
         return super().eventFilter(obj, event)
+
+    def _on_restored(self):
+        """从最大化还原后更新标题栏按钮图标"""
+        self.title_bar.updateMaximizeIcon()
+
+    def changeEvent(self, event):
+        """窗口状态变化时更新标题栏按钮图标"""
+        if event.type() == QEvent.WindowStateChange:
+            self.title_bar.updateMaximizeIcon()
+        super().changeEvent(event)
 
     def notice(self, content):
         self.statusLabel.setText(content)

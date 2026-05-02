@@ -99,7 +99,7 @@ class PicInputLayout(QHBoxLayout):
             file_date_tuple_list.sort(key=lambda x: x[1])
             for img_path in file_date_tuple_list:
                 if img_path[0].lower().endswith(
-                        ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp')):
+                        ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp', '.gif')):
                     self.list_files.append(img_path[0])
 
     def is_number(self, s):
