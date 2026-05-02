@@ -255,9 +255,11 @@ class MainWindow(QMainWindow):
         self.pic_show_qwidget.setLayout(self.pic_show_layout)
 
         self.model = QFileSystemModel()
+        self.model.setRootPath("")  # 设置根路径为当前驱动器根
         self.model.sort(3, order=Qt.SortOrder.DescendingOrder)
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)
+        self.treeView.setRootIndex(self.model.index(""))  # 显示驱动器根目录
         self.treeView.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.treeView.customContextMenuRequested.connect(self.right_click_menu)
         self.treeView.setColumnHidden(1, True)
