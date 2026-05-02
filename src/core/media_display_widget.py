@@ -17,8 +17,9 @@ from typing import Optional, Callable, Any
 from PIL import Image
 
 from PyQt6.QtCore import (
-    Qt, QTimer, QRect, QEvent, Signal, QUrl
+    Qt, QTimer, QRect, QEvent, QUrl
 )
+from PyQt6.QtCore import pyqtSignal as Signal
 from PyQt6.QtGui import (
     QPixmap, QImage, QResizeEvent, QPainter, QColor
 )
@@ -28,7 +29,7 @@ from PyQt6.QtWidgets import (
 
 from loguru import logger
 
-from src.layout.media_player_engine import (
+from src.core.media_player_engine import (
     is_image_file, is_video_file,
     MediaEngine, VlcEngine, MpvEngine, QtEngine,
     VLC_AVAILABLE, MPV_AVAILABLE

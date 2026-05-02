@@ -17,13 +17,13 @@ from PyQt6.QtGui import QIcon
 
 from loguru import logger
 
-from src.data_manager.config_manager import ConfigManager
-from src.layout.floating_control_panel import FloatingControlPanel
-from src.data_manager.sqlite3_client import Sqlite3Client
-from src.layout.video_cut_thread import VideoCutThread
-from src.layout.custom_slider import CustomSlider
-from src.layout.range_slider import QRangeSlider
-from src.layout.media_display_widget import MediaDisplayWidget, is_video_file
+from src.db.config_manager import ConfigManager
+from src.core.floating_control_panel import FloatingControlPanel
+from src.db.sqlite3_client import Sqlite3Client
+from src.core.video_cut_thread import VideoCutThread
+from src.core.custom_slider import CustomSlider
+from src.core.range_slider import QRangeSlider
+from src.core.media_display_widget import MediaDisplayWidget, is_video_file
 from src.utils import get_log_path, get_ffmpeg_path as utils_get_ffmpeg_path
 
 

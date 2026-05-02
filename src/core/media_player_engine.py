@@ -25,20 +25,32 @@ from PyQt6.QtMultimediaWidgets import QVideoWidget
 from loguru import logger
 
 # 尝试导入 python-vlc
+VLC_AVAILABLE = False
 try:
     import vlc
-    VLC_AVAILABLE = True
+    # 验证 libvlc.dll 实际可用（vlc.py 导入时可能报 FileNotFoundError）
+    try:
+        _test_instance = vlc.Instance(['--no-xlib', '--quiet'])
+        _test_instance.release()
+        VLC_AVAILABLE = True
+        logger.info("VLC 后端可用 (python-vlc + libvlc)")
+    except Exception as e:
+        logger.info(f"python-vlc 已安装，但 libvlc 不可用（需要安装 VLC 程序）: {e}")
 except ImportError:
-    VLC_AVAILABLE = False
     logger.info("python-vlc 未安装，VLC 后端不可用")
+except Exception as e:
+    logger.info(f"导入 vlc 失败，VLC 后端不可用: {e}")
 
 # 尝试导入 python-mpv
+MPV_AVAILABLE = False
 try:
     import mpv
     MPV_AVAILABLE = True
+    logger.info("MPV 后端可用 (python-mpv)")
 except ImportError:
-    MPV_AVAILABLE = False
     logger.info("python-mpv 未安装，MPV 后端不可用")
+except Exception as e:
+    logger.info(f"导入 mpv 失败，MPV 后端不可用: {e}")
 
 
 # ---------- 常量 ----------

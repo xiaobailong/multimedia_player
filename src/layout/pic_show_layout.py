@@ -17,7 +17,7 @@ from PyQt6.QtGui import (QPixmap, QImage)
 from loguru import logger
 
 from src.layout.pic_input_layout import PicInputLayout
-from src.layout.media_display_widget import MediaDisplayWidget, is_image_file
+from src.core.media_display_widget import MediaDisplayWidget, is_image_file
 from src.utils import get_log_path
 
 

@@ -6,16 +6,17 @@ import tempfile
 import send2trash
 
 from PyQt6.QtWidgets import *
+from PyQt6.QtGui import QFileSystemModel
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QFontMetrics, QPainter, QPen, QColor
 
 from loguru import logger
 
-from src.data_manager.config_manager import ConfigManager
+from src.db.config_manager import ConfigManager
 from src.layout.pic_input_layout import PicInputLayout
 from src.layout.pic_show_layout import PicShowLayout
 from src.layout.video_show_layout import VideoShowLayout
-from src.layout.custom_title_bar import CustomTitleBar
+from src.core.custom_title_bar import CustomTitleBar
 from src.utils import get_log_path
 
 import warnings
@@ -253,7 +254,7 @@ class MainWindow(QMainWindow):
         self.pic_show_layout.setContentsMargins(0, 0, 0, 0)
         self.pic_show_qwidget.setLayout(self.pic_show_layout)
 
-        self.model = QDirModel()
+        self.model = QFileSystemModel()
         self.model.sort(3, order=Qt.SortOrder.DescendingOrder)
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)

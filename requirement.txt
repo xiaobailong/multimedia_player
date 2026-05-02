@@ -1,10 +1,8 @@
 PyQt6>=6.7.0
 PyQt6-sip>=13.6.0
-PyQt6.QtMultimedia>=6.7.0
 loguru>=0.7.2
 Pillow>=10.2.0
 send2trash>=1.8.2
 # 可选视频硬件加速引擎（安装任一即可提升性能）
-# python-vlc>=3.0.0       # VLC 引擎 - 推荐，性能最优
-# python-mpv>=1.0.0       # MPV 引擎 - 次选，需安装 mpv 本体
-# python-ffmpeg>=2.0.0    # ffmpeg 截图回退
+python-vlc>=3.0.0       # VLC 引擎 - 推荐，性能最优
+python-mpv>=1.0.0       # MPV 引擎 - 次选，需安装 mpv 本体
