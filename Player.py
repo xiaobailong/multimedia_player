@@ -569,16 +569,6 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_F):
             self.full_screen_state += 1
             self.change_screen_full()
-        if (event.key() == Qt.Key_M) and self.full_screen_state != MainWindow.normal:
-            # M 键在全屏时切换控制面板的显示/隐藏
-            if hasattr(self, 'video_show_layout') and hasattr(self.video_show_layout, 'floating_panel'):
-                panel = self.video_show_layout.floating_panel
-                if panel.isVisible():
-                    panel.hide_panel()
-                else:
-                    panel.resizeToFitContent()
-                    panel.repositionDefault()
-                    panel.show_panel()
         if (event.key() == Qt.Key_Delete):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.delete()
@@ -688,11 +678,23 @@ class MainWindow(QMainWindow):
             self.mainQWidget.setSizes(self.tree_sizes)
 
     def eventFilter(self, obj, event):
-        """全局事件过滤器：全屏模式下始终能捕获 Esc 键退出全屏"""
-        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Escape:
-            if self.full_screen_state == MainWindow.full:
+        """全局事件过滤器：全屏模式下始终能捕获键盘快捷键，不受焦点控件影响"""
+        if event.type() == QEvent.KeyPress:
+            # Esc：退出全屏
+            if event.key() == Qt.Key_Escape and self.full_screen_state == MainWindow.full:
                 self.full_screen_state = MainWindow.normal
                 self.screen_normal()
+                return True
+            # M：全屏时切换悬浮控制面板显示/隐藏
+            if event.key() == Qt.Key_M and self.full_screen_state != MainWindow.normal:
+                if hasattr(self, 'video_show_layout') and hasattr(self.video_show_layout, 'floating_panel'):
+                    panel = self.video_show_layout.floating_panel
+                    if panel.isVisible():
+                        panel.hide_panel()
+                    else:
+                        panel.resizeToFitContent()
+                        panel.repositionDefault()
+                        panel.show_panel()
                 return True
         return super().eventFilter(obj, event)
 
