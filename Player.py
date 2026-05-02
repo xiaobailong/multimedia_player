@@ -648,18 +648,11 @@ class MainWindow(QMainWindow):
             self.pic_show_qwidget.setVisible(False)
 
     def closeEvent(self, event):
-        """关闭窗口时清理视频播放器资源，防止 macOS AVFoundation 崩溃"""
-        # 停止定时器
+        """关闭窗口时清理媒体资源"""
         if hasattr(self, 'video_show_layout'):
-            if self.video_show_layout.timer.isActive():
-                self.video_show_layout.timer.stop()
-            # 停止播放并释放媒体资源
-            self.video_show_layout.player.stop()
-            # PyQt6: setMedia(QMediaContent()) → setSource(QUrl())
-            self.video_show_layout.player.setSource(QUrl())
-            # 断开视频输出，防止 CVDisplayLink 回调访问已释放对象
-            self.video_show_layout.player.setVideoOutput(None)
-
+            self.video_show_layout.media_widget.stopMedia()
+        if hasattr(self, 'pic_show_layout'):
+            self.pic_show_layout.media_widget.stopMedia()
         event.accept()
 
     def toggle_tree(self):

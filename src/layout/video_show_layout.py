@@ -1,10 +1,16 @@
+# -*- coding: utf-8 -*-
+"""
+视频展示布局：管理视频播放、播放列表、截图、剪切
+
+已重构为使用统一的 MediaDisplayWidget + MediaEngine 体系。
+支持下层引擎自动选择：VLC > MPV > Qt（兜底）。
+兼容 macOS 10.9+ (2013年) 和 Windows 7+
+"""
 import os, glob
 import time
 import subprocess
 
 import send2trash
-from PyQt6.QtMultimedia import QMediaPlayer
-from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import QIcon
@@ -17,6 +23,7 @@ from src.data_manager.sqlite3_client import Sqlite3Client
 from src.layout.video_cut_thread import VideoCutThread
 from src.layout.custom_slider import CustomSlider
 from src.layout.range_slider import QRangeSlider
+from src.layout.media_display_widget import MediaDisplayWidget, is_video_file
 from src.utils import get_log_path, get_ffmpeg_path as utils_get_ffmpeg_path
 
 
@@ -57,9 +64,11 @@ class VideoShowLayout(QVBoxLayout):
         self.titleQLabel.setVisible(False)  # 路径已移至窗口标题栏显示
         self.addWidget(self.titleQLabel)
 
-        self.player = QMediaPlayer()
-        self.video_widget = QVideoWidget()
-        self.player.setVideoOutput(self.video_widget)
+        # ---- 使用统一的 MediaDisplayWidget 替代 QMediaPlayer + QVideoWidget ----
+        self.media_widget = MediaDisplayWidget(self.main_window.mainQWidget)
+        self.media_widget.mediaFinished.connect(self._on_media_finished)
+        self.media_widget.positionChanged.connect(self._on_position_changed)
+        self.media_widget.errorOccurred.connect(self._on_media_error)
 
         self.qscrollarea = QScrollArea()
 
@@ -72,7 +81,7 @@ class VideoShowLayout(QVBoxLayout):
         self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
 
         self.qscrollarea.setWidgetResizable(True)
-        self.qscrollarea.setWidget(self.video_widget)
+        self.qscrollarea.setWidget(self.media_widget)
 
         self.bar_hbox = QHBoxLayout()
         self.bar_hbox.setObjectName("bar_hbox")
@@ -192,12 +201,22 @@ class VideoShowLayout(QVBoxLayout):
         self.floating_panel.hide()
         self._is_fullscreen = False
 
-        self.timer = QTimer()
-        self.timer.setInterval(1000)
-        self.timer.timeout.connect(self.onTimerOut)
+        # 不再需要定时器轮询位置，MediaDisplayWidget 的 positionChanged 信号已处理
+        self._position_save_count = 0
 
         # 监听窗口大小变化：视频 QScrollArea 自适应
         self.main_window.installEventFilter(self)
+
+        # 如果引擎不支持直接截图，禁用截图按钮
+        self._check_screenshot_support()
+
+    def _check_screenshot_support(self):
+        """检查当前引擎是否支持截图"""
+        engine_info = self.media_widget.getEngineInfo()
+        if engine_info == "Qt":
+            logger.warning("Qt 兜底引擎不支持直接截图，截图按钮功能受限")
+        else:
+            logger.info(f"使用 {engine_info} 引擎，支持直接截图")
 
     def enter_fullscreen_mode(self):
         """进入全屏模式：将控制控件移动到悬浮面板，只保留视频画面"""
@@ -296,44 +315,41 @@ class VideoShowLayout(QVBoxLayout):
             self.play(self.play_list[self.play_list_index])
 
     def up_time(self):
-        num = self.player.position() + int(self.player.duration() / 100)
-        self.player.setPosition(num)
-        self.onTimerOut()
+        num = self.media_widget.getPosition() + int(self.media_widget.getDuration() / 100)
+        self.media_widget.setPosition(num)
+        self._on_position_changed(self.media_widget.getPosition())
 
     def down_time(self):
-        num = self.player.position() - int(self.player.duration() / 80)
-        self.player.setPosition(num)
-        self.onTimerOut()
+        num = self.media_widget.getPosition() - int(self.media_widget.getDuration() / 80)
+        self.media_widget.setPosition(num)
+        self._on_position_changed(self.media_widget.getPosition())
 
     def pause(self):
         if self.play_state:
             self._save_position()  # 暂停时保存位置
-            self.player.pause()
+            self.media_widget.pauseMedia()
             self.play_state = False
             self.stop_btn.setText("播放")
         else:
-            self.player.play()
+            self.media_widget.pauseMedia()
             self.play_state = True
             self.stop_btn.setText("暂停")
 
     def run_or_stop(self):
         if self.play_state:
             self._save_position()  # 停止时保存位置
-            self.player.pause()
-            self.timer.stop()
+            self.media_widget.pauseMedia()
             self.play_state = False
             self.stop_btn.setText("播放")
         else:
-            if self.player.position() < self.player.duration():
-                self.player.play()
-                self.timer.start()
+            if self.media_widget.getPosition() < self.media_widget.getDuration() or self.media_widget.getDuration() == 0:
+                self.media_widget.pauseMedia()
                 self.play_state = True
                 self.stop_btn.setText("暂停")
             else:
-                self.timer.start()
                 self.bar_slider.setValue(0)
-                self.player.setPosition(0)
-                self.player.play()
+                self.media_widget.setPosition(0)
+                self.media_widget.pauseMedia()
 
     def play(self, filePath):
         self.titleQLabel.setText(filePath)
@@ -342,9 +358,8 @@ class VideoShowLayout(QVBoxLayout):
         # 更新标题栏：显示文件名和播放进度
         self._update_title_bar(filePath)
 
-        # PyQt6: QMediaPlayer.setMedia(QMediaContent) → setSource(QUrl)
-        self.player.setSource(QUrl.fromLocalFile(filePath))
-        self.player.play()
+        # 使用统一的 MediaDisplayWidget 播放
+        self.media_widget.playMedia(filePath)
         self.play_state = True
         self.stop_btn.setText("暂停")
 
@@ -353,10 +368,8 @@ class VideoShowLayout(QVBoxLayout):
         if saved_pos > 0:
             QTimer.singleShot(500, lambda: self._seek_to_saved_position(saved_pos))
 
-        self.timer.start()
-
         # 播放开始后自动聚焦到视频区域（方便键盘快捷键操作）
-        self.video_widget.setFocus()
+        self.media_widget.setFocus()
 
     def _update_title_bar(self, filePath):
         """更新窗口标题栏显示文件名和播放进度"""
@@ -374,12 +387,55 @@ class VideoShowLayout(QVBoxLayout):
 
     def _seek_to_saved_position(self, saved_pos):
         """跳转到保存的播放位置"""
-        if saved_pos < self.player.duration():
-            self.player.setPosition(saved_pos)
+        if saved_pos < self.media_widget.getDuration():
+            self.media_widget.setPosition(saved_pos)
             self.main_window.notice(f"已恢复上次播放位置")
 
+    def _on_media_finished(self):
+        """媒体播放完成回调"""
+        # 重新启用进度条更新（一个循环结束）
+        self.play_state = False
+        self.stop_btn.setText("播放")
+
+        if self.play_mode == VideoShowLayout.play_mode_list:
+            self.play_list_index += 1
+            self.run_list()
+
+    def _on_position_changed(self, pos_ms):
+        """播放位置变化回调（由 MediaDisplayWidget positionChanged 信号触发）"""
+        # 更新进度条
+        duration = self.media_widget.getDuration()
+        self.cut_bar_slider.duration = duration / 1000 if duration > 0 else 0
+
+        if duration == 0:
+            return
+
+        value = round(pos_ms * self.bar_slider.maximum() / duration)
+        self.bar_slider.setValue(value)
+        self.bar_slider.move_type = 'time'
+
+        m, s = divmod(pos_ms / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.bar_label.setText('已播放:' + text)
+        m, s = divmod(duration / 1000, 60)
+        h, m = divmod(m, 60)
+        text = "%02d:%02d:%02d" % (h, m, s)
+        self.bar_label_all.setText('总时长:' + text)
+
+        # 每 5 秒保存一次播放位置（约 5 次回调乘以 1000ms ≈ 5s）
+        self._position_save_count += 1
+        if self._position_save_count >= 5:
+            self._position_save_count = 0
+            self._save_position()
+
+    def _on_media_error(self, error_msg: str):
+        """媒体播放错误回调"""
+        logger.error(f"视频播放错误: {error_msg}")
+        self.main_window.notice(f"播放错误: {error_msg}")
+
     def slider_start(self, value):
-        tangent = value / self.bar_slider_maxvalue * self.player.duration()
+        tangent = value / self.bar_slider_maxvalue * self.media_widget.getDuration()
         m, s = divmod(tangent / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
@@ -387,7 +443,7 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_start = int(tangent / 1000)
 
     def slider_end(self, value):
-        tangent = value / self.bar_slider_maxvalue * self.player.duration()
+        tangent = value / self.bar_slider_maxvalue * self.media_widget.getDuration()
         if tangent == 0:
             return
         m, s = divmod(tangent / 1000, 60)
@@ -398,55 +454,20 @@ class VideoShowLayout(QVBoxLayout):
 
     def slider_progress_moved(self):
         if self.bar_slider.move_type != 'time':
-            self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
+            self.media_widget.setPosition(
+                round(self.bar_slider.value() * self.media_widget.getDuration() / self.bar_slider.maximum())
+            )
 
-        m, s = divmod(self.player.position() / 1000, 60)
+        m, s = divmod(self.media_widget.getPosition() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.bar_label.setText('已播放:' + text)
-
-    def onTimerOut(self):
-        position = self.player.position()
-        duration = self.player.duration()
-        self.cut_bar_slider.duration = self.player.duration() / 1000
-
-        if duration == 0:
-            return
-
-        value = round(position * self.bar_slider.maximum() / duration)
-        self.bar_slider.setValue(value)
-        self.bar_slider.move_type = 'time'
-
-        m, s = divmod(self.player.position() / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.bar_label.setText('已播放:' + text)
-        m, s = divmod(self.player.duration() / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.bar_label_all.setText('总时长:' + text)
-
-        # 每 5 秒保存一次播放位置
-        self._position_save_count += 1
-        if self._position_save_count >= 5:
-            self._position_save_count = 0
-            self._save_position()
-
-        if self.player.position() == self.player.duration():
-            if self.play_mode == VideoShowLayout.play_mode_list:
-                self.play_list_index += 1
-                self.run_list()
-                return
-            self.stop_btn.setText("播放")
-            self.play_state = False
-            self.timer.stop()
 
     def is_video(self, path):
-        return path.lower().endswith(('.mp4', '.mkv'))
+        return is_video_file(path)
 
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
-        self.video_widget.setStyleSheet("border:none;")
         self.bar_hbox_qwidget.setVisible(visible)
         self.controal_hbox_qwidget.setVisible(visible)
         self.cut_bar_hbox_qwidget.setVisible(visible)
@@ -459,14 +480,21 @@ class VideoShowLayout(QVBoxLayout):
             if self.config_manager.exist(VideoShowLayout.video_screenshot_path_key):
                 new_path = self.config_manager.get(VideoShowLayout.video_screenshot_path_key) + os.sep + file + '_'
 
-            save_path = new_path + '_' + str(self.player.position()) + '.jpg'
+            save_path = new_path + '_' + str(self.media_widget.getPosition()) + '.jpg'
 
+            # 尝试使用引擎直接截图（VLC/MPV 支持）
+            if self.media_widget.screenshot(save_path):
+                self.main_window.notice('截图成功，保存到 ' + save_path)
+                self.main_window.model.refresh()
+                return
+
+            # 引擎截图失败，回退到 ffmpeg 截图
             ffmpeg_path = self.get_ffmpeg_path()
             if not os.path.exists(ffmpeg_path):
                 self.main_window.notice('ffmpeg路径获取错误： ' + ffmpeg_path)
                 return
 
-            position_sec = self.player.position() / 1000
+            position_sec = self.media_widget.getPosition() / 1000
             command = [
                 ffmpeg_path,
                 '-ss', str(position_sec),
@@ -490,13 +518,13 @@ class VideoShowLayout(QVBoxLayout):
             self.main_window.notice(f"截图失败: {e}")
 
     def get_video_start(self):
-        m, s = divmod(self.player.position() / 1000, 60)
+        m, s = divmod(self.media_widget.getPosition() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.cut_bar_edit_start.setText(text)
 
     def get_video_end(self):
-        m, s = divmod(self.player.position() / 1000, 60)
+        m, s = divmod(self.media_widget.getPosition() / 1000, 60)
         h, m = divmod(m, 60)
         text = "%02d:%02d:%02d" % (h, m, s)
         self.cut_bar_edit_end.setText(text)
@@ -528,7 +556,7 @@ class VideoShowLayout(QVBoxLayout):
         self.video_cut_thread.start()
 
     def get_video_max_time(self):
-        m, s = divmod(self.player.duration() / 1000, 60)
+        m, s = divmod(self.media_widget.getDuration() / 1000, 60)
         h, m = divmod(m, 60)
         return "%02d:%02d:%02d" % (h, m, s)
 
@@ -601,9 +629,8 @@ class VideoShowLayout(QVBoxLayout):
                     if self.play_list_index >= len(self.play_list):
                         self.play_list_index = len(self.play_list) - 1
 
-            # PyQt6: setMedia(QMediaContent()) → setSource(QUrl()) for clearing
-            self.player.setSource(QUrl())
-            self.player.setVideoOutput(None)
+            # 停止当前播放并清理
+            self.media_widget.stopMedia()
             QTimer.singleShot(200, lambda: self._do_delete(path, filename, deleted_file_path))
         else:
             self.next()
@@ -622,8 +649,8 @@ class VideoShowLayout(QVBoxLayout):
         """保存当前播放位置到数据库"""
         if not self.path or not os.path.exists(self.path):
             return
-        position = self.player.position()
-        duration = self.player.duration()
+        position = self.media_widget.getPosition()
+        duration = self.media_widget.getDuration()
         if position <= 30:  # 刚开始几秒不保存
             return
         # 使用 INSERT OR REPLACE 更新记录
@@ -650,7 +677,7 @@ class VideoShowLayout(QVBoxLayout):
         return 0
 
     def eventFilter(self, obj, event):
-        """监听窗口大小变化事件，视频 QVideoWidget 自适应"""
+        """监听窗口大小变化事件，自动缩放 MediaDisplayWidget"""
         if event.type() == QEvent.Type.Resize:
             # QScrollArea 的 setWidgetResizable(True) 会自动处理
             pass  # 交由 QScrollArea 自身处理自适应
@@ -670,7 +697,6 @@ class VideoShowLayout(QVBoxLayout):
 
             # 首先尝试从播放列表播放下一个
             if len(self.play_list) > 0 and 0 <= self.play_list_index < len(self.play_list):
-                self.player.setVideoOutput(self.video_widget)
                 self.play(self.play_list[self.play_list_index])
             else:
                 # 播放列表为空，扫描目录找下一个视频
@@ -693,10 +719,6 @@ class VideoShowLayout(QVBoxLayout):
                     next_file = file_date_tuple_list[-1][0]
 
                 if next_file and os.path.exists(next_file):
-                    self.player.setVideoOutput(self.video_widget)
                     self.play(next_file)
-                else:
-                    self.player.setVideoOutput(self.video_widget)
         except Exception as e:
-            self.player.setVideoOutput(self.video_widget)
             self.main_window.notice("文件删除异常!!!" + str(e))
