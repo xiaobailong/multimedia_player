@@ -29,6 +29,11 @@ class CustomTitleBar(QWidget):
         self._title_label.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold;")
         layout.addWidget(self._title_label)
 
+        # 播放进度标签（放在标题后面，stretch 前面）
+        self._progress_label = QLabel("")
+        self._progress_label.setStyleSheet("color: #a6adc8; font-size: 12px;")
+        layout.addWidget(self._progress_label)
+
         layout.addStretch()
 
         self._min_btn = self._create_btn("\u2500")
@@ -123,6 +128,14 @@ class CustomTitleBar(QWidget):
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
+
+    def setInfo(self, filename, progress=""):
+        """设置标题栏显示信息
+        :param filename: 当前播放的文件名（绝对路径或简短名称）
+        :param progress: 进度文字，如 "(3/10)"
+        """
+        self._title_label.setText(filename)
+        self._progress_label.setText(progress)
 
     def updateMaximizeIcon(self):
         if self.window().isMaximized():

@@ -53,6 +53,7 @@ class VideoShowLayout(QVBoxLayout):
         self.titleQLabel.setText("Title")
         self.titleQLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.titleQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.titleQLabel.setVisible(False)  # 路径已移至窗口标题栏显示
         self.addWidget(self.titleQLabel)
 
         self.player = QMediaPlayer()
@@ -194,6 +195,9 @@ class VideoShowLayout(QVBoxLayout):
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.onTimerOut)
 
+        # 监听窗口大小变化：视频 QScrollArea 自适应
+        self.main_window.installEventFilter(self)
+
     def enter_fullscreen_mode(self):
         """进入全屏模式：将控制控件移动到悬浮面板，只保留视频画面"""
         self._is_fullscreen = True
@@ -334,6 +338,9 @@ class VideoShowLayout(QVBoxLayout):
         self.titleQLabel.setText(filePath)
         self.path = filePath
 
+        # 更新标题栏：显示文件名和播放进度
+        self._update_title_bar(filePath)
+
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
         self.player.play()
         self.play_state = True
@@ -345,6 +352,23 @@ class VideoShowLayout(QVBoxLayout):
             QTimer.singleShot(500, lambda: self._seek_to_saved_position(saved_pos))
 
         self.timer.start()
+
+        # 播放开始后自动聚焦到视频区域（方便键盘快捷键操作）
+        self.video_widget.setFocus()
+
+    def _update_title_bar(self, filePath):
+        """更新窗口标题栏显示文件名和播放进度"""
+        basename = os.path.basename(filePath) if filePath else ""
+        filename = os.path.splitext(basename)[0]
+        total = len(self.play_list)
+        if total > 0 and 0 <= self.play_list_index < total:
+            progress = f"({self.play_list_index + 1}/{total})"
+        else:
+            progress = ""
+        try:
+            self.main_window.title_bar.setInfo(filename, progress)
+        except Exception as e:
+            logger.warning(f"更新标题栏失败: {e}")
 
     def _seek_to_saved_position(self, saved_pos):
         """跳转到保存的播放位置"""
@@ -622,6 +646,13 @@ class VideoShowLayout(QVBoxLayout):
         except Exception as e:
             logger.warning(f"加载播放位置失败: {e}")
         return 0
+
+    def eventFilter(self, obj, event):
+        """监听窗口大小变化事件，视频 QVideoWidget 自适应"""
+        if event.type() == QEvent.Resize:
+            # QScrollArea 的 setWidgetResizable(True) 会自动处理
+            pass  # 交由 QScrollArea 自身处理自适应
+        return super().eventFilter(obj, event)
 
     def _do_delete(self, path, filename, deleted_file_path):
         """实际执行文件删除并播放下一个（在媒体释放后调用）"""

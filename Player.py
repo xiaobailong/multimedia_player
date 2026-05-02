@@ -481,10 +481,16 @@ class MainWindow(QMainWindow):
             self.inputAndExeLayout.load_pic_list()
         elif os.path.isfile(self.path):
             if self.video_show_layout.is_video(self.path):
-                self.change_show(MainWindow.show_type_video)
+                # 点击单个视频：退出列表播放模式
                 self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
+                self.video_show_layout.play_list.clear()
+                self.video_show_layout.play_list_index = 0
+                self.change_show(MainWindow.show_type_video)
                 self.video_show_layout.play(self.model.filePath(qmodelindex))
             elif self.pic_show_layout.is_pic(self.path):
+                # 点击单个图片：退出幻灯片/列表模式
+                self.pic_show_layout.counter = 0
+                self.pic_show_layout.inputAndExeLayout.list_files.clear()
                 self.change_show(MainWindow.show_type_pic)
                 self.pic_show_layout.play(self.model.filePath(qmodelindex))
             else:

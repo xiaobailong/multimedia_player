@@ -1,9 +1,10 @@
 import os
 
 import send2trash
+from PIL import Image
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-from PyQt5.QtGui import (QPixmap, QImage)
+from PyQt5.QtGui import (QPixmap, QImage, QMovie)
 
 from loguru import logger
 
@@ -35,6 +36,7 @@ class PicShowLayout(QVBoxLayout):
         self.titleQLabel.setText("Title")
         self.titleQLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.titleQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
+        self.titleQLabel.setVisible(False)  # 路径已移至窗口标题栏显示
         self.addWidget(self.titleQLabel)
 
         self.pictureQLabel = QLabel("Picture")
@@ -42,6 +44,9 @@ class PicShowLayout(QVBoxLayout):
         self.pictureQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
         self.qscrollarea = QScrollArea()
+        # 禁用滚动条：图片已自动等比缩放至填满区域，无需滚动
+        self.qscrollarea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.qscrollarea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.screen_width = int(self.main_window.width() * self.scale)
         self.screen_height = int(self.main_window.height() * self.scale)
@@ -51,158 +56,220 @@ class PicShowLayout(QVBoxLayout):
         self.qscrollarea.setWidget(self.pictureQLabel)
         self.addWidget(self.qscrollarea)
 
+        # 监听窗口大小变化：窗口缩放时自动等比例缩放当前显示内容
+        self.main_window.installEventFilter(self)
+
     def play(self, filePath):
         self.path = filePath
-
         self.titleQLabel.setText(filePath)
 
-        # 停止上一个 GIF 动画
+        # 更新标题栏：显示文件名和播放进度
+        self._update_title_bar(filePath)
+
+        # 停止任何正在进行的 GIF 定时帧切换
         self._stop_gif()
 
         if filePath.lower().endswith('.gif'):
-            self._play_gif(filePath)
+            QTimer.singleShot(0, lambda: self._play_gif(filePath))
         else:
-            self._play_static(filePath)
+            QTimer.singleShot(0, lambda: self._play_static(filePath))
+
+        # 播放开始后自动聚焦到播放区域（方便键盘快捷键操作）
+        self.qscrollarea.setFocus()
+
+    def _update_title_bar(self, filePath):
+        """更新窗口标题栏显示文件名和播放进度"""
+        basename = os.path.basename(filePath) if filePath else ""
+        filename = os.path.splitext(basename)[0]
+        total = len(self.inputAndExeLayout.list_files)
+        if total > 0 and 0 <= self.counter < total:
+            progress = f"({self.counter + 1}/{total})"
+        else:
+            progress = ""
+        try:
+            self.main_window.title_bar.setInfo(filename, progress)
+        except Exception as e:
+            logger.warning(f"更新标题栏失败: {e}")
 
     def _play_static(self, filePath):
         """播放静态图片文件"""
-        fckimage = QImage(filePath)
+        try:
+            fckimage = QImage(filePath)
+            if fckimage.isNull():
+                logger.warning(f"无法加载图片: {filePath}")
+                self._advance_slideshow()
+                return
 
-        self.screen_width = int(self.main_window.width() * self.scale)
-        self.screen_height = int(self.main_window.height() * self.scale)
+            self._current_static_image = fckimage  # 保存原始图片引用用于窗口缩放时重绘
+            self._render_static_image()
+        except Exception as e:
+            logger.error(f"静态图片显示失败: {e}")
+            self._advance_slideshow()
 
-        pil_image = self.m_resize(self.screen_width, self.screen_height, fckimage)
+    def _render_static_image(self):
+        """根据当前窗口尺寸重新渲染静态图片（用于窗口缩放时）"""
+        if not hasattr(self, '_current_static_image') or self._current_static_image is None:
+            return
+        try:
+            # 使用 QScrollArea 视口大小（已禁用滚动条，即等于可见区域）
+            viewport = self.qscrollarea.viewport()
+            if viewport:
+                target_w = viewport.width()
+                target_h = viewport.height()
+            else:
+                target_w = int(self.main_window.width() * self.scale)
+                target_h = int(self.main_window.height() * self.scale)
 
-        pixmap = QPixmap.fromImage(pil_image)
+            if target_w <= 0 or target_h <= 0:
+                return
 
-        self.pictureQLabel.resize(pil_image.width(), pil_image.height())
-        self.pictureQLabel.setPixmap(pixmap)
+            pil_image = self.m_resize(target_w, target_h, self._current_static_image)
+
+            pixmap = QPixmap.fromImage(pil_image)
+
+            self.pictureQLabel.resize(pil_image.width(), pil_image.height())
+            self.pictureQLabel.setPixmap(pixmap)
+        except Exception as e:
+            logger.error(f"静态图片重绘失败: {e}")
 
     # ------------------------------------------------------------
-    # GIF 手动帧播放（使用 Pillow ImageQt —— 无 QMovie 崩溃）
+    # GIF 播放：Pillow 解码 + QPixmap 帧切换 + QTimer（完全避免 Qt5 QMovie 崩溃）
     # ------------------------------------------------------------
     def _play_gif(self, filePath):
-        """渐进式解码 GIF：先显示第一帧再后台逐批解码其余帧"""
-        from PIL import Image
+        """使用 Pillow 解码 GIF 帧，QMovie 完全不用"""
+        if not os.path.isfile(filePath):
+            self._advance_slideshow()
+            return
 
-        self._gif_frames = []    # list of QPixmap (已缩放)
-        self._gif_delays = []    # list of int (毫秒)
-        self._gif_index = 0
-        self._gif_decode_done = False
-        self._gif_total_cycles = 1  # 记录完整循环次数（用于幻灯片自动切换）
+        # 记录幻灯片状态并暂停
+        slideshow_active = self.inputAndExeLayout.timer.isActive()
+        self._gif_slideshow_active = slideshow_active
+        if slideshow_active:
+            self.inputAndExeLayout.timer.stop()
 
-        # 第 1 步：打开 GIF，只解码第一帧立刻显示
-        img = Image.open(filePath)
-        self._gif_img = img
+        # 用 Pillow 解码所有帧
+        try:
+            pil_img = Image.open(filePath)
+            frames = []
+            durations = []
 
-        self._prep_and_append_frame(img)
+            while True:
+                # 当前帧 → RGBA → QImage → QPixmap
+                frame_rgba = pil_img.convert("RGBA")
+                data = frame_rgba.tobytes("raw", "RGBA")
+                qimg = QImage(data, frame_rgba.width, frame_rgba.height, QImage.Format_RGBA8888)
+                frames.append(QPixmap.fromImage(qimg))
 
-        # 第 2 步：后台定时器逐帧解码剩余帧（每 30ms 解 10 帧）
-        if not hasattr(self, '_gif_decode_timer'):
-            self._gif_decode_timer = QTimer()
-            self._gif_decode_timer.timeout.connect(self._decode_batch)
-        else:
-            self._gif_decode_timer.stop()
+                # 帧延迟（毫秒），PIL 返回的是百分秒（centiseconds），Qt5 QMovie 默认 100ms 兜底
+                try:
+                    delay = pil_img.info.get("duration", 100)
+                    if delay < 20:
+                        delay = 100
+                except Exception:
+                    delay = 100
+                durations.append(delay)
 
-        self._gif_decode_timer.start(30)
+                # 尝试跳到下一帧
+                try:
+                    pil_img.seek(pil_img.tell() + 1)
+                except EOFError:
+                    break
 
-        # 第 3 步：播放定时器（初始只有 1 帧等解码完后启动）
-        if not hasattr(self, '_gif_timer'):
-            self._gif_timer = QTimer()
-            self._gif_timer.timeout.connect(self._next_gif_frame)
-        else:
-            self._gif_timer.stop()
-
-    def _prep_and_append_frame(self, img):
-        """将 Pillow Image 当前帧转为 QPixmap 并加入帧列表"""
-        from PIL.ImageQt import ImageQt
-
-        frame = img.copy().convert("RGBA")
-        w, h = frame.size
-        # 使用 Pillow 官方提供的 ImageQt 转换 —— 安全处理 stride/格式
-        qimage = ImageQt(frame)
-        scaled_size = self._gif_scaled_size(w, h)
-        pixmap = QPixmap.fromImage(qimage).scaled(
-            scaled_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-
-        self._gif_frames.append(pixmap)
-        self._gif_delays.append(max(img.info.get('duration', 60), 20))
-
-        # 第一帧直接显示
-        if len(self._gif_frames) == 1:
-            self.pictureQLabel.setPixmap(pixmap)
-            self.pictureQLabel.resize(pixmap.size())
-
-    def _decode_batch(self):
-        """每 tick 解码 10 帧，解码完毕转为循环播放"""
-        _BATCH = 10
-        for _ in range(_BATCH):
-            try:
-                idx = self._gif_img.tell()
-                self._gif_img.seek(idx + 1)
-            except EOFError:
-                self._gif_img.close()
-                self._gif_img = None
-                self._gif_decode_done = True
-                self._gif_decode_timer.stop()
-                # 开始正常循环播放
-                self._gif_index = 0
-                self._gif_timer.setInterval(self._gif_delays[0])
-                self._gif_timer.start()
+            if not frames:
+                logger.warning(f"GIF 无帧: {filePath}")
+                self._advance_slideshow()
                 return
 
-            try:
-                self._prep_and_append_frame(self._gif_img)
-            except Exception:
-                continue
+            self._gif_frames = frames
+            self._gif_durations = durations
+            self._gif_idx = 0
+            self._gif_playing = True
 
-    def _next_gif_frame(self):
-        self._gif_index += 1
-        if self._gif_index >= len(self._gif_frames):
-            self._gif_index = 0
-            # 完成一个完整循环 —— 如果在幻灯片模式中，自动切到下一张
-            if self.inputAndExeLayout.timer.isActive():
-                self._schedule_next_slide()
+            # 显示第一帧
+            screen_w = int(self.main_window.width() * self.scale)
+            screen_h = int(self.main_window.height() * self.scale)
+            self.pictureQLabel.resize(screen_w, screen_h)
+            self.pictureQLabel.setPixmap(self._gif_frames[0].scaled(
+                screen_w, screen_h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        except Exception as e:
+            logger.error(f"GIF 解码失败: {e}")
+            self._advance_slideshow()
+            return
+
+        # 启动帧切换定时器（非信号上下文，安全）
+        self._gif_timer = QTimer(self.main_window)
+        self._gif_timer.setSingleShot(True)
+        self._gif_timer.timeout.connect(self._advance_gif_frame)
+        self._gif_timer.start(self._gif_durations[0])
+
+    def _advance_gif_frame(self):
+        """切换到 GIF 下一帧"""
+        if not getattr(self, '_gif_playing', False):
+            return
+
+        self._gif_idx += 1
+
+        # 检查是否完成一个完整循环
+        if self._gif_idx >= len(self._gif_frames):
+            self._gif_idx = 0
+
+            # 幻灯片模式下，一个循环结束后切到下一张图片
+            if self._gif_slideshow_active:
+                self._stop_gif()
+                self._advance_slideshow()
                 return
-        self.pictureQLabel.setPixmap(self._gif_frames[self._gif_index])
-        self._gif_timer.setInterval(self._gif_delays[self._gif_index])
 
-    def _schedule_next_slide(self):
-        """GIF 完整播放一圈后触发的下一次幻灯片切换"""
-        self._gif_timer.stop()
-        # 立即通知 refreshPictures 推进计数器
-        QTimer.singleShot(0, self._do_next_slide)
+        # 显示当前帧（使用视口实际尺寸）
+        try:
+            viewport = self.qscrollarea.viewport()
+            if viewport:
+                target_w = viewport.width()
+                target_h = viewport.height()
+            else:
+                target_w = int(self.main_window.width() * self.scale)
+                target_h = int(self.main_window.height() * self.scale)
 
-    def _do_next_slide(self):
-        """执行幻灯片下一张"""
+            if target_w <= 0 or target_h <= 0:
+                self._gif_timer.start(self._gif_durations[self._gif_idx])
+                return
+
+            self.pictureQLabel.setPixmap(self._gif_frames[self._gif_idx].scaled(
+                target_w, target_h, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+            # 继续下一帧
+            self._gif_timer.start(self._gif_durations[self._gif_idx])
+        except Exception as e:
+            logger.error(f"GIF 帧切换失败: {e}")
+            self._stop_gif()
+
+    def _advance_slideshow(self):
+        """停止当前显示，启动幻灯片下一张"""
+        # 停止 GIF 定时器
         self._stop_gif()
-        self.refreshPictures()
 
-    def _gif_scaled_size(self, w, h):
-        """计算 GIF 缩放尺寸"""
-        self.screen_width = int(self.main_window.width() * self.scale)
-        self.screen_height = int(self.main_window.height() * self.scale)
-
-        if w == 0 or h == 0:
-            return QSize(self.screen_width, self.screen_height)
-
-        f1 = 1.0 * self.screen_width / w
-        f2 = 1.0 * self.screen_height / h
-        factor = min([f1, f2])
-        return QSize(int(w * factor), int(h * factor))
+        if getattr(self, '_gif_slideshow_active', False):
+            self._gif_slideshow_active = False
+            self.inputAndExeLayout.timer.start()
+            self.refreshPictures()
 
     def _stop_gif(self):
-        """停止当前 GIF 播放并释放帧内存（防御性 —— 不假设属性存在）"""
-        getattr(self, '_gif_timer', QTimer()).stop()
-        getattr(self, '_gif_decode_timer', QTimer()).stop()
-        img = getattr(self, '_gif_img', None)
-        if img is not None:
-            img.close()
-        self._gif_img = None
-        if hasattr(self, '_gif_frames'):
-            self._gif_frames.clear()
-        self._gif_index = 0
-        self._gif_decode_done = False
+        """停止 GIF 帧切换并清理"""
+        t = getattr(self, '_gif_timer', None)
+        if t is not None:
+            try:
+                t.stop()
+            except RuntimeError:
+                pass
+            try:
+                t.timeout.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+        self._gif_timer = None
+        self._gif_playing = False
+        self._gif_frames = None
+        self._gif_durations = None
+        self._gif_idx = 0
+        self.pictureQLabel.setPixmap(QPixmap())
 
     def m_resize(self, w_box, h_box, pil_image):  # 参数是：要适应的窗口宽、高、Image.open后的图片
 
@@ -241,9 +308,16 @@ class PicShowLayout(QVBoxLayout):
         self.refreshPicturesOnly()
 
     def refreshPicturesOnly(self):
-        if len(self.inputAndExeLayout.list_files) == 0:
+        files = self.inputAndExeLayout.list_files
+        if len(files) == 0:
             return
-        img_path = self.inputAndExeLayout.list_files[self.counter]
+        # 边界保护：超出范围则停止幻灯片
+        if self.counter < 0 or self.counter >= len(files):
+            logger.info(f"幻灯片播放完毕，当前索引 {self.counter} 超出范围 (0~{len(files)-1})")
+            self.inputAndExeLayout.timer.stop()
+            self.counter = max(0, min(self.counter, len(files) - 1))
+            return
+        img_path = files[self.counter]
         self.play(img_path)
 
     def up(self):
@@ -281,3 +355,12 @@ class PicShowLayout(QVBoxLayout):
             self.main_window.model.refresh()
         except Exception as e:
             self.main_window.notice("文件删除异常!!!" + str(e))
+
+    def eventFilter(self, obj, event):
+        """监听窗口大小变化事件，自动等比例缩放当前显示的图片"""
+        if event.type() == QEvent.Resize:
+            # 窗口缩放时重绘静态图片
+            if hasattr(self, '_current_static_image') and self._current_static_image is not None:
+                self._render_static_image()
+            # GIF 帧缩放由 _advance_gif_frame 每次绘制时获取最新窗口尺寸处理
+        return super().eventFilter(obj, event)
