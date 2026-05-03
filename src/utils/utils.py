@@ -50,10 +50,31 @@ def get_log_path():
 def get_db_path():
     """
     获取数据库文件路径。
-    """
-    db_dir = get_app_data_path()
-    return os.path.join(db_dir, 'player.db')
 
+    开发状态下：
+        Windows: data/win/player.db
+        macOS:   data/mac/player.db
+    打包运行状态下：
+        macOS:   ~/Library/Application Support/多媒体播放器/player.db
+        Windows: 与可执行文件同级目录下的 player.db
+    """
+    if getattr(sys, 'frozen', False):
+        # 打包运行状态
+        if sys.platform == 'darwin':
+            data_dir = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', '多媒体播放器')
+        else:
+            # Windows: 与可执行文件同级目录
+            data_dir = os.path.dirname(sys.executable)
+    else:
+        # 开发状态 - 使用项目根目录下对应平台的 data 目录
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if sys.platform == 'win32':
+            data_dir = os.path.join(project_root, 'data', 'win')
+        else:
+            data_dir = os.path.join(project_root, 'data', 'mac')
+
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, 'player.db')
 
 def get_ffmpeg_path():
     """

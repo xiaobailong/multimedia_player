@@ -48,55 +48,51 @@ class FileDisplayDelegate(QStyledItemDelegate):
         return QSize(text_width, super().sizeHint(option, index).height())
 
     def helpEvent(self, event, view, option, index):
-        if event.type() == QEvent.Type.ToolTip and index.model() is not None:
-            file_path = index.model().filePath(index)
-            file_name = index.model().fileName(index)
-            if os.path.isfile(file_path):
-                size_bytes = os.path.getsize(file_path)
-                size_str = self._format_size(size_bytes)
-                QToolTip.showText(event.globalPos(), f"{file_name}\n大小: {size_str}")
-            else:
-                QToolTip.showText(event.globalPos(), file_name)
-            return True
-        return super().helpEvent(event, view, option, index)
-
-    @staticmethod
-    def _format_size(bytes_size):
-        """格式化文件大小"""
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if bytes_size < 1024:
-                return f"{bytes_size:.1f} {unit}"
-            bytes_size /= 1024
-        return f"{bytes_size:.1f} TB"
+        if index.model() is None:
+            return super().helpEvent(event, view, option, index)
+        tooltip_text = index.model().filePath(index)
+        file_size = index.model().size(index) / (1024 * 1024)
+        tooltip_text += f"\n{'%0.2f MB' % file_size}"
+        QToolTip.showText(event.globalPos(), tooltip_text)
+        return True
 
 
 class MainWindow(QMainWindow):
-    expand_path_config_key = 'default.expand.path'
-    show_type_video = 'video'
-    show_type_pic = 'pic'
-    normal = 0
-    full = 1
+    full = 0
+    normal = 1
+    full_screen_state = full
 
-    def __init__(self, *args, **kwargs):
+    left = 0.15
+    right = 0.85
 
-        super(MainWindow, self).__init__(*args, **kwargs)
+    show_type_pic = 1
+    show_type_video = 2
 
-        self.path = ''
-        self.path_right_click = ''
-        self.left = 1
-        self.right = 6
-        self._right_click_in_progress = False  # Bug E 修复: 阻止右键菜单弹出时 selectionChanged 触发 VLC 操作导致崩溃
+    expand_path_config_key = 'expand_path'
+    version = "V3.1.2"
+
+    def __init__(self):
+        super().__init__()
+        logger.info(f"================== {self.version} ==================")
+
+        self.selected_paths = set()
+
         self.config_manager = ConfigManager()
-        self.style_sheet = self.styleSheet()
-        self.full_screen_state = MainWindow.normal
 
-        # -- 无边框窗口设置 --
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.media_widget = None  # 引用，用于控件共享
 
-        self.setWindowTitle('多媒体播放器')
-        self.resize(1500, 700)
+        # 窗口高宽比
+        self.setMinimumSize(800, 600)
+        self.setWindowTitle("多媒体播放器")
 
-        # ---- 全局暗色主题 ----
+        # 允许拖拽文件
+        self.setAcceptDrops(True)
+
+        # 窗口位置
+        desktop = QApplication.primaryScreen().availableGeometry()
+        self.setGeometry(int(desktop.width() * 0.05), int(desktop.height() * 0.05),
+                         int(desktop.width() * 0.9), int(desktop.height() * 0.85))
+
         self.setStyleSheet("""
             QMainWindow, QWidget {
                 background-color: #1e1e2e;
@@ -293,7 +289,7 @@ class MainWindow(QMainWindow):
         self.workQWidget.setLayout(self.work)
 
         self.mainQWidget.addWidget(self.workQWidget)
-        sizes = [10000 * self.left, 10000 * self.right]
+        sizes = [int(10000 * self.left), int(10000 * self.right)]
         self.mainQWidget.setSizes(sizes)
 
         # -- 自定义标题栏 --
@@ -317,7 +313,7 @@ class MainWindow(QMainWindow):
 
         self.tree_visible = True
         # 记录展开时的窗口比例，用于恢复
-        self.tree_sizes = [10000 * self.left, 10000 * self.right]
+        self.tree_sizes = [int(10000 * self.left), int(10000 * self.right)]
 
         # -- 主布局: 标题列 + mainQWidget + 状态栏 --
         self._central_widget = QWidget()
@@ -371,38 +367,55 @@ class MainWindow(QMainWindow):
 
             self.path_right_click = self.model.filePath(idx)
 
-            self.treeView.contextMenu = QMenu()
+            # 清理上一次右键菜单（防止内存泄漏）
+            old_menu = getattr(self.treeView, '_context_menu_obj', None)
+            if old_menu is not None:
+                old_menu.deleteLater()
+                self.treeView._context_menu_obj = None
 
-            self.treeView.contextMenu.action_copy = self.treeView.contextMenu.addAction(u'复制到')
-            self.treeView.contextMenu.action_copy.triggered.connect(self.copy)
+            # 创建新菜单
+            menu = QMenu(self.treeView)
+            self.treeView._context_menu_obj = menu
 
-            self.treeView.contextMenu.action_move = self.treeView.contextMenu.addAction(u'移动')
-            self.treeView.contextMenu.action_move.triggered.connect(self.move)
+            # 注意：每个 action 用唯一的属性名存储，防止覆盖
+            action_copy = menu.addAction(u'复制到')
+            action_copy.triggered.connect(self.copy)
 
-            self.treeView.contextMenu.action_refresh = self.treeView.contextMenu.addAction(u'刷新')
-            self.treeView.contextMenu.action_refresh.triggered.connect(self.refresh)
+            action_move = menu.addAction(u'移动')
+            action_move.triggered.connect(self.move)
 
-            self.treeView.contextMenu.action_delete = self.treeView.contextMenu.addAction(u'删除')
-            self.treeView.contextMenu.action_delete.triggered.connect(self.delete)
+            action_refresh = menu.addAction(u'刷新')
+            action_refresh.triggered.connect(self.refresh)
 
-            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为幻灯片列表')
-            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_pic_show)
+            menu.addSeparator()
 
-            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'加载为视频列表')
-            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_lise)
+            action_delete = menu.addAction(u'删除')
+            action_delete.triggered.connect(self.delete)
 
-            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置为截图路径')
-            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_screenshot)
+            menu.addSeparator()
 
-            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置为剪切路径')
-            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.load_for_video_cut)
+            action_pic = menu.addAction(u'加载为幻灯片列表')
+            action_pic.triggered.connect(self.load_for_pic_show)
 
-            self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置默认展开')
-            self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.set_expand_path)
+            action_video = menu.addAction(u'加载为视频列表')
+            action_video.triggered.connect(self.load_for_video_lise)
 
-            self.treeView.contextMenu.exec_(self.treeView.viewport().mapToGlobal(pos))
+            menu.addSeparator()
+
+            action_screenshot = menu.addAction(u'设置为截图路径')
+            action_screenshot.triggered.connect(self.load_for_video_screenshot)
+
+            action_cut = menu.addAction(u'设置为剪切路径')
+            action_cut.triggered.connect(self.load_for_video_cut)
+
+            action_expand = menu.addAction(u'设置默认展开')
+            action_expand.triggered.connect(self.set_expand_path)
+
+            # 使用 QMenu.exec() (PyQt6 官方接口) 而非废弃的 exec_()
+            menu.exec(self.treeView.viewport().mapToGlobal(pos))
         except Exception as e:
-            self.notice(e)
+            logger.exception(f"右键菜单异常: {e}")
+            self.notice(f"右键菜单异常: {e}")
         finally:
             self._right_click_in_progress = False
 
@@ -483,8 +496,11 @@ class MainWindow(QMainWindow):
             self.notice("文件删除异常!!!" + str(e))
 
     def on_selection_changed(self, selected, deselected):
-        # Bug E 修复: 右键菜单弹出期间 selectionChanged 也会触发，
-        # 但不应切换布局/引擎，否则 VLC 窗口管理器会 native 崩溃 (0xC0000409)
+        # Bug E 修复: 右键菜单崩溃 0xC0000409 根因。
+        # Qt 事件顺序: MouseButtonPress → selectionChanged → customContextMenuRequested
+        # 事件过滤器在 MouseButtonPress 时设置 _right_click_in_progress = True
+        # selectionChanged 应检查该标志立即返回，不触发 on_tree_clicked（否则 VLC 引擎正在
+        # 初始化/轮询时又一个 on_tree_clicked 会停止/重启引擎，导致 native 崩溃）。
         if getattr(self, '_right_click_in_progress', False):
             return
 
@@ -669,6 +685,10 @@ class MainWindow(QMainWindow):
 
     def change_show(self, show_type):
         if show_type == MainWindow.show_type_pic:
+            # Bug E 修复: 在隐藏视频控件前必须安全停止 VLC 引擎，
+            # 否则 native 窗口被销毁时位置轮询定时器仍在运行 → 访问已销毁 HWND → 0xC0000409
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.media_widget.stopMedia()
             self.pic_show_qwidget.setVisible(True)
             self.video_show_qwidget.setVisible(False)
         if show_type == MainWindow.show_type_video:
@@ -700,9 +720,11 @@ class MainWindow(QMainWindow):
     def eventFilter(self, obj, event):
         """全局事件过滤器：全屏模式下始终能捕获键盘快捷键，不受焦点控件影响"""
         # Bug E 修复: treeView.viewport() 鼠标右键按下时在 selectionChanged 之前设标志位
+        # 注意: return False 让事件继续传播，不影响右键菜单弹出
         if obj is self.treeView.viewport() and event.type() == QEvent.Type.MouseButtonPress:
             if event.button() == Qt.MouseButton.RightButton:
                 self._right_click_in_progress = True
+            return False
         if event.type() == QEvent.Type.KeyPress:
             # Esc：退出全屏
             if event.key() == Qt.Key.Key_Escape and self.full_screen_state == MainWindow.full:

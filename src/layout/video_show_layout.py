@@ -487,7 +487,7 @@ class VideoShowLayout(QVBoxLayout):
             # 尝试使用引擎直接截图（VLC/MPV 支持）
             if self.media_widget.screenshot(save_path):
                 self.main_window.notice('截图成功，保存到 ' + save_path)
-                self.main_window.model.refresh()
+                self.main_window._refresh_model()
                 return
 
             # 引擎截图失败，回退到 ffmpeg 截图
@@ -510,7 +510,7 @@ class VideoShowLayout(QVBoxLayout):
 
             if os.path.exists(save_path):
                 self.main_window.notice('截图成功，保存到 ' + save_path)
-                self.main_window.model.refresh()
+                self.main_window._refresh_model()
             else:
                 self.main_window.notice("截图失败!!!")
         except subprocess.TimeoutExpired:
@@ -586,16 +586,18 @@ class VideoShowLayout(QVBoxLayout):
 
         return ffmpeg_path
 
-    def video_cut_thread_finished(self, file_name, count):
-        while not os.path.exists(file_name):
-            if count > 60:
+    def video_cut_thread_finished(self, file_name, retcode):
+        if retcode != 0:
+            self.main_window.notice('视频剪切失败，返回码: ' + str(retcode))
+            return
+        # 等待文件写入完成（最多等 60 秒）
+        for _ in range(60):
+            if os.path.exists(file_name):
+                self.main_window._refresh_model()
+                self.main_window.notice('视频剪切成功，保存到 ' + file_name)
                 return
             time.sleep(1)
-            if os.path.exists(file_name):
-                self.main_window.notice('视频剪切成功，保存到 ' + file_name)
-                self.main_window.model.refresh()
-                return
-            count + -1
+        self.main_window.notice('视频剪切超时，文件未生成')
 
     def loadData(self, path):
         if len(self.play_list) > 0:
@@ -695,7 +697,7 @@ class VideoShowLayout(QVBoxLayout):
             os.chdir(path)
             send2trash.send2trash(filename)
             self.main_window.notice(deleted_file_path + ' 文件已删除!!!')
-            self.main_window.model.refresh()
+            self.main_window._refresh_model()
 
             # 首先尝试从播放列表播放下一个
             if len(self.play_list) > 0 and 0 <= self.play_list_index < len(self.play_list):

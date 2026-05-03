@@ -9,16 +9,13 @@
 import os
 
 import send2trash
-from PIL import Image
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
-from PyQt6.QtGui import (QPixmap, QImage)
 
 from loguru import logger
 
 from src.layout.pic_input_layout import PicInputLayout
 from src.core.media_display_widget import MediaDisplayWidget, is_image_file
-from src.utils import get_log_path
 
 
 class PicShowLayout(QVBoxLayout):
@@ -53,17 +50,13 @@ class PicShowLayout(QVBoxLayout):
         self.media_widget.mediaFinished.connect(self._on_media_finished)
         self.media_widget.errorOccurred.connect(self._on_media_error)
 
-        # 将 MediaDisplayWidget 放入 QScrollArea 以保持与原有布局一致的交互
+        # 将 MediaDisplayWidget 放入 QScrollArea，由布局自动管理大小
         self.qscrollarea = QScrollArea()
         self.qscrollarea.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.qscrollarea.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.screen_width = int(self.main_window.width() * self.scale)
-        self.screen_height = int(self.main_window.height() * self.scale)
-        self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
-        self.qscrollarea.setWidgetResizable(False)
+        self.qscrollarea.setWidgetResizable(True)  # 让 QScrollArea 自动调整内部 widget 大小
         self.qscrollarea.setWidget(self.media_widget)
-        self.media_widget.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
-        self.addWidget(self.qscrollarea)
+        self.addWidget(self.qscrollarea, stretch=1)  # stretch=1 让滚动区域占据剩余空间
 
         # 监听窗口大小变化：窗口缩放时自动缩放到 MediaDisplayWidget
         self.main_window.installEventFilter(self)
@@ -120,8 +113,8 @@ class PicShowLayout(QVBoxLayout):
 
     def setVisible(self, visible):
         if visible:
-            self.qscrollarea.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
-            self.media_widget.setGeometry(QRect(0, 0, self.screen_width, self.screen_height))
+            # 显示时不需要手动设置几何尺寸，由布局系统自动处理
+            pass
         else:
             area_rect = QRect(0, 0, self.main_window.mainQWidget.width(), self.main_window.mainQWidget.height())
             self.qscrollarea.setGeometry(area_rect)
@@ -186,13 +179,12 @@ class PicShowLayout(QVBoxLayout):
             self.main_window.notice("文件删除异常!!!" + str(e))
 
     def eventFilter(self, obj, event):
-        """监听窗口大小变化事件，自动缩放 MediaDisplayWidget"""
+        """监听窗口大小变化事件，让布局系统自动处理缩放"""
         if event.type() == QEvent.Type.Resize:
-            # 更新 MediaDisplayWidget 大小
+            # 更新 scale 相关的屏幕尺寸（由 MediaDisplayWidget 的 resizeEvent 自动缩放）
             new_w = int(self.main_window.width() * self.scale)
             new_h = int(self.main_window.height() * self.scale)
             if new_w > 0 and new_h > 0:
-                self.media_widget.setGeometry(QRect(0, 0, new_w, new_h))
                 self.screen_width = new_w
                 self.screen_height = new_h
         return super().eventFilter(obj, event)

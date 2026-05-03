@@ -65,7 +65,7 @@ class PicInputLayout(QHBoxLayout):
         self.timer.timeout.connect(pic_show_layout.refreshPictures)
 
     def setVisible(self, visible):
-        self.setVisible(visible)
+        super().setVisible(visible)
 
     def text_edited(self, s):
         logger.info(s)
@@ -73,11 +73,11 @@ class PicInputLayout(QHBoxLayout):
         self.loadData()
 
     def load_pic_list(self):
-        if len(self.inputPath.text()) == 0:
-            selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
-            self.inputPath.setText(selected_path)
-
-        self.content_path = self.inputPath.text()
+        selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
+        if not selected_path:  # 用户取消了选择
+            return
+        self.inputPath.setText(selected_path)
+        self.content_path = selected_path
         self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.content_path)
         self.loadData()
         logger.info(self.content_path)
@@ -90,6 +90,10 @@ class PicInputLayout(QHBoxLayout):
             logger.info("请输入数字！！！")
 
     def loadData(self):
+        if not self.content_path or not os.path.exists(self.content_path):
+            logger.warning(f"路径无效或不存在: {self.content_path}")
+            return
+
         if len(self.list_files) > 0:
             self.list_files.clear()
             self.pic_show_layout.counter = 0
