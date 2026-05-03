@@ -12,13 +12,11 @@
 """
 import os
 import sys
-import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Callable
 
-from PyQt6.QtCore import QUrl, QTimer, QRect, Qt, QEvent
-from PyQt6.QtGui import QPixmap, QImage, QResizeEvent, QPaintEvent, QPainter
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QScrollArea
+from PyQt6.QtCore import QUrl, QTimer, QRect
+from PyQt6.QtWidgets import QWidget
 from PyQt6.QtMultimedia import QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 
@@ -238,6 +236,9 @@ class VlcEngine(MediaEngine):
             '--avcodec-hw=any',     # 启用硬件加速
         ])
         self._player = self._instance.media_player_new()
+        # Bug 修复: 标记 VLC 是否已处于 Ended 状态，防止 stop() 死锁
+        # libvlc_media_player_stop() 在 Ended 状态下调用会导致内部互斥锁死锁
+        self._media_ended: bool = False
 
         # 设置视频输出到 Qt 窗口
         if sys.platform == 'win32':
@@ -255,15 +256,23 @@ class VlcEngine(MediaEngine):
         self._position_timer: Optional[QTimer] = None
 
     def play(self, file_path: str):
-        self.stop()
+        # 注意：不调用 self.stop() - 调用方（MediaDisplayWidget.playMedia）已通过 stopMedia() 停止
+        # 在 VLC Ended 状态下重复调用 stop() 可能导致 libvlc 内部死锁
         if not os.path.isfile(file_path):
             logger.error(f"文件不存在: {file_path}")
             return
 
         self._media = self._instance.media_new(file_path)
         self._player.set_media(self._media)
-        self._media.parse()
-        self._duration = self._media.get_duration()
+        # Bug 修复: 移除阻塞的 self._media.parse() 调用
+        # libvlc_media_parse() 是同步操作，会阻塞 UI 线程直到元数据解析完成，
+        # 对于某些文件（特别是网络流或格式不标准的文件）可能耗时很长，
+        # 导致程序在切换视频时无响应。
+        # 播放时长通过 self._player.get_length() 异步获取（已在 get_duration() 中兜底）
+        self._duration = 0
+
+        # 重置 Ended 标志，新视频开始播放
+        self._media_ended = False
 
         self._player.play()
 
@@ -273,7 +282,20 @@ class VlcEngine(MediaEngine):
     def stop(self):
         self._stop_position_timer()
         if self._player:
-            self._player.stop()
+            # Bug 修复: 使用 _media_ended 标志避免在 Ended 状态下调用 get_state() 导致死锁
+            # 问题背景:
+            # 1. VLC 播完视频后 _on_timer() 检测到 State.Ended，设置 _media_ended = True
+            # 2. _end_callback 被 singleShot 延迟调用
+            # 3. 回调链最终调用到此 stop()
+            # 4. 此时调用 get_state() 本身也可能触发 libvlc 内部互斥锁死锁
+            # 因此直接检查 _media_ended 标志，避免任何 libvlc 调用
+            if self._media_ended:
+                logger.debug("_media_ended=True, 跳过 VLC stop() 和 get_state() 以避免死锁")
+            else:
+                try:
+                    self._player.stop()
+                except Exception:
+                    pass
         self._media = None
 
     def pause(self):
@@ -371,8 +393,16 @@ class VlcEngine(MediaEngine):
                     state = None
 
                 if state == vlc.State.Ended:
+                    # Bug 修复: 标记 Ended 状态，防止后续 stop() 调用导致死锁
+                    # libvlc_media_player_stop() 在 Ended 状态下调用会导致内部互斥锁死锁
+                    self._media_ended = True
                     if self._end_callback:
-                        self._end_callback()
+                        # Bug 修复: 使用 singleShot 延迟回调，避免定时器重入问题
+                        # 直接调用 _end_callback() 可能导致：
+                        # 1. 回调链中 stop() + play() 重新创建了定时器
+                        # 2. 本方法末尾的 _stop_position_timer() 会误杀新创建的定时器
+                        # 3. VLC 在 Ended 状态下直接 stop() 可能死锁
+                        QTimer.singleShot(0, self._end_callback)
                     self._stop_position_timer()
                 elif state == vlc.State.Paused:
                     # 真正的暂停状态，不触发 end_callback
@@ -522,7 +552,8 @@ class MpvEngine(MediaEngine):
         """MPV 事件回调"""
         if event.get('event') == 'end-file':
             if self._end_callback:
-                self._end_callback()
+                # Bug 修复: 使用 singleShot 延迟回调，避免定时器重入问题
+                QTimer.singleShot(0, self._end_callback)
             self._stop_position_timer()
 
     def _start_position_timer(self):

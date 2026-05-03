@@ -85,6 +85,9 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
         self.setWindowTitle("多媒体播放器")
 
+        # -- 无边框窗口设置 --
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+
         # 允许拖拽文件
         self.setAcceptDrops(True)
 

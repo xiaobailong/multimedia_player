@@ -35,6 +35,7 @@ class VideoShowLayout(QVBoxLayout):
     ffmpeg_path_key = "video.ffmpeg.path"
     play_mode_one = 0
     play_mode_list = 1
+    play_mode_list_end = 2  # 列表已全部播放完，按钮显示"重播列表"
 
     def __init__(self, main_window, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
@@ -300,6 +301,15 @@ class VideoShowLayout(QVBoxLayout):
         self.play(self.play_list[self.play_list_index])
 
     def run_list(self):
+        if self.play_mode == VideoShowLayout.play_mode_list_end:
+            # "重播列表"被点击：重置到列表开头重新播放
+            self.play_list_index = 0
+            self.play_mode = VideoShowLayout.play_mode_list
+            self.list_btn.setText("播放列表")
+            self.play_state = True
+            self.stop_btn.setText('暂停')
+            self.play(self.play_list[self.play_list_index])
+            return
         if len(self.play_list) == 0 or len(self.play_list) == self.play_list_index:
             self.main_window.notice('列表未加载或已全部播放完毕')
             self.play_mode = VideoShowLayout.play_mode_one
@@ -397,9 +407,18 @@ class VideoShowLayout(QVBoxLayout):
         self.play_state = False
         self.stop_btn.setText("播放")
 
+        # 视频播放完成，删除数据库中的播放位置记录
+        # 下次再播放该文件时从头开始看
+        self._remove_position()
+
         if self.play_mode == VideoShowLayout.play_mode_list:
             self.play_list_index += 1
-            self.run_list()
+            if self.play_list_index >= len(self.play_list):
+                # 列表已全部播放完毕，按钮改为"重播列表"
+                self.play_mode = VideoShowLayout.play_mode_list_end
+                self.list_btn.setText("重播列表")
+            else:
+                self.run_list()
 
     def _on_position_changed(self, pos_ms):
         """播放位置变化回调（由 MediaDisplayWidget positionChanged 信号触发）"""
@@ -613,6 +632,10 @@ class VideoShowLayout(QVBoxLayout):
             if self.is_video(file[0]):
                 self.play_list.append(file[0])
 
+        # 加载新列表时，重置按钮文本为"播放列表"
+        self.play_mode = VideoShowLayout.play_mode_one
+        self.list_btn.setText("播放列表")
+
     def delete(self):
         if len(self.path) > 0 and self.is_video(self.path):
             (path, filename) = os.path.split(self.path)
@@ -664,6 +687,17 @@ class VideoShowLayout(QVBoxLayout):
             self.db_client.exeUpdate(sql)
         except Exception as e:
             logger.warning(f"保存播放位置失败: {e}")
+
+    def _remove_position(self):
+        """从数据库删除当前文件的播放位置记录"""
+        if not self.path:
+            return
+        escaped_path = self.path.replace("'", "''")
+        sql = f"DELETE FROM video_play_position WHERE file_path = '{escaped_path}'"
+        try:
+            self.db_client.exeUpdate(sql)
+        except Exception as e:
+            logger.warning(f"删除播放位置失败: {e}")
 
     def _load_position(self):
         """从数据库加载播放位置，返回 position（毫秒），无记录则返回 0"""
