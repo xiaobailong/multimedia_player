@@ -26,6 +26,18 @@ from loguru import logger
 # 注意：vlc.Instance() 会加载 libvlc.dll，某些 Windows 系统上
 # 加载 DLL 时可能发生堆栈缓冲区溢出 (0xC0000409)。
 # 因此不在模块级别创建 Instance，改为懒加载方式。
+#
+# 打包模式（PyInstaller）下，设置 VLC DLL 路径环境变量让 python-vlc 能找到 libvlc.dll
+if getattr(sys, 'frozen', False):
+    vlc_base = os.path.join(sys._MEIPASS, 'vlc')
+    vlc_dll = os.path.join(vlc_base, 'libvlc.dll')
+    vlc_plugin = os.path.join(vlc_base, 'plugins')
+    if os.path.isfile(vlc_dll):
+        os.environ['PYTHON_VLC_LIB_PATH'] = vlc_dll
+        if os.path.isdir(vlc_plugin):
+            os.environ['PYTHON_VLC_MODULE_PATH'] = vlc_plugin
+        logger.debug(f"VLC 打包模式: PYTHON_VLC_LIB_PATH={vlc_dll}")
+
 VLC_AVAILABLE = False
 try:
     import vlc  # 仅导入 Python 包（不加载 DLL），这是安全的
@@ -207,6 +219,12 @@ class VlcEngine(MediaEngine):
         super().__init__(widget)
         if not VLC_AVAILABLE:
             raise RuntimeError("python-vlc 未安装")
+
+        # 打包模式下设置 VLC_PLUGIN_PATH 环境变量（在模块级已设置 PYTHON_VLC_LIB_PATH）
+        if getattr(sys, 'frozen', False):
+            vlc_plugin = os.path.join(sys._MEIPASS, 'vlc', 'plugins')
+            if os.path.isdir(vlc_plugin):
+                os.environ['VLC_PLUGIN_PATH'] = vlc_plugin
 
         # VLC 核心实例
         self._instance = vlc.Instance([
