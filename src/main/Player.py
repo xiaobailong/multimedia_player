@@ -256,7 +256,7 @@ class MainWindow(QMainWindow):
 
         self.model = QFileSystemModel()
         self.model.setRootPath("")  # 设置根路径为当前驱动器根
-        self.model.sort(3, order=Qt.SortOrder.DescendingOrder)
+        self.model.sort(3, order=Qt.SortOrder.AscendingOrder)
         self.treeView = QTreeView()
         self.treeView.setModel(self.model)
         self.treeView.setRootIndex(self.model.index(""))  # 显示驱动器根目录
@@ -388,13 +388,19 @@ class MainWindow(QMainWindow):
             self.treeView.contextMenu.load_for_slideshow = self.treeView.contextMenu.addAction(u'设置默认展开')
             self.treeView.contextMenu.load_for_slideshow.triggered.connect(self.set_expand_path)
 
-            self.treeView.contextMenu.exec_(self.mapToGlobal(pos))
+            self.treeView.contextMenu.exec_(self.treeView.viewport().mapToGlobal(pos))
         except Exception as e:
             self.notice(e)
 
     def set_expand_path(self, path):
         if os.path.isdir(self.path_right_click):
             self.config_manager.add_or_update(MainWindow.expand_path_config_key,self.path_right_click)
+
+    def _refresh_model(self):
+        """刷新文件系统模型（QFileSystemModel 没有 refresh() 方法）"""
+        root = self.model.rootPath()
+        self.model.setRootPath("")
+        self.model.setRootPath(root)
 
     def copy(self):
         selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
@@ -404,7 +410,7 @@ class MainWindow(QMainWindow):
             logger.info('src:', self.path_right_click)
             logger.info('dst:', dst)
             shutil.copy(self.path_right_click, dst)
-        self.model.refresh()
+        self._refresh_model()
 
     def move(self):
         try:
@@ -413,12 +419,12 @@ class MainWindow(QMainWindow):
                 (path, filename) = os.path.split(self.path_right_click)
                 dst = os.path.join(selected_path, filename)
                 shutil.move(self.path_right_click, dst)
-            self.model.refresh()
+            self._refresh_model()
         except Exception as e:
             self.notice("文件移动异常!!!" + str(e))
 
     def refresh(self):
-        self.model.refresh()
+        self._refresh_model()
 
     def load_for_video_screenshot(self):
         if os.path.isfile(self.path_right_click):
@@ -458,7 +464,7 @@ class MainWindow(QMainWindow):
             if os.path.isdir(self.path_right_click):
                 send2trash.send2trash(filename)
             self.notice(self.path_right_click + ' 文件已删除!!!')
-            self.model.refresh()
+            self._refresh_model()
         except Exception as e:
             self.notice("文件删除异常!!!" + str(e))
 

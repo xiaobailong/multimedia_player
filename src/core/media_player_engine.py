@@ -311,15 +311,59 @@ class VlcEngine(MediaEngine):
             self._position_timer = None
 
     def _on_timer(self):
-        if not self._player or not self._player.is_playing():
-            if self._end_callback:
-                self._end_callback()
-            self._stop_position_timer()
+        if not self._player:
             return
 
-        pos = self.get_position()
-        if self._position_callback:
-            self._position_callback(pos)
+        try:
+            # Bug E 修复: VLC timer 可能在任何时刻被触发（包括右键菜单操作时）
+            # 如果 widget 不可见（例如切换窗口或右键菜单打开），跳过本次回调
+            # 避免在文件系统操作（复制/移动/删除）时访问 VLC 内部状态导致崩溃
+            if self._widget and not self._widget.isVisible():
+                return
+        except Exception:
+            return  # widget 可能已被销毁
+
+        try:
+            if not self._player.is_playing():
+                # Bug 8 修复: 使用 VLC 状态机准确区分"暂停"和"播放结束"
+                # 暂停时 is_playing() 返回 False，但不应触发 end_callback
+                # - VLC State.Paused: 用户按了暂停
+                # - VLC State.Ended: 播放真正结束
+                # - Bug C 修复: 当 is_playing() 为 False 但 get_state() 仍返回 Playing 时，
+                #   说明 VLC 正处于 Playing→Paused 过渡期，此时不做任何操作
+                try:
+                    state = self._player.get_state()
+                except Exception:
+                    state = None
+
+                if state == vlc.State.Ended:
+                    if self._end_callback:
+                        self._end_callback()
+                    self._stop_position_timer()
+                elif state == vlc.State.Paused:
+                    # 真正的暂停状态，不触发 end_callback
+                    pass
+                elif state == vlc.State.Playing:
+                    # Bug C 修复: Playing 但 is_playing() 返回 False → 过渡期，忽略
+                    pass
+                else:
+                    # 状态未知(State.Stopped/State.Error/None)时
+                    # 使用位置作为兜底判断
+                    pos = self._player.get_time()
+                    dur = self._player.get_length()
+                    if dur > 0 and pos >= dur - 1000:
+                        if self._end_callback:
+                            self._end_callback()
+                        self._stop_position_timer()
+                return
+
+            pos = self.get_position()
+            if self._position_callback:
+                self._position_callback(pos)
+        except Exception as e:
+            logger.warning(f"VLC _on_timer 异常 (可能由右键菜单操作引起): {e}")
+            # Bug E 修复: 异常时不崩溃，静默跳过本次回调
+            return
 
 
 # ---------- MPV 后端 ----------

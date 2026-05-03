@@ -59,24 +59,34 @@ def get_ffmpeg_path():
     """
     获取 ffmpeg 可执行文件路径。
     优先使用打包在 app 内的 ffmpeg，其次搜索 PATH 环境变量。
+    Windows 系统会自动添加 .exe 扩展名。
     """
     base_path = get_resource_base_path()
 
+    # Windows 下 ffmpeg 可执行文件名
+    ffmpeg_name = 'ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg'
+
     # 尝试 app 包内的 ffmpeg
-    ffmpeg_path = os.path.join(base_path, 'ffmpeg', 'ffmpeg')
-    if os.path.exists(ffmpeg_path):
+    ffmpeg_path = os.path.join(base_path, 'ffmpeg', ffmpeg_name)
+    if os.path.isfile(ffmpeg_path):
         return ffmpeg_path
 
-    # 尝试项目目录下的 ffmpeg
-    ffmpeg_path = os.path.join(base_path, 'libs', 'ffmpeg', 'ffmpeg')
-    if os.path.exists(ffmpeg_path):
+    # 尝试项目目录下的 libs/ffmpeg/
+    ffmpeg_path = os.path.join(base_path, 'libs', 'ffmpeg', ffmpeg_name)
+    if os.path.isfile(ffmpeg_path):
+        return ffmpeg_path
+
+    # 尝试 libs/ffmpeg/ffmpeg.exe （无文件夹嵌套的情况）
+    ffmpeg_path = os.path.join(base_path, 'libs', 'ffmpeg', 'ffmpeg', ffmpeg_name)
+    if os.path.isfile(ffmpeg_path):
         return ffmpeg_path
 
     # 搜索 PATH 环境变量
     path_env = os.environ.get('PATH') or os.environ.get('Path', '')
     for item in path_env.split(os.pathsep):
-        candidate = os.path.join(item, 'ffmpeg')
-        if os.path.exists(candidate):
+        candidate = os.path.join(item, ffmpeg_name)
+        if os.path.isfile(candidate):
             return candidate
 
-    return 'ffmpeg'  # 返回默认值，让系统去 PATH 找
+    # 最后兜底：返回默认名，让系统去 PATH 找
+    return ffmpeg_name

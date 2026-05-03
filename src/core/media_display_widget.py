@@ -283,7 +283,7 @@ class MediaDisplayWidget(QWidget):
     # ---------- 图片播放 ----------
 
     def _play_image(self, file_path: str):
-        """显示图片"""
+        """显示图片（直接加载，不使用延迟调用避免黑屏问题）"""
         self._media_type = "image"
         self._video_container.setVisible(False)
         self._scroll_area.setVisible(True)
@@ -291,11 +291,17 @@ class MediaDisplayWidget(QWidget):
         # 停止 GIF 帧切换
         self._stop_gif()
 
-        # 显示 GIF 或静态图片
+        # Bug A 修复: 显示图片之前确保 image_label 可见
+        # stopMedia() 会将 image_label 隐藏，此处需恢复
+        self._image_label.setVisible(True)
+
+        # 显示 GIF 或静态图片（直接调用，不通过 QTimer.singleShot 延迟）
+        # 延迟调用会导致加载滞后立即渲染，在组件的 viewport 尚未就绪时
+        # 返回尺寸为 0 的 viewport，从而不渲染任何内容，出现黑屏
         if file_path.lower().endswith('.gif'):
-            QTimer.singleShot(0, lambda: self._play_gif(file_path))
+            self._play_gif(file_path)
         else:
-            QTimer.singleShot(0, lambda: self._load_static_image(file_path))
+            self._load_static_image(file_path)
 
     def _load_static_image(self, file_path: str):
         """加载静态图片"""
@@ -356,7 +362,7 @@ class MediaDisplayWidget(QWidget):
         except Exception as e:
             logger.error(f"图片渲染失败: {e}")
 
-    # ---------- GIF 播放 ----------
+    # ---------- GIF 播放 (Bug 1 修复: 添加 self._gif_timer is not None 保护) ----------
 
     def _play_gif(self, file_path: str):
         """使用 Pillow 解码 GIF 帧动画播放"""
@@ -422,7 +428,9 @@ class MediaDisplayWidget(QWidget):
             # 完成一次循环，触发 mediaFinished
             self.mediaFinished.emit()
 
-        self._show_gif_frame(self._gif_idx)
+        # Bug 1 修复: 在帧切换过程中 _stop_gif() 可能已将 _gif_timer 置为 None
+        if self._gif_playing:
+            self._show_gif_frame(self._gif_idx)
 
     def _show_gif_frame(self, idx: int):
         """显示指定帧并缩放"""
@@ -435,7 +443,9 @@ class MediaDisplayWidget(QWidget):
             target_h = viewport.height() if viewport else self.height()
 
             if target_w <= 0 or target_h <= 0:
-                self._gif_timer.start(self._gif_durations[idx])
+                # Bug 1 修复: 检查 timer 是否为空后再调用 start
+                if self._gif_timer is not None:
+                    self._gif_timer.start(self._gif_durations[idx])
                 return
 
             frame = self._gif_frames[idx]
@@ -460,8 +470,8 @@ class MediaDisplayWidget(QWidget):
                 self._image_label.resize(scaled.width(), scaled.height())
                 self._image_label.setPixmap(scaled)
 
-            # 继续下一帧（如果还有）
-            if self._gif_playing and idx < len(self._gif_durations):
+            # Bug 1 修复: 检查 timer 是否为空后再调用 start
+            if self._gif_playing and idx < len(self._gif_durations) and self._gif_timer is not None:
                 self._gif_timer.start(self._gif_durations[idx])
 
         except Exception as e:

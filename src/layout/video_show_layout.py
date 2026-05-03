@@ -411,8 +411,10 @@ class VideoShowLayout(QVBoxLayout):
             return
 
         value = round(pos_ms * self.bar_slider.maximum() / duration)
-        self.bar_slider.setValue(value)
+        # 必须在 setValue 之前设置 move_type，否则 valueChanged 信号触发时
+        # slider_progress_moved 会看到旧的 move_type 并错误执行 seek
         self.bar_slider.move_type = 'time'
+        self.bar_slider.setValue(value)
 
         m, s = divmod(pos_ms / 1000, 60)
         h, m = divmod(m, 60)
