@@ -514,6 +514,15 @@ class MainWindow(QMainWindow):
                 self.on_tree_clicked(item)
 
     def on_tree_clicked(self, qmodelindex):
+        # 防止 clicked 和 selectionChanged 信号在 300ms 内重复调用导致的双重播放崩溃
+        # clicked 和 selectionChanged 都会触发此函数，且 selectionChanged 在 clicked 之后
+        # 顺序执行（非递归）。双重调用会导致 GIF 解码线程和定时器在 stop/start 间产生
+        # 竞态条件，引发 native 崩溃 (0xC0000409)。
+        now = QDateTime.currentMSecsSinceEpoch()
+        if now - getattr(self, '_last_tree_click_time', 0) < 300:
+            return
+        self._last_tree_click_time = now
+
         self.path = self.model.filePath(qmodelindex)
 
         if self.inputAndExeLayout.timer.isActive():

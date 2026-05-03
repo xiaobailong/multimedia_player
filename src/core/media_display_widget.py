@@ -133,17 +133,10 @@ class MediaDisplayWidget(QWidget):
         self._init_engine()
 
     def _init_engine(self):
-        """初始化视频引擎，按 VLC > MPV > Qt 优先级"""
-        try:
-            engine = MediaEngine.get_preferred_engine(self._video_container)
-            if engine:
-                self._engine = engine
-                self._engine.set_position_callback(self._on_engine_position)
-                self._engine.set_end_callback(self._on_engine_end)
-                self._engine.set_error_callback(self._on_engine_error)
-        except Exception as e:
-            logger.warning(f"初始化播放引擎失败: {e}")
-            self._engine = None
+        """延迟初始化视频引擎，首次播放视频时再初始化"""
+        # VLC DLL 在某些 Windows 系统上加载时会导致崩溃 (0xC0000409)，
+        # 因此改为懒加载：只在真正播放视频时才尝试初始化引擎
+        self._engine = None
 
     def _on_engine_position(self, pos_ms: int):
         """引擎位置回调"""
@@ -378,102 +371,96 @@ class MediaDisplayWidget(QWidget):
 
     def _play_gif(self, file_path: str):
         """
-        播放 GIF 动画
+        播放 GIF 动画（全异步解码，边解码边播放）
 
-        优化：
-        1. 使用 GpuGifWidget 硬件加速渲染（代替 QLabel 软件渲染）
-        2. 后台线程解码帧（避免 UI 线程阻塞）
-        3. 渐进式播放：解码出首帧即开始播放
+        流程：
+        1. 启动后台线程解码所有帧
+        2. 首帧解码到达后立即显示并启动定时器
+        3. 后续帧到达后填入缓存，定时器推进时自然切换
+        4. 切换到其他媒体时自动停止解码和播放
         """
         if not os.path.isfile(file_path):
             self.errorOccurred.emit(f"GIF 文件不存在: {file_path}")
             return
 
-        # 隐藏静态图片标签和滚动区域，显示 GIF 渲染控件
-        self._image_label.setVisible(False)
-        self._scroll_area.setVisible(False)
-        self._gif_render_widget.setVisible(True)
-        self._gif_render_widget.raise_()
+        # 统一使用 QLabel 软件渲染（避免 Windows OpenGL 上下文未就绪导致的崩溃）
+        self._gif_render_widget.setVisible(False)
+        self._scroll_area.setVisible(True)
+        self._image_label.setVisible(True)
 
         # 初始状态
         self._gif_frames = []
         self._gif_durations = []
         self._gif_idx = 0
         self._gif_playing = True
-        self._gif_progressive_mode = False
+        self._gif_progressive_mode = True  # 后台解码进行中
         self._gif_total_frames = 0
+        # 启动后台解码（边解码边播放）
+        self._start_background_decoder(file_path)
 
-        if self._gif_background_decoding:
-            self._play_gif_with_background_decoder(file_path)
-        else:
-            self._play_gif_synchronous(file_path)
+    # ---------- 全异步解码 + 渐进式播放 ----------
 
-    # ---------- 方案 A: 首帧快速显示 + 后台解码剩余帧 ----------
+    def _start_background_decoder(self, file_path: str):
+        """启动后台解码器"""
+        self._gif_decoder_thread = GifDecoderThread(self)
+        self._gif_decoder_thread.frame_decoded.connect(self._on_gif_frame_decoded)
+        self._gif_decoder_thread.decoding_finished.connect(self._on_gif_decoding_finished)
+        self._gif_decoder_thread.decoding_error.connect(self._on_gif_decoding_error)
+        self._gif_decoder_thread.decode(file_path)
 
-    def _play_gif_with_background_decoder(self, file_path: str):
+        # 帧切换定时器（先不启动，等首帧到达后再启动）
+        self._gif_timer = QTimer(self)
+        self._gif_timer.setSingleShot(True)
+        self._gif_timer.timeout.connect(self._advance_gif_frame_progressive)
+
+    def _on_gif_frame_decoded(self, data: bytes, width: int, height: int, duration_ms: int, frame_index: int):
         """
-        后台解码 GIF，渐进式播放
+        后台解码完成一帧（在主线程接收，将 bytes 转换为 QPixmap）
 
-        流程：
-        1. 用 Pillow 快速解码第 1 帧并显示
-        2. 启动后台线程解码剩余帧
-        3. 后台帧到达时填入缓存，定时器推进时切换
+        安全策略：
+        后台线程只发送 Python 原生类型（bytes + int），不发送任何 Qt 对象。
+        在主线程中创建 QImage 和 QPixmap，绝对安全。
+
+        关键行为：
+        - 帧 0（首帧）到达时：立即显示并启动定时器
+        - 后续帧到达时：追加到缓存，等待定时器推进后自然切换
         """
-        try:
-            # 1. 快速解码第一帧（UI 线程同步加载，不阻塞太久）
-            pil_img = Image.open(file_path)
-            first_frame = pil_img.convert("RGBA")
-            data = first_frame.tobytes("raw", "RGBA")
-            qimg = QImage(data, first_frame.width, first_frame.height,
-                          QImage.Format.Format_RGBA8888)
-            first_pixmap = QPixmap.fromImage(qimg)
-
-            # 读取第一帧延迟
-            try:
-                first_delay = pil_img.info.get("duration", 100)
-                if first_delay < 20:
-                    first_delay = 100
-            except Exception:
-                first_delay = 100
-
-            # 存入缓存
-            self._gif_frames = [first_pixmap]
-            self._gif_durations = [first_delay]
-            self._gif_idx = 0
-
-            # 显示第一帧（GPU 加速）
-            self._show_gif_frame_gpu(0)
-            self._gif_progressive_mode = True
-
-            # 2. 启动定时器（后续帧由后台解码提供）
-            self._gif_timer = QTimer(self)
-            self._gif_timer.setSingleShot(True)
-            self._gif_timer.timeout.connect(self._advance_gif_frame_progressive)
-            self._gif_timer.start(first_delay)
-
-            # 3. 启动后台线程解码剩余帧
-            if self._gif_decoder_thread is None:
-                self._gif_decoder_thread = GifDecoderThread(self)
-                self._gif_decoder_thread.frame_decoded.connect(self._on_gif_frame_decoded)
-                self._gif_decoder_thread.decoding_finished.connect(self._on_gif_decoding_finished)
-                self._gif_decoder_thread.decoding_error.connect(self._on_gif_decoding_error)
-
-            self._gif_decoder_thread.decode(file_path)
-
-        except Exception as e:
-            logger.warning(f"GIF 渐进式加载失败（回退到同步模式）: {e}")
-            self._play_gif_synchronous(file_path)
-
-    def _on_gif_frame_decoded(self, image: QImage, duration_ms: int, frame_index: int):
-        """后台解码完成一帧（在主线程接收，将 QImage 转为 QPixmap）"""
         if not self._gif_playing:
             return
 
-        # 在主线程将 QImage 转换为 QPixmap（QPixmap 非线程安全，必须在 GUI 线程操作）
-        pixmap = QPixmap.fromImage(image)
-        # 追加到缓存列表
-        self._gif_frames.append(pixmap)
-        self._gif_durations.append(duration_ms)
+        logger.debug(f"[主线程] 收到帧 {frame_index}: {width}x{height}, data_len={len(data)}")
+
+        try:
+            # 在主线程创建 QImage
+            # 重要: QImage(const uchar*, width, height, Format) 不拷贝数据!
+            # 它只存储指向 data 字节数组的指针。当 Python 的 bytes 对象被 GC 回收后，
+            # QImage 内部指针变成悬空指针，导致后续 fromImage() 崩溃 (0xC000041D)。
+            # 必须使用 .copy() 做深拷贝，让 QImage 拥有独立的数据所有权。
+            raw_image = QImage(data, width, height, QImage.Format.Format_RGBA8888)
+            if raw_image.isNull():
+                logger.error(f"[主线程] 帧 {frame_index}: QImage 创建失败（null）")
+                return
+
+            # 深拷贝：确保 QImage 拥有独立的像素数据，不依赖 Python bytes 的生命周期
+            image = raw_image.copy()
+
+            # 在主线程将 QImage 转换为 QPixmap
+            pixmap = QPixmap.fromImage(image)
+            if pixmap.isNull():
+                logger.error(f"[主线程] 帧 {frame_index}: QPixmap 创建失败（null）")
+                return
+
+            # 追加到缓存列表
+            self._gif_frames.append(pixmap)
+            self._gif_durations.append(duration_ms)
+            logger.debug(f"[主线程] 帧 {frame_index} 转换成功，当前缓存 {len(self._gif_frames)} 帧")
+
+            # 首帧到达时：立即显示并启动定时器
+            if frame_index == 0:
+                logger.info("[主线程] 首帧已解码，开始播放 GIF")
+                self._show_gif_frame_gpu(0)
+        except Exception as e:
+            logger.error(f"[主线程] 帧 {frame_index} 转换失败: {e}")
 
     def _on_gif_decoding_finished(self, total_frames: int):
         """所有帧解码完成"""
@@ -523,8 +510,12 @@ class MediaDisplayWidget(QWidget):
             while True:
                 frame_rgba = pil_img.convert("RGBA")
                 data = frame_rgba.tobytes("raw", "RGBA")
+                # QImage(const uchar*, ...) 不拷贝数据，直接引用 bytes 的内存。
+                # Python 的 data 对象在离开作用域后可能被 GC 回收，导致 QImage
+                # 内部指针变成悬空指针，fromImage() 读取时崩溃 (0xC000041D)。
+                # 使用 .copy() 深拷贝，让 QImage 拥有独立的数据所有权。
                 qimg = QImage(data, frame_rgba.width, frame_rgba.height,
-                              QImage.Format.Format_RGBA8888)
+                              QImage.Format.Format_RGBA8888).copy()
                 frames.append(QPixmap.fromImage(qimg))
 
                 try:
@@ -579,47 +570,51 @@ class MediaDisplayWidget(QWidget):
     def _show_gif_frame_gpu(self, idx: int):
         """使用 GPU 加速渲染显示指定帧"""
         if idx < 0 or idx >= len(self._gif_frames):
+            logger.warning(f"[GIF 显示] 索引越界: idx={idx}, len={len(self._gif_frames)}")
             return
 
         try:
             frame = self._gif_frames[idx]
+            if frame is None or frame.isNull():
+                logger.error(f"[GIF 显示] 帧 {idx} 为空或无效")
+                self._stop_gif()
+                return
 
-            if _HAS_OPENGL:
-                # GPU 加速渲染路径
-                # GpuGifWidget 内部在 paintEvent 中使用 QPainter 绘制，
-                # QPainter 在 QOpenGLWidget 上会自动使用 OpenGL 后端，
-                # 将 QPixmap 上传为 GPU 纹理并由硬件完成缩放
-                self._gif_render_widget.set_pixmap(frame)
+            logger.debug(f"[GIF 显示] 显示帧 {idx}, 尺寸={frame.width()}x{frame.height()}")
+
+            # ==== 统一使用软件渲染（QLabel）显示 GIF ====
+            # QOpenGLWidget + QPainter.drawPixmap 在 Windows 上存在 OpenGL 上下文
+            # 生命周期问题：当控件刚 show/raise 时，OpenGL 上下文可能未就绪，
+            # 此时调用 painter.drawPixmap() 会导致 GPU 驱动崩溃 (0xC000041D)
+            # 因此统一使用 QLabel 软件渲染，避免 OpenGL 相关问题
+            viewport = self._scroll_area.viewport()
+            target_w = viewport.width() if viewport else self.width()
+            target_h = viewport.height() if viewport else self.height()
+
+            if target_w <= 0 or target_h <= 0:
+                if self._gif_playing and idx < len(self._gif_durations) and self._gif_timer is not None:
+                    self._gif_timer.start(self._gif_durations[idx])
+                return
+
+            if self._scale_mode == MediaDisplayWidget.SCALE_ORIGINAL:
+                self._image_label.resize(frame.width(), frame.height())
+                self._image_label.setPixmap(frame)
+            elif self._scale_mode == MediaDisplayWidget.SCALE_FILL:
+                scaled = frame.scaled(
+                    target_w, target_h,
+                    Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self._image_label.resize(target_w, target_h)
+                self._image_label.setPixmap(scaled)
             else:
-                # 软件渲染回退路径
-                viewport = self._scroll_area.viewport()
-                target_w = viewport.width() if viewport else self.width()
-                target_h = viewport.height() if viewport else self.height()
-
-                if target_w <= 0 or target_h <= 0:
-                    if self._gif_playing and idx < len(self._gif_durations) and self._gif_timer is not None:
-                        self._gif_timer.start(self._gif_durations[idx])
-                    return
-
-                if self._scale_mode == MediaDisplayWidget.SCALE_ORIGINAL:
-                    self._image_label.resize(frame.width(), frame.height())
-                    self._image_label.setPixmap(frame)
-                elif self._scale_mode == MediaDisplayWidget.SCALE_FILL:
-                    scaled = frame.scaled(
-                        target_w, target_h,
-                        Qt.AspectRatioMode.IgnoreAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    )
-                    self._image_label.resize(target_w, target_h)
-                    self._image_label.setPixmap(scaled)
-                else:
-                    scaled = frame.scaled(
-                        target_w, target_h,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation
-                    )
-                    self._image_label.resize(scaled.width(), scaled.height())
-                    self._image_label.setPixmap(scaled)
+                scaled = frame.scaled(
+                    target_w, target_h,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self._image_label.resize(scaled.width(), scaled.height())
+                self._image_label.setPixmap(scaled)
 
             # 启动下一帧定时器
             if self._gif_playing and idx < len(self._gif_durations) and self._gif_timer is not None:
@@ -661,17 +656,32 @@ class MediaDisplayWidget(QWidget):
 
     # ---------- 视频播放 ----------
 
+    def _init_engine_lazy(self):
+        """懒加载视频引擎（按需初始化，仅在播放视频时调用）"""
+        if self._engine is not None:
+            return True
+
+        try:
+            engine = MediaEngine.get_preferred_engine(self._video_container)
+            if engine:
+                self._engine = engine
+                self._engine.set_position_callback(self._on_engine_position)
+                self._engine.set_end_callback(self._on_engine_end)
+                self._engine.set_error_callback(self._on_engine_error)
+                return True
+        except Exception as e:
+            logger.warning(f"初始化播放引擎失败: {e}")
+            self._engine = None
+
+        return False
+
     def _play_video(self, file_path: str):
         """播放视频文件"""
         self._media_type = "video"
         self._scroll_area.setVisible(False)
         self._video_container.setVisible(True)
 
-        if not self._engine:
-            logger.warning("没有可用的播放引擎，尝试重新初始化")
-            self._init_engine()
-
-        if self._engine:
+        if self._init_engine_lazy():
             try:
                 self._engine.play(file_path)
                 return

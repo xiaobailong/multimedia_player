@@ -22,68 +22,38 @@ from PyQt6.QtMultimediaWidgets import QVideoWidget
 
 from loguru import logger
 
-# 尝试导入 python-vlc
+# VLC 可用性（懒加载，避免模块导入时加载 libvlc.dll 导致崩溃）
+# 注意：vlc.Instance() 会加载 libvlc.dll，某些 Windows 系统上
+# 加载 DLL 时可能发生堆栈缓冲区溢出 (0xC0000409)。
+# 因此不在模块级别创建 Instance，改为懒加载方式。
 VLC_AVAILABLE = False
 try:
-    import vlc
-    # 验证 libvlc.dll 实际可用（vlc.py 导入时可能报 FileNotFoundError）
-    try:
-        _test_instance = vlc.Instance(['--no-xlib', '--quiet'])
-        _test_instance.release()
-        VLC_AVAILABLE = True
-        logger.info("VLC 后端可用 (python-vlc + libvlc)")
-    except Exception as e:
-        logger.info(f"python-vlc 已安装，但 libvlc 不可用（需要安装 VLC 程序）: {e}")
+    import vlc  # 仅导入 Python 包（不加载 DLL），这是安全的
+    VLC_AVAILABLE = True  # 标记 vlc 包已安装，后续实际使用时再验证 DLL
+    logger.info("python-vlc 已安装，VLC DLL 将在首次使用时加载")
 except ImportError:
     logger.info("python-vlc 未安装，VLC 后端不可用")
 except Exception as e:
     logger.info(f"导入 vlc 失败，VLC 后端不可用: {e}")
 
-# ---------- MPV DLL 自动查找 ----------
-# python-mpv 需要 libmpv-2.dll 在 PATH 中才能正常导入。
-# 在此列出常见的 mpv 安装路径，自动添加到 PATH 避免手动配置。
-_MPV_DLL_SEARCH_PATHS = [
-    # 用户自定义安装路径
-    r"D:\Tools\DevTools\base\mpv-dev-x86_64",
-    # 常见的 mpv 安装路径
-    r"C:\Program Files\mpv",
-    r"C:\Program Files (x86)\mpv",
-    r"C:\tools\mpv",
-]
-# 同时检查 PATH 环境变量中已有的 mpv 目录
-for _p in os.environ.get("PATH", "").split(os.pathsep):
-    _p = _p.strip()
-    if _p and "mpv" in _p.lower() and os.path.isdir(_p):
-        if _p not in _MPV_DLL_SEARCH_PATHS:
-            _MPV_DLL_SEARCH_PATHS.append(_p)
 
-_MPV_DLL_FOUND = False
-for _mpv_dir in _MPV_DLL_SEARCH_PATHS:
-    _dll_path = os.path.join(_mpv_dir, "libmpv-2.dll")
-    if os.path.isfile(_dll_path):
-        if _mpv_dir not in os.environ.get("PATH", ""):
-            os.environ["PATH"] = _mpv_dir + os.pathsep + os.environ.get("PATH", "")
-            logger.info(f"已找到 libmpv-2.dll，添加到 PATH: {_mpv_dir}")
-        _MPV_DLL_FOUND = True
-        break
+def _check_vlc_dll() -> bool:
+    """检查 libvlc.dll 实际可用性（仅在 VLC 引擎实际创建时调用）"""
+    try:
+        instance = vlc.Instance(['--no-xlib', '--quiet'])
+        instance.release()
+        return True
+    except Exception as e:
+        logger.warning(f"libvlc.dll 不可用: {e}")
+        return False
 
-if not _MPV_DLL_FOUND:
-    # 兜底：尝试在 PATH 中搜索 libmpv-2.dll
-    import shutil
-    if shutil.which("libmpv-2.dll") or shutil.which("mpv.exe"):
-        _MPV_DLL_FOUND = True
-        logger.info("libmpv-2.dll 已在 PATH 中可用")
-
-# 尝试导入 python-mpv
+# MPV 可用性（懒加载 — 不导入 python-mpv，不搜索 DLL，不在模块加载时执行任何操作）
+# python-mpv 导入时会尝试加载 libmpv-2.dll，某些 Windows 系统上
+# 加载 DLL 时可能导致崩溃 (0xC0000409)。
+# 因此改为懒加载方式，只在需要时动态导入和检测。
 MPV_AVAILABLE = False
-try:
-    import mpv
-    MPV_AVAILABLE = True
-    logger.info("MPV 后端可用 (python-mpv)")
-except ImportError:
-    logger.info("python-mpv 未安装，MPV 后端不可用")
-except Exception as e:
-    logger.info(f"导入 mpv 失败，MPV 后端不可用: {e}")
+# 标记 python-mpv 包是否可能可用（没有实际导入，仅保存一个符号）
+_MPV_PACKAGE_NAME = "mpv"
 
 
 # ---------- 常量 ----------
@@ -198,7 +168,15 @@ class MediaEngine(ABC):
 
     @staticmethod
     def get_preferred_engine(widget: QWidget) -> Optional['MediaEngine']:
-        """获取首选可用引擎，按 VLC > MPV > Qt 优先级"""
+        """
+        获取首选可用引擎，按 VLC > MPV > Qt 优先级
+
+        注意事项：
+        - VLC/MPV DLL 的实际加载在此方法中完成，不在模块导入时加载
+        - DLL 加载失败时自动降级到下一个可用引擎
+        - 此方法只会在首次播放视频时调用（懒加载策略）
+        """
+        # ---- 尝试 VLC ----
         if VLC_AVAILABLE:
             try:
                 engine = VlcEngine(widget)
@@ -207,13 +185,14 @@ class MediaEngine(ABC):
             except Exception as e:
                 logger.warning(f"VLC 初始化失败: {e}")
 
-        if MPV_AVAILABLE:
-            try:
-                engine = MpvEngine(widget)
-                logger.info("使用 MPV 后端 (python-mpv)")
-                return engine
-            except Exception as e:
-                logger.warning(f"MPV 初始化失败: {e}")
+        # ---- 尝试 MPV ----
+        try:
+            # MPV 也是懒加载：不依赖模块级 MPV_AVAILABLE，而是动态导入
+            engine = MpvEngine(widget)
+            logger.info("使用 MPV 后端 (python-mpv)")
+            return engine
+        except Exception as e:
+            logger.warning(f"MPV 初始化失败: {e}")
 
         logger.info("使用 Qt 后端 (QMediaPlayer)")
         return QtEngine(widget)
@@ -433,14 +412,29 @@ class VlcEngine(MediaEngine):
 # ---------- MPV 后端 ----------
 
 class MpvEngine(MediaEngine):
-    """基于 python-mpv 的视频播放引擎"""
+    """基于 python-mpv 的视频播放引擎
+
+    注意：python-mpv 导入时会加载 libmpv-2.dll，DLL 加载失败时将抛出异常。
+    为避免模块导入时崩溃，mpv 的导入在 __init__ 中动态完成（懒加载）。
+    """
 
     def __init__(self, widget: QWidget):
         super().__init__(widget)
-        if not MPV_AVAILABLE:
-            raise RuntimeError("python-mpv 未安装")
 
-        self._player = mpv.MPV(
+        # 动态导入 python-mpv（libmpv-2.dll 的加载在此完成）
+        # 某些 Windows 系统上加载 DLL 可能导致 0xC0000409 崩溃，
+        # 因此这里使用 try/except 捕获，失败时降级到 Qt 引擎
+        try:
+            import mpv as _mpv_module
+        except ImportError:
+            raise RuntimeError("python-mpv 未安装")
+        except Exception as e:
+            raise RuntimeError(f"python-mpv 加载失败: {e}")
+
+        # 保存引用以防止被 GC
+        self._mpv_module = _mpv_module
+
+        self._player = _mpv_module.MPV(
             wid=str(int(widget.winId())),
             vo='gpu',               # GPU 视频输出
             hwdec='auto',           # 自动硬件解码

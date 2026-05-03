@@ -14,46 +14,43 @@ GIF 后台解码线程模块
 
 线程安全注意事项：
 - QPixmap 不是线程安全的，严禁在非 GUI 线程创建或操作 QPixmap
-- 后台线程解码得到 QImage 后通过信号传递给主线程，在主线程转换为 QPixmap
+- QImage 即使被 Qt 标记为 "线程安全"，PyQt6 的 Python 包装器在不同线程间传递时
+  仍可能出现 C++ 对象生命周期管理问题，导致 0xC000041D 崩溃
+- 绝对安全的做法：后台线程只发原始字节数据（bytes + width + height），
+  主线程收到后再创建 QImage -> QPixmap
 """
 import os
 from typing import Optional
 
 from PIL import Image
 
-from PyQt6.QtCore import QObject, QThread, QByteArray, pyqtSignal as Signal
-from PyQt6.QtGui import QPixmap, QImage
-
+from PyQt6.QtCore import QObject, QThread, pyqtSignal as Signal
 from loguru import logger
-
-
-class GifDecodeResult:
-    """单帧解码结果"""
-
-    __slots__ = ('pixmap', 'duration', 'frame_index', 'is_last')
-
-    def __init__(self, pixmap: QPixmap, duration: int, frame_index: int, is_last: bool = False):
-        self.pixmap = pixmap
-        self.duration = duration
-        self.frame_index = frame_index
-        self.is_last = is_last
 
 
 class GifDecoderWorker(QObject):
     """
     GIF 解码工作对象（运行在后台线程）
 
-    重要：此类运行在后台线程，严禁在此类中创建 QPixmap 对象。
-    解码得到 QImage 后通过信号传递给主线程，由主线程转换为 QPixmap。
+    重要：此类运行在后台线程。
+    - 严禁在此类中创建 QPixmap 对象
+    - 严禁在此类中创建 QImage 对象（PyQt6 跨线程传递 QImage 仍有崩溃风险）
+    - 只发送原始字节数据，主线程负责创建 Qt 图形对象
 
     信号:
-        frame_decoded(image, duration_ms, frame_index) - 每解码一帧发出（传递 QImage）
-        decoding_finished(total_frames) - 所有帧解码完成
-        decoding_error(error_msg) - 解码出错
+        frame_decoded(data, width, height, duration_ms, frame_index)
+            - data: bytes, RGBA 格式原始像素数据
+            - width: int, 帧宽度
+            - height: int, 帧高度
+            - duration_ms: int, 帧延迟
+            - frame_index: int, 帧索引
+        decoding_finished(total_frames)
+        decoding_error(error_msg)
     """
 
-    frame_decoded = Signal(QImage, int, int)  # (QImage, duration_ms, frame_index) - 传递 QImage 而非 QPixmap
-    decoding_finished = Signal(int)  # (total_frames)
+    # 只传递 Python 原生类型（bytes, int），绝对不传递任何 Qt 对象
+    frame_decoded = Signal(bytes, int, int, int, int)  # (data, width, height, duration_ms, frame_index)
+    decoding_finished = Signal(int)
     decoding_error = Signal(str)
 
     def __init__(self):
@@ -71,8 +68,10 @@ class GifDecoderWorker(QObject):
         """
         解码 GIF 所有帧（在后台线程运行）
 
-        注意：QPixmap 不是线程安全的，所以此处只创建 QImage，
-        通过信号传递给主线程后再转换为 QPixmap。
+        安全策略：
+        - 不创建任何 Qt GUI 对象（QPixmap / QImage）
+        - 只发送 Python 原生类型：bytes 像素数据 + int 维度信息
+        - 主线程收到 signal 后创建 QImage + QPixmap
 
         Args:
             file_path: GIF 文件路径
@@ -88,19 +87,10 @@ class GifDecoderWorker(QObject):
 
             while not self._cancelled:
                 try:
-                    # 转换为 RGBA QImage（QImage 是线程安全的，可以在后台线程创建）
+                    # 转换为 RGBA 原始字节
                     frame_rgba = pil_img.convert("RGBA")
-                    data = frame_rgba.tobytes("raw", "RGBA")
-                    # 关键修复：使用 QByteArray 包裹像素数据，确保 QImage 拥有数据副本
-                    # PyQt6 的 QImage(bytes, ...) 构造函数只是引用 bytes 的指针，
-                    # 跨线程传递时 bytes 可能被 GC 导致悬空指针崩溃
-                    # 而 QImage(QByteArray, ...) 会拷贝数据到 QImage 内部缓冲区
-                    ba = QByteArray(data)
-                    qimg = QImage(ba, frame_rgba.width, frame_rgba.height,
-                                  QImage.Format.Format_RGBA8888)
-                    # 再次调用 copy() 确保 QImage 完全拥有独立的数据所有权
-                    # 避免跨线程信号传递时数据被意外释放
-                    qimg = qimg.copy()
+                    data = frame_rgba.tobytes("raw", "RGBA")  # 纯 Python bytes
+                    w, h = frame_rgba.width, frame_rgba.height
 
                     # 读取帧延迟时间
                     try:
@@ -110,8 +100,9 @@ class GifDecoderWorker(QObject):
                     except Exception:
                         delay = 100
 
-                    # 传递 QImage（线程安全），主线程会转换为 QPixmap
-                    self.frame_decoded.emit(qimg, delay, frame_index)
+                    logger.debug(f"[后台线程] 发送帧 {frame_index}: {w}x{h}, delay={delay}ms, data_len={len(data)}")
+                    # 传递纯 Python 原生类型：绝对安全
+                    self.frame_decoded.emit(data, w, h, delay, frame_index)
                     frame_index += 1
 
                     # 移动到下一帧
@@ -147,12 +138,14 @@ class GifDecoderThread(QObject):
         # 可随时调用 decoder.cancel() 取消解码
 
     信号:
-        frame_decoded(image, duration_ms, frame_index) - 每帧解码完成（传递 QImage）
-        decoding_finished(total_frames) - 所有帧解码完成
-        decoding_error(error_msg) - 解码失败
+        frame_decoded(data, width, height, duration_ms, frame_index)
+            - 传递原始字节数据，不传递任何 Qt 对象
+        decoding_finished(total_frames)
+        decoding_error(error_msg)
     """
 
-    frame_decoded = Signal(QImage, int, int)  # 传递 QImage 而非 QPixmap
+    # 只传递 Python 原生类型
+    frame_decoded = Signal(bytes, int, int, int, int)
     decoding_finished = Signal(int)
     decoding_error = Signal(str)
 
@@ -167,30 +160,22 @@ class GifDecoderThread(QObject):
         return self._is_running
 
     def decode(self, file_path: str):
-        """
-        启动后台解码
-
-        如果已有解码任务在进行，会自动取消并启动新任务
-        """
+        """启动后台解码"""
         self.cancel()
 
         self._thread = QThread(self)
         self._worker = GifDecoderWorker()
 
-        # 将 worker 移动到线程
         self._worker.moveToThread(self._thread)
 
-        # 连接信号
+        # 连接信号（只转发 Python 原生类型）
         self._worker.frame_decoded.connect(self.frame_decoded.emit)
         self._worker.decoding_finished.connect(self._on_finished)
         self._worker.decoding_finished.connect(self.decoding_finished.emit)
         self._worker.decoding_error.connect(self._on_error)
         self._worker.decoding_error.connect(self.decoding_error.emit)
 
-        # 线程启动时执行解码
         self._thread.started.connect(lambda: self._worker.decode_all_frames(file_path))
-
-        # 线程结束清理
         self._thread.finished.connect(self._on_thread_finished)
 
         self._is_running = True
@@ -207,18 +192,14 @@ class GifDecoderThread(QObject):
         self._is_running = False
 
     def _on_finished(self, total_frames: int):
-        """解码完成"""
         self._is_running = False
 
     def _on_error(self, error_msg: str):
-        """解码出错"""
         self._is_running = False
 
     def _on_thread_finished(self):
-        """线程结束清理"""
         self._is_running = False
 
     def _cleanup(self):
-        """清理资源"""
         self._worker = None
         self._thread = None
