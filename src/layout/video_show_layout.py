@@ -36,6 +36,7 @@ class VideoShowLayout(QVBoxLayout):
     play_mode_one = 0
     play_mode_list = 1
     play_mode_list_end = 2  # 列表已全部播放完，按钮显示"重播列表"
+    play_mode_one_loop = 3  # 单视频循环播放
 
     def __init__(self, main_window, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
@@ -139,6 +140,12 @@ class VideoShowLayout(QVBoxLayout):
         self.screenshot_button = QPushButton('截图')
         self.screenshot_button.clicked.connect(self.screenshot)
         self.controal_hbox.addWidget(self.screenshot_button)
+
+        self.loop_btn = QPushButton("单循环")
+        self.loop_btn.setCheckable(True)
+        self.loop_btn.setChecked(False)
+        self.loop_btn.clicked.connect(self._toggle_loop_mode)
+        self.controal_hbox.addWidget(self.loop_btn)
 
         self.fullScreenBtn = QPushButton("全屏")
         self.controal_hbox.addWidget(self.fullScreenBtn)
@@ -301,6 +308,10 @@ class VideoShowLayout(QVBoxLayout):
         self.play(self.play_list[self.play_list_index])
 
     def run_list(self):
+        # 如果当前是单循环模式，切换时取消循环状态
+        if self.play_mode == VideoShowLayout.play_mode_one_loop:
+            self.loop_btn.setChecked(False)
+            self.loop_btn.setText("单循环")
         if self.play_mode == VideoShowLayout.play_mode_list_end:
             # "重播列表"被点击：重置到列表开头重新播放
             self.play_list_index = 0
@@ -401,6 +412,22 @@ class VideoShowLayout(QVBoxLayout):
             self.media_widget.setPosition(saved_pos)
             self.main_window.notice(f"已恢复上次播放位置")
 
+    def _toggle_loop_mode(self):
+        """切换单视频循环播放模式"""
+        if self.loop_btn.isChecked():
+            # 如果正在列表播放模式，先切换到单视频模式
+            if self.play_mode == VideoShowLayout.play_mode_list or self.play_mode == VideoShowLayout.play_mode_list_end:
+                self.play_mode = VideoShowLayout.play_mode_list
+                self.list_btn.setText("播放列表")
+            self.play_mode = VideoShowLayout.play_mode_one_loop
+            self.loop_btn.setText("✓单循环")
+            self.main_window.notice("已开启单视频循环播放")
+        else:
+            if self.play_mode == VideoShowLayout.play_mode_one_loop:
+                self.play_mode = VideoShowLayout.play_mode_one
+            self.loop_btn.setText("单循环")
+            self.main_window.notice("已关闭单视频循环播放")
+
     def _on_media_finished(self):
         """媒体播放完成回调"""
         # 重新启用进度条更新（一个循环结束）
@@ -411,6 +438,12 @@ class VideoShowLayout(QVBoxLayout):
         # 下次再播放该文件时从头开始看
         self._remove_position()
 
+        if self.play_mode == VideoShowLayout.play_mode_one_loop:
+            # 单视频循环：从当前路径重新开始播放
+            self.main_window.notice("单视频循环播放")
+            QTimer.singleShot(100, lambda: self._restart_current_video())
+            return
+
         if self.play_mode == VideoShowLayout.play_mode_list:
             self.play_list_index += 1
             if self.play_list_index >= len(self.play_list):
@@ -419,6 +452,14 @@ class VideoShowLayout(QVBoxLayout):
                 self.list_btn.setText("重播列表")
             else:
                 self.run_list()
+
+    def _restart_current_video(self):
+        """重新播放当前视频（用于循环模式）"""
+        if self.path:
+            self.bar_slider.setValue(0)
+            self.media_widget.playMedia(self.path)
+            self.play_state = True
+            self.stop_btn.setText("暂停")
 
     def _on_position_changed(self, pos_ms):
         """播放位置变化回调（由 MediaDisplayWidget positionChanged 信号触发）"""

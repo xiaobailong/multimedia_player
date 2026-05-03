@@ -11,6 +11,10 @@ GIF 后台解码线程模块
 - 避免加载大 GIF 时阻塞 UI 线程
 - 渐进式解码：首帧显示后再解码后续帧，减少等待时间
 - 帧缓存池：循环缓存 N 帧，降低内存占用
+
+线程安全注意事项：
+- QPixmap 不是线程安全的，严禁在非 GUI 线程创建或操作 QPixmap
+- 后台线程解码得到 QImage 后通过信号传递给主线程，在主线程转换为 QPixmap
 """
 import os
 import threading
@@ -40,13 +44,16 @@ class GifDecoderWorker(QObject):
     """
     GIF 解码工作对象（运行在后台线程）
 
+    重要：此类运行在后台线程，严禁在此类中创建 QPixmap 对象。
+    解码得到 QImage 后通过信号传递给主线程，由主线程转换为 QPixmap。
+
     信号:
-        frame_decoded(pixmap, duration_ms, frame_index) - 每解码一帧发出
+        frame_decoded(image, duration_ms, frame_index) - 每解码一帧发出（传递 QImage）
         decoding_finished(total_frames) - 所有帧解码完成
         decoding_error(error_msg) - 解码出错
     """
 
-    frame_decoded = Signal(QPixmap, int, int)  # (pixmap, duration_ms, frame_index)
+    frame_decoded = Signal(QImage, int, int)  # (QImage, duration_ms, frame_index) - 传递 QImage 而非 QPixmap
     decoding_finished = Signal(int)  # (total_frames)
     decoding_error = Signal(str)
 
@@ -65,6 +72,9 @@ class GifDecoderWorker(QObject):
         """
         解码 GIF 所有帧（在后台线程运行）
 
+        注意：QPixmap 不是线程安全的，所以此处只创建 QImage，
+        通过信号传递给主线程后再转换为 QPixmap。
+
         Args:
             file_path: GIF 文件路径
         """
@@ -79,12 +89,13 @@ class GifDecoderWorker(QObject):
 
             while not self._cancelled:
                 try:
-                    # 转换为 RGBA QPixmap
+                    # 转换为 RGBA QImage（QImage 是线程安全的，可以在后台线程创建）
                     frame_rgba = pil_img.convert("RGBA")
                     data = frame_rgba.tobytes("raw", "RGBA")
+                    # 注意：data 是 bytes 对象，需要在 QImage 生命周期内保持有效
+                    # QImage(data, ...) 的构造函数会拷贝数据，所以是安全的
                     qimg = QImage(data, frame_rgba.width, frame_rgba.height,
                                   QImage.Format.Format_RGBA8888)
-                    pixmap = QPixmap.fromImage(qimg)
 
                     # 读取帧延迟时间
                     try:
@@ -94,7 +105,8 @@ class GifDecoderWorker(QObject):
                     except Exception:
                         delay = 100
 
-                    self.frame_decoded.emit(pixmap, delay, frame_index)
+                    # 传递 QImage（线程安全），主线程会转换为 QPixmap
+                    self.frame_decoded.emit(qimg, delay, frame_index)
                     frame_index += 1
 
                     # 移动到下一帧
@@ -130,12 +142,12 @@ class GifDecoderThread(QObject):
         # 可随时调用 decoder.cancel() 取消解码
 
     信号:
-        frame_decoded(pixmap, duration_ms, frame_index) - 每帧解码完成
+        frame_decoded(image, duration_ms, frame_index) - 每帧解码完成（传递 QImage）
         decoding_finished(total_frames) - 所有帧解码完成
         decoding_error(error_msg) - 解码失败
     """
 
-    frame_decoded = Signal(QPixmap, int, int)
+    frame_decoded = Signal(QImage, int, int)  # 传递 QImage 而非 QPixmap
     decoding_finished = Signal(int)
     decoding_error = Signal(str)
 

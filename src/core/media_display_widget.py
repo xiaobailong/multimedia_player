@@ -464,11 +464,13 @@ class MediaDisplayWidget(QWidget):
             logger.warning(f"GIF 渐进式加载失败（回退到同步模式）: {e}")
             self._play_gif_synchronous(file_path)
 
-    def _on_gif_frame_decoded(self, pixmap: QPixmap, duration_ms: int, frame_index: int):
-        """后台解码完成一帧"""
+    def _on_gif_frame_decoded(self, image: QImage, duration_ms: int, frame_index: int):
+        """后台解码完成一帧（在主线程接收，将 QImage 转为 QPixmap）"""
         if not self._gif_playing:
             return
 
+        # 在主线程将 QImage 转换为 QPixmap（QPixmap 非线程安全，必须在 GUI 线程操作）
+        pixmap = QPixmap.fromImage(image)
         # 追加到缓存列表
         self._gif_frames.append(pixmap)
         self._gif_durations.append(duration_ms)

@@ -527,7 +527,11 @@ class MainWindow(QMainWindow):
         elif os.path.isfile(self.path):
             if self.video_show_layout.is_video(self.path):
                 # 点击单个视频：退出列表播放模式
-                self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
+                # 如果单循环按钮已勾选，保留循环模式而非重置为 play_mode_one
+                if not self.video_show_layout.loop_btn.isChecked():
+                    self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
+                else:
+                    self.video_show_layout.play_mode = self.video_show_layout.play_mode_one_loop
                 self.video_show_layout.play_list.clear()
                 self.video_show_layout.play_list_index = 0
                 self.change_show(MainWindow.show_type_video)
