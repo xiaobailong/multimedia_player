@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self.path_right_click = ''
         self.left = 1
         self.right = 6
+        self._right_click_in_progress = False  # Bug E 修复: 阻止右键菜单弹出时 selectionChanged 触发 VLC 操作导致崩溃
         self.config_manager = ConfigManager()
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
@@ -262,6 +263,8 @@ class MainWindow(QMainWindow):
         self.treeView.setRootIndex(self.model.index(""))  # 显示驱动器根目录
         self.treeView.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.treeView.customContextMenuRequested.connect(self.right_click_menu)
+        # Bug E 修复: 安装事件过滤器拦截右键鼠标按下事件，在 selectionChanged 之前设置标志位
+        self.treeView.viewport().installEventFilter(self)
         self.treeView.setColumnHidden(1, True)
         self.treeView.setColumnHidden(2, True)
         self.treeView.setColumnHidden(3, True)
@@ -354,10 +357,19 @@ class MainWindow(QMainWindow):
                 break
 
     def right_click_menu(self, pos):
+        # Bug E 修复: 右键菜单弹出期间阻止 selectionChanged → on_tree_clicked 切换布局
+        # 从而防止 VLC 窗口管理器 native 崩溃 (0xC0000409)
+        self._right_click_in_progress = True
+
         try:
-            f = self.treeView.currentIndex()
-            gp = QModelIndex(f)
-            self.path_right_click = self.model.filePath(gp)
+            # 使用 indexAt(pos) 获取右键点击位置的具体索引，而非 currentIndex()
+            # currentIndex() 返回的是当前选中的项，而非用户右键点击的项
+            idx = self.treeView.indexAt(pos)
+            if not idx.isValid():
+                # 点击的是空白区域，不显示菜单
+                return
+
+            self.path_right_click = self.model.filePath(idx)
 
             self.treeView.contextMenu = QMenu()
 
@@ -391,6 +403,8 @@ class MainWindow(QMainWindow):
             self.treeView.contextMenu.exec_(self.treeView.viewport().mapToGlobal(pos))
         except Exception as e:
             self.notice(e)
+        finally:
+            self._right_click_in_progress = False
 
     def set_expand_path(self, path):
         if os.path.isdir(self.path_right_click):
@@ -469,6 +483,11 @@ class MainWindow(QMainWindow):
             self.notice("文件删除异常!!!" + str(e))
 
     def on_selection_changed(self, selected, deselected):
+        # Bug E 修复: 右键菜单弹出期间 selectionChanged 也会触发，
+        # 但不应切换布局/引擎，否则 VLC 窗口管理器会 native 崩溃 (0xC0000409)
+        if getattr(self, '_right_click_in_progress', False):
+            return
+
         indexes = selected.indexes()
         for item in indexes:
             self.path = self.model.filePath(item)
@@ -680,6 +699,10 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):
         """全局事件过滤器：全屏模式下始终能捕获键盘快捷键，不受焦点控件影响"""
+        # Bug E 修复: treeView.viewport() 鼠标右键按下时在 selectionChanged 之前设标志位
+        if obj is self.treeView.viewport() and event.type() == QEvent.Type.MouseButtonPress:
+            if event.button() == Qt.MouseButton.RightButton:
+                self._right_click_in_progress = True
         if event.type() == QEvent.Type.KeyPress:
             # Esc：退出全屏
             if event.key() == Qt.Key.Key_Escape and self.full_screen_state == MainWindow.full:

@@ -71,6 +71,13 @@ def get_ffmpeg_path():
     if os.path.isfile(ffmpeg_path):
         return ffmpeg_path
 
+    # 尝试项目根目录下的 libs/ffmpeg/（非打包开发环境）
+    # base_path = src/，需要往上一级到项目根目录
+    parent_path = os.path.dirname(base_path)
+    ffmpeg_path = os.path.join(parent_path, 'libs', 'ffmpeg', ffmpeg_name)
+    if os.path.isfile(ffmpeg_path):
+        return ffmpeg_path
+
     # 尝试项目目录下的 libs/ffmpeg/
     ffmpeg_path = os.path.join(base_path, 'libs', 'ffmpeg', ffmpeg_name)
     if os.path.isfile(ffmpeg_path):
@@ -90,3 +97,6 @@ def get_ffmpeg_path():
 
     # 最后兜底：返回默认名，让系统去 PATH 找
     return ffmpeg_name
+
+if __name__ == '__main__':
+    print(get_ffmpeg_path())

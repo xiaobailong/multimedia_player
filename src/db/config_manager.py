@@ -66,7 +66,7 @@ if __name__ == '__main__':
     config_manager = ConfigManager()
 
     # config_manager.add('a','b')
-    config_manager.update('a', 'd')
-    # value=config_manager.get('a')
+    # config_manager.update('a', 'd')
+    value=config_manager.get('video.ffmpeg.path')
     # print(value)
     # config_manager.remove('a')
