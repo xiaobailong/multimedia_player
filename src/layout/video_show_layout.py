@@ -13,7 +13,6 @@ import subprocess
 import send2trash
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
-from PyQt6.QtGui import QIcon
 
 from loguru import logger
 
@@ -24,7 +23,7 @@ from src.core.video_cut_thread import VideoCutThread
 from src.core.custom_slider import CustomSlider
 from src.core.range_slider import QRangeSlider
 from src.core.media_display_widget import MediaDisplayWidget, is_video_file
-from src.utils import get_log_path, get_ffmpeg_path as utils_get_ffmpeg_path
+from src.utils import get_ffmpeg_path as utils_get_ffmpeg_path
 
 
 class VideoShowLayout(QVBoxLayout):

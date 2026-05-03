@@ -17,12 +17,11 @@ GIF 后台解码线程模块
 - 后台线程解码得到 QImage 后通过信号传递给主线程，在主线程转换为 QPixmap
 """
 import os
-import threading
 from typing import Optional
 
 from PIL import Image
 
-from PyQt6.QtCore import QObject, QThread, pyqtSignal as Signal
+from PyQt6.QtCore import QObject, QThread, QByteArray, pyqtSignal as Signal
 from PyQt6.QtGui import QPixmap, QImage
 
 from loguru import logger
@@ -92,10 +91,16 @@ class GifDecoderWorker(QObject):
                     # 转换为 RGBA QImage（QImage 是线程安全的，可以在后台线程创建）
                     frame_rgba = pil_img.convert("RGBA")
                     data = frame_rgba.tobytes("raw", "RGBA")
-                    # 注意：data 是 bytes 对象，需要在 QImage 生命周期内保持有效
-                    # QImage(data, ...) 的构造函数会拷贝数据，所以是安全的
-                    qimg = QImage(data, frame_rgba.width, frame_rgba.height,
+                    # 关键修复：使用 QByteArray 包裹像素数据，确保 QImage 拥有数据副本
+                    # PyQt6 的 QImage(bytes, ...) 构造函数只是引用 bytes 的指针，
+                    # 跨线程传递时 bytes 可能被 GC 导致悬空指针崩溃
+                    # 而 QImage(QByteArray, ...) 会拷贝数据到 QImage 内部缓冲区
+                    ba = QByteArray(data)
+                    qimg = QImage(ba, frame_rgba.width, frame_rgba.height,
                                   QImage.Format.Format_RGBA8888)
+                    # 再次调用 copy() 确保 QImage 完全拥有独立的数据所有权
+                    # 避免跨线程信号传递时数据被意外释放
+                    qimg = qimg.copy()
 
                     # 读取帧延迟时间
                     try:

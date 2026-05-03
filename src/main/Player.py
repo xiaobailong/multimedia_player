@@ -8,7 +8,7 @@ import send2trash
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QFileSystemModel
 from PyQt6.QtCore import *
-from PyQt6.QtGui import QFontMetrics, QPainter, QPen, QColor
+from PyQt6.QtGui import QFontMetrics
 
 from loguru import logger
 
