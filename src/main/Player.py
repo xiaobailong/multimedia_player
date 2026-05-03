@@ -578,9 +578,10 @@ class MainWindow(QMainWindow):
             # 恢复控制面板（输入栏、标题）的可见性
             self.pic_show_layout.inputQWidget.setVisible(True)
             self.pic_show_layout.titleQLabel.setVisible(True)
-            # 恢复幻灯片定时器（如果全屏前正在运行）
-            pic_slideshow_timer_running = getattr(self, '_pic_slideshow_timer_running', False)
-            if pic_slideshow_timer_running:
+            # 不需要恢复定时器：全屏时我们没有停止定时器，定时器一直在运行
+            # 但如果 slideshow_active 为 True 而定时器意外未运行，则重新启动
+            pic_slideshow_active = getattr(self, '_pic_slideshow_active', False)
+            if pic_slideshow_active:
                 if (hasattr(self.pic_show_layout, 'inputAndExeLayout')
                         and self.pic_show_layout.inputAndExeLayout
                         and not self.pic_show_layout.inputAndExeLayout.timer.isActive()):
@@ -685,16 +686,10 @@ class MainWindow(QMainWindow):
         if self._pic_was_visible:
             # 保存幻灯片状态，以便退出全屏后恢复
             self._pic_slideshow_active = self.pic_show_layout._slideshow_active
-            self._pic_current_path = self.pic_show_layout.path
-            # 保存幻灯片定时器状态并在全屏时停止（全屏时不再自动切换图片）
-            self._pic_slideshow_timer_running = (
-                self.pic_show_layout.inputAndExeLayout
-                and self.pic_show_layout.inputAndExeLayout.timer.isActive()
-            )
-            if self._pic_slideshow_timer_running:
-                self.pic_show_layout.inputAndExeLayout.timer.stop()
-            # Bug Fix: 不要调用 stop_playback() 和 setVisible(False)
-            # 只隐藏控制面板，保持 media_widget 可见且持续渲染
+            # Bug Fix: 全屏时不要停止幻灯片定时器。
+            # 定时器驱动 refreshPictures() → play() → playMedia() 切换下一张图片。
+            # 只要不隐藏 media_widget，playMedia 在切换图片时正常工作。
+            # 只需要隐藏控制面板（输入栏、标题），保持 media_widget 持续渲染。
             self.pic_show_layout.inputQWidget.setVisible(False)
             self.pic_show_layout.titleQLabel.setVisible(False)
 
