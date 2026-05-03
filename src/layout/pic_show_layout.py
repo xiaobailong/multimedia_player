@@ -74,6 +74,17 @@ class PicShowLayout(QVBoxLayout):
 
         if is_image_file(filePath):
             self.media_widget.playMedia(filePath)
+
+            # 幻灯片模式下的播放间隔控制：
+            # - 如果是 GIF：停止固定间隔定时器，让 mediaFinished 信号驱动下一张
+            # - 如果是非 GIF 图片：重新启动固定间隔定时器
+            if self._slideshow_active:
+                if filePath.lower().endswith('.gif'):
+                    if self.inputAndExeLayout.timer.isActive():
+                        self.inputAndExeLayout.timer.stop()
+                else:
+                    if not self.inputAndExeLayout.timer.isActive():
+                        self.inputAndExeLayout.timer.start()
         else:
             logger.warning(f"不支持的媒体类型: {filePath}")
 
@@ -108,7 +119,9 @@ class PicShowLayout(QVBoxLayout):
     def _advance_slideshow(self):
         """停止当前显示，启动幻灯片下一张"""
         if self._slideshow_active:
-            self.inputAndExeLayout.timer.start()
+            # 先清除定时器现有 pending 事件，再启动
+            if self.inputAndExeLayout.timer.isActive():
+                self.inputAndExeLayout.timer.stop()
             self.refreshPictures()
 
     def setVisible(self, visible):
@@ -192,3 +205,21 @@ class PicShowLayout(QVBoxLayout):
     def is_pic(self, path):
         """兼容旧接口，判断是否为图片文件"""
         return is_image_file(path)
+
+    def stop_playback(self):
+        """停止当前播放（用于全屏切换等场景），并返回当前文件路径"""
+        # 停止幻灯片定时器
+        if self.inputAndExeLayout.timer.isActive():
+            self.inputAndExeLayout.timer.stop()
+        self._slideshow_active = False
+        # 停止媒体播放
+        self.media_widget.stopMedia()
+        return self.path
+
+    def resume_playback(self, file_path, slideshow_active):
+        """恢复播放"""
+        if file_path and os.path.isfile(file_path):
+            self._slideshow_active = slideshow_active
+            self.play(file_path)
+            if slideshow_active:
+                self.inputAndExeLayout.timer.start()

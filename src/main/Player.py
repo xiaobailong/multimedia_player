@@ -480,11 +480,8 @@ class MainWindow(QMainWindow):
         if os.path.isfile(self.path_right_click):
             return
 
-        self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.path_right_click)
         self.change_show(MainWindow.show_type_pic)
-        self.inputAndExeLayout.inputPath.setText(self.path_right_click)
-        self.inputAndExeLayout.content_path = self.path_right_click
-        self.inputAndExeLayout.loadData()
+        self.inputAndExeLayout.load_pic_list(self.path_right_click)
 
     def delete(self):
         try:
@@ -532,9 +529,10 @@ class MainWindow(QMainWindow):
         if os.path.isdir(self.path):
             if not self.pic_show_qwidget.isVisible():
                 self.change_show(MainWindow.show_type_pic)
-            self.inputAndExeLayout.inputPath.setText(self.path)
-            self.inputAndExeLayout.content_path = self.path
-            self.inputAndExeLayout.loadData()
+            # 停止当前图片/GIF 播放，防止后台线程访问过期控件
+            if hasattr(self, 'pic_show_layout') and hasattr(self.pic_show_layout, 'media_widget'):
+                self.pic_show_layout.media_widget.stopMedia()
+            self.inputAndExeLayout.load_pic_list(self.path)
         elif os.path.isfile(self.path):
             if self.video_show_layout.is_video(self.path):
                 # 点击单个视频：退出列表播放模式
@@ -575,6 +573,13 @@ class MainWindow(QMainWindow):
             self.video_show_layout.setVisible(True)
         if self.pic_show_qwidget.isVisible():
             self.pic_show_layout.setVisible(True)
+            # 恢复媒体播放（需要 QTimer 延迟以确保布局已恢复完成）
+            pic_slideshow_active = getattr(self, '_pic_slideshow_active', False)
+            pic_current_path = getattr(self, '_pic_current_path', '')
+            if pic_slideshow_active and pic_current_path and os.path.isfile(pic_current_path):
+                saved_path = pic_current_path
+                saved_active = pic_slideshow_active
+                QTimer.singleShot(100, lambda: self.pic_show_layout.resume_playback(saved_path, saved_active))
         self.treeView.setVisible(True)
         self.statusbar.setVisible(True)
         # 恢复标题栏
@@ -664,9 +669,15 @@ class MainWindow(QMainWindow):
             self.notice("shift + o")
 
     def full_screen_custom(self):
+        # 注意：必须在隐藏控件之前停止媒体播放，否则 GIF 定时器/后台解码线程
+        # 在访问已隐藏的 scroll_area.viewport() 时会崩溃 (0xC0000409)
         if self.video_show_qwidget.isVisible():
             self.video_show_layout.setVisible(False)
         if self.pic_show_qwidget.isVisible():
+            # 保存幻灯片状态，以便退出全屏后恢复
+            self._pic_slideshow_active = self.pic_show_layout._slideshow_active
+            self._pic_current_path = self.pic_show_layout.path
+            self.pic_show_layout.stop_playback()
             self.pic_show_layout.setVisible(False)
 
         self.treeView.setVisible(False)
@@ -710,6 +721,9 @@ class MainWindow(QMainWindow):
             self.pic_show_qwidget.setVisible(True)
             self.video_show_qwidget.setVisible(False)
         if show_type == MainWindow.show_type_video:
+            # 切换到视频前停止图片/GIF 播放，避免后台 GIF 解码线程在隐藏后访问控件崩溃
+            if self.pic_show_qwidget.isVisible():
+                self.pic_show_layout.media_widget.stopMedia()
             self.video_show_qwidget.setVisible(True)
             self.pic_show_qwidget.setVisible(False)
 

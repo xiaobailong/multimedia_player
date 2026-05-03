@@ -56,7 +56,7 @@ class PicInputLayout(QHBoxLayout):
         self.setContentsMargins(0, 0, 0, 0)
 
         self.inputPath.textEdited.connect(self.text_edited)
-        self.getPathBtn.pressed.connect(self.load_pic_list)
+        self.getPathBtn.pressed.connect(lambda: self.load_pic_list())
         self.inputInterval.textEdited.connect(self.input_interval_text_edited)
 
         self.timer = QTimer()
@@ -71,10 +71,19 @@ class PicInputLayout(QHBoxLayout):
         self.content_path = s
         self.loadData()
 
-    def load_pic_list(self):
-        selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
-        if not selected_path:  # 用户取消了选择
-            return
+    def load_pic_list(self, directory=None):
+        """加载图片列表
+
+        Args:
+            directory: 可选。如果提供，直接使用该目录而不弹出对话框。
+                       如果为 None，则弹出 QFileDialog 让用户选择目录。
+        """
+        if directory is None:
+            selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
+            if not selected_path:  # 用户取消了选择
+                return
+        else:
+            selected_path = directory
         self.inputPath.setText(selected_path)
         self.content_path = selected_path
         self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.content_path)
