@@ -13,7 +13,6 @@ from PyQt6.QtGui import QFontMetrics
 from loguru import logger
 
 from src.db.config_manager import ConfigManager
-from src.layout.pic_input_layout import PicInputLayout
 from src.layout.pic_show_layout import PicShowLayout
 from src.layout.video_show_layout import VideoShowLayout
 from src.core.custom_title_bar import CustomTitleBar
@@ -569,17 +568,23 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'video_show_layout') and self.video_show_layout._is_fullscreen:
             self.video_show_layout.exit_fullscreen_mode()
 
-        if self.video_show_qwidget.isVisible():
-            self.video_show_layout.setVisible(True)
-        if self.pic_show_qwidget.isVisible():
-            self.pic_show_layout.setVisible(True)
-            # 恢复媒体播放（需要 QTimer 延迟以确保布局已恢复完成）
-            pic_slideshow_active = getattr(self, '_pic_slideshow_active', False)
-            pic_current_path = getattr(self, '_pic_current_path', '')
-            if pic_slideshow_active and pic_current_path and os.path.isfile(pic_current_path):
-                saved_path = pic_current_path
-                saved_active = pic_slideshow_active
-                QTimer.singleShot(100, lambda: self.pic_show_layout.resume_playback(saved_path, saved_active))
+        # 使用保存的状态恢复显示，而不是查询 isVisible()
+        # full_screen_custom() 中视频布局未被隐藏，pic 布局已被隐藏
+        if getattr(self, '_video_was_visible', False):
+            # 视频布局从未被隐藏，但确保可见
+            self.video_show_qwidget.setVisible(True)
+        pic_was_visible = getattr(self, '_pic_was_visible', False)
+        if pic_was_visible:
+            # 恢复控制面板（输入栏、标题）的可见性
+            self.pic_show_layout.inputQWidget.setVisible(True)
+            self.pic_show_layout.titleQLabel.setVisible(True)
+            # 恢复幻灯片定时器（如果全屏前正在运行）
+            pic_slideshow_timer_running = getattr(self, '_pic_slideshow_timer_running', False)
+            if pic_slideshow_timer_running:
+                if (hasattr(self.pic_show_layout, 'inputAndExeLayout')
+                        and self.pic_show_layout.inputAndExeLayout
+                        and not self.pic_show_layout.inputAndExeLayout.timer.isActive()):
+                    self.pic_show_layout.inputAndExeLayout.timer.start()
         self.treeView.setVisible(True)
         self.statusbar.setVisible(True)
         # 恢复标题栏
@@ -591,7 +596,7 @@ class MainWindow(QMainWindow):
                 border-radius: 8px;
             }
         """)
-        self.mainQWidget.setStyleSheet(self.style_sheet)
+        self.mainQWidget.setStyleSheet("")
         self.full_screen_state = MainWindow.normal
 
         # 如果全屏前是最大化状态，恢复最大化
@@ -669,16 +674,29 @@ class MainWindow(QMainWindow):
             self.notice("shift + o")
 
     def full_screen_custom(self):
-        # 注意：必须在隐藏控件之前停止媒体播放，否则 GIF 定时器/后台解码线程
-        # 在访问已隐藏的 scroll_area.viewport() 时会崩溃 (0xC0000409)
-        if self.video_show_qwidget.isVisible():
-            self.video_show_layout.setVisible(False)
-        if self.pic_show_qwidget.isVisible():
+        # 视频全屏：不要隐藏视频布局（VLC 仍在渲染），只隐藏非播放 UI 元素
+        # 隐藏视频布局会销毁 VLC 输出 HWND，VLC 写入已销毁的 HWND 导致 native 崩溃 (0xC0000409)
+        # 图片/GIF 全屏同理：不要停止播放也不要隐藏图片控件。
+        # stop_playback() 会销毁 GIF 帧缓存/定时器/后台解码线程并清除 QPixmap → 黑屏
+        # setVisible(False) 隐藏 widget → 无法渲染 → 黑屏
+        # 只需隐藏控制面板（输入栏、标题），让 media_widget 持续渲染
+        self._video_was_visible = self.video_show_qwidget.isVisible()
+        self._pic_was_visible = self.pic_show_qwidget.isVisible()
+        if self._pic_was_visible:
             # 保存幻灯片状态，以便退出全屏后恢复
             self._pic_slideshow_active = self.pic_show_layout._slideshow_active
             self._pic_current_path = self.pic_show_layout.path
-            self.pic_show_layout.stop_playback()
-            self.pic_show_layout.setVisible(False)
+            # 保存幻灯片定时器状态并在全屏时停止（全屏时不再自动切换图片）
+            self._pic_slideshow_timer_running = (
+                self.pic_show_layout.inputAndExeLayout
+                and self.pic_show_layout.inputAndExeLayout.timer.isActive()
+            )
+            if self._pic_slideshow_timer_running:
+                self.pic_show_layout.inputAndExeLayout.timer.stop()
+            # Bug Fix: 不要调用 stop_playback() 和 setVisible(False)
+            # 只隐藏控制面板，保持 media_widget 可见且持续渲染
+            self.pic_show_layout.inputQWidget.setVisible(False)
+            self.pic_show_layout.titleQLabel.setVisible(False)
 
         self.treeView.setVisible(False)
         self.statusbar.setVisible(False)
@@ -708,8 +726,8 @@ class MainWindow(QMainWindow):
             self.normal_rect = (self.x(), self.y(), self.width(), self.height())
         self.showFullScreen()
 
-        # 视频全屏时使用悬浮控制面板
-        if self.video_show_qwidget.isVisible():
+        # 视频全屏时使用悬浮控制面板（必须在 showFullScreen 之后调用）
+        if self._video_was_visible:
             QTimer.singleShot(300, self.video_show_layout.enter_fullscreen_mode)
 
     def change_show(self, show_type):
