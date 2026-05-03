@@ -483,7 +483,8 @@ class MainWindow(QMainWindow):
         self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.path_right_click)
         self.change_show(MainWindow.show_type_pic)
         self.inputAndExeLayout.inputPath.setText(self.path_right_click)
-        self.inputAndExeLayout.load_pic_list()
+        self.inputAndExeLayout.content_path = self.path_right_click
+        self.inputAndExeLayout.loadData()
 
     def delete(self):
         try:
@@ -532,7 +533,8 @@ class MainWindow(QMainWindow):
             if not self.pic_show_qwidget.isVisible():
                 self.change_show(MainWindow.show_type_pic)
             self.inputAndExeLayout.inputPath.setText(self.path)
-            self.inputAndExeLayout.load_pic_list()
+            self.inputAndExeLayout.content_path = self.path
+            self.inputAndExeLayout.loadData()
         elif os.path.isfile(self.path):
             if self.video_show_layout.is_video(self.path):
                 # 点击单个视频：退出列表播放模式
