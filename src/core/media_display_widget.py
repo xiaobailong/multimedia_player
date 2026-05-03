@@ -485,9 +485,21 @@ class MediaDisplayWidget(QWidget):
         if next_idx >= len(self._gif_frames):
             if self._gif_progressive_mode:
                 # 后台解码尚未完成，等待更多帧
-                # 重试：等待 50ms 后再试
-                if self._gif_playing and self._gif_timer is not None:
-                    self._gif_timer.start(50)
+                # 但先检查解码器是否仍在运行，防止解码器已取消/结束后
+                # _gif_progressive_mode 未变 False 导致的无限 50ms 轮询
+                decoder_running = (self._gif_decoder_thread is not None
+                                   and self._gif_decoder_thread.is_running)
+                if decoder_running:
+                    # 解码器仍在运行，等待更多帧
+                    if self._gif_playing and self._gif_timer is not None:
+                        self._gif_timer.start(50)
+                else:
+                    # 解码器已停止但 _gif_progressive_mode 仍为 True
+                    # 说明解码器被取消或出错，已无更多帧到达
+                    # 此时正常循环到开头继续播放已解码的帧
+                    self._gif_progressive_mode = False
+                    next_idx = 0
+                    self.mediaFinished.emit()
                 return
             else:
                 # 所有帧已解码且循环到末尾
@@ -580,7 +592,7 @@ class MediaDisplayWidget(QWidget):
                 self._stop_gif()
                 return
 
-            logger.debug(f"[GIF 显示] 显示帧 {idx}, 尺寸={frame.width()}x{frame.height()}")
+            logger.trace(f"[GIF 显示] 显示帧 {idx}, 尺寸={frame.width()}x{frame.height()}")
 
             # ==== 统一使用软件渲染（QLabel）显示 GIF ====
             # QOpenGLWidget + QPainter.drawPixmap 在 Windows 上存在 OpenGL 上下文
