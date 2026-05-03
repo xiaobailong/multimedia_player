@@ -234,7 +234,6 @@ class VlcEngine(MediaEngine):
         # VLC 核心实例
         self._instance = vlc.Instance([
             '--no-xlib',
-            '--no-audio',           # 我们只需要视频输出
             '--quiet',
             '--avcodec-hw=any',     # 启用硬件加速
         ])

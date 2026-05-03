@@ -41,8 +41,21 @@ def get_app_data_path():
 def get_log_path():
     """
     获取日志文件存储目录。
+
+    开发状态下：
+        项目根目录/log/
+    打包运行状态下：
+        与可执行文件同级目录下的 log/
     """
-    log_dir = os.path.join(get_app_data_path(), 'log')
+    if getattr(sys, 'frozen', False):
+        # 打包运行状态：可执行文件所在目录/log/
+        base_dir = os.path.dirname(sys.executable)
+    else:
+        # 开发状态：项目根目录/log/
+        # 从 src/utils/utils.py 向上三级到达项目根目录
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+    log_dir = os.path.join(base_dir, 'log')
     os.makedirs(log_dir, exist_ok=True)
     return log_dir
 
