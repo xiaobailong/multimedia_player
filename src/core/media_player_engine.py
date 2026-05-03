@@ -41,6 +41,41 @@ except ImportError:
 except Exception as e:
     logger.info(f"导入 vlc 失败，VLC 后端不可用: {e}")
 
+# ---------- MPV DLL 自动查找 ----------
+# python-mpv 需要 libmpv-2.dll 在 PATH 中才能正常导入。
+# 在此列出常见的 mpv 安装路径，自动添加到 PATH 避免手动配置。
+_MPV_DLL_SEARCH_PATHS = [
+    # 用户自定义安装路径
+    r"D:\Tools\DevTools\base\mpv-dev-x86_64",
+    # 常见的 mpv 安装路径
+    r"C:\Program Files\mpv",
+    r"C:\Program Files (x86)\mpv",
+    r"C:\tools\mpv",
+]
+# 同时检查 PATH 环境变量中已有的 mpv 目录
+for _p in os.environ.get("PATH", "").split(os.pathsep):
+    _p = _p.strip()
+    if _p and "mpv" in _p.lower() and os.path.isdir(_p):
+        if _p not in _MPV_DLL_SEARCH_PATHS:
+            _MPV_DLL_SEARCH_PATHS.append(_p)
+
+_MPV_DLL_FOUND = False
+for _mpv_dir in _MPV_DLL_SEARCH_PATHS:
+    _dll_path = os.path.join(_mpv_dir, "libmpv-2.dll")
+    if os.path.isfile(_dll_path):
+        if _mpv_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = _mpv_dir + os.pathsep + os.environ.get("PATH", "")
+            logger.info(f"已找到 libmpv-2.dll，添加到 PATH: {_mpv_dir}")
+        _MPV_DLL_FOUND = True
+        break
+
+if not _MPV_DLL_FOUND:
+    # 兜底：尝试在 PATH 中搜索 libmpv-2.dll
+    import shutil
+    if shutil.which("libmpv-2.dll") or shutil.which("mpv.exe"):
+        _MPV_DLL_FOUND = True
+        logger.info("libmpv-2.dll 已在 PATH 中可用")
+
 # 尝试导入 python-mpv
 MPV_AVAILABLE = False
 try:
@@ -410,13 +445,24 @@ class MpvEngine(MediaEngine):
         except Exception:
             pass
 
+    def _has_media(self) -> bool:
+        """检查 mpv 是否已加载媒体文件，防止在未加载时访问原生属性导致 0xC0000409 崩溃"""
+        try:
+            return self._player is not None and self._player.duration is not None
+        except Exception:
+            return False
+
     def set_position(self, pos_ms: int):
+        if not self._has_media():
+            return
         try:
             self._player.time_pos = pos_ms / 1000.0
         except Exception:
             pass
 
     def get_position(self) -> int:
+        if not self._has_media():
+            return 0
         try:
             pos = self._player.time_pos
             if pos is not None:
@@ -426,6 +472,8 @@ class MpvEngine(MediaEngine):
         return 0
 
     def get_duration(self) -> int:
+        if not self._has_media():
+            return 0
         try:
             dur = self._player.duration
             if dur is not None:
@@ -435,8 +483,10 @@ class MpvEngine(MediaEngine):
         return 0
 
     def is_playing(self) -> bool:
+        if not self._has_media():
+            return False
         try:
-            return not self._player.pause and self._player.time_pos is not None
+            return not self._player.pause
         except Exception:
             return False
 
