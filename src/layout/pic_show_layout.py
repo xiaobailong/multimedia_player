@@ -8,7 +8,7 @@ from PyQt5.QtGui import (QPixmap, QImage)
 
 from loguru import logger
 
-from src import PicInputLayout
+from src.layout.pic_input_layout import PicInputLayout
 
 
 class PicShowLayout(QVBoxLayout):

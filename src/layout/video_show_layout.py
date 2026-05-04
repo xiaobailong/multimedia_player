@@ -10,12 +10,12 @@ from PyQt5.QtCore import *
 
 from loguru import logger
 
-from src import ConfigManager
-from src import PositionManager
-from src import FloatingControlPanel
-from src import VideoCutThread
-from src import CustomSlider
-from src import QRangeSlider
+from src.data_manager.config_manager import ConfigManager
+from src.data_manager.position_manager import PositionManager
+from src.layout.floating_control_panel import FloatingControlPanel
+from src.layout.video_cut_thread import VideoCutThread
+from src.layout.custom_slider import CustomSlider
+from src.layout.range_slider import QRangeSlider
 from src.utils.utils import get_ffmpeg_path as utils_get_ffmpeg_path
 
 

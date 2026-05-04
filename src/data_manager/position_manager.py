@@ -4,7 +4,7 @@
 """
 import os
 from loguru import logger
-from src import Sqlite3Client
+from src.data_manager.sqlite3_client import Sqlite3Client
 
 
 class PositionManager:

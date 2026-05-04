@@ -1,4 +1,4 @@
-from src import Sqlite3Client
+from src.data_manager.sqlite3_client import Sqlite3Client
 
 import time
 from loguru import logger
