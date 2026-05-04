@@ -11,12 +11,12 @@ from PyQt5.QtCore import *
 from loguru import logger
 
 from src.data_manager.config_manager import ConfigManager
+from src.data_manager.position_manager import PositionManager
 from src.layout.floating_control_panel import FloatingControlPanel
-from src.data_manager.sqlite3_client import Sqlite3Client
 from src.layout.video_cut_thread import VideoCutThread
 from src.layout.custom_slider import CustomSlider
 from src.layout.range_slider import QRangeSlider
-from src.utils import get_log_path, get_ffmpeg_path as utils_get_ffmpeg_path
+from src.utils import get_ffmpeg_path as utils_get_ffmpeg_path
 
 
 class VideoShowLayout(QVBoxLayout):
@@ -42,10 +42,9 @@ class VideoShowLayout(QVBoxLayout):
         self.play_list_index = 0
         self.play_mode = VideoShowLayout.play_mode_one
 
-        # 播放位置记忆
+        # 播放位置记忆（使用 PositionManager 统一管理）
         self._position_save_count = 0  # 每 5 秒保存一次
-        self.db_client = Sqlite3Client()
-        self._init_position_table()
+        self.position_manager = PositionManager()
 
         self.get_ffmpeg_path()
 
@@ -59,6 +58,12 @@ class VideoShowLayout(QVBoxLayout):
         self.player = QMediaPlayer()
         self.video_widget = QVideoWidget()
         self.player.setVideoOutput(self.video_widget)
+
+        # 媒体状态变化信号：加载完成后跳转到记忆位置
+        self.player.mediaStatusChanged.connect(self._on_media_status_changed)
+        self.player.durationChanged.connect(self._on_duration_changed)
+        self._pending_seek_position = -1  # 待跳转的播放位置（-1 表示无跳转）
+        self._pending_seek_attempts = 0   # 已重试次数（timer 后备）
 
         self.qscrollarea = QScrollArea()
 
@@ -341,15 +346,17 @@ class VideoShowLayout(QVBoxLayout):
         # 更新标题栏：显示文件名和播放进度
         self._update_title_bar(filePath)
 
+        # 先加载上次播放位置（必须在 setMedia 之前，因为 durationChanged 信号可能在
+        # setMedia 时立刻触发，需要 _pending_seek_position 已就绪）
+        saved_pos = self._load_position()
+        self._pending_seek_position = saved_pos if saved_pos > 0 else -1
+        if saved_pos > 0:
+            self.main_window.notice(f"正在恢复上次播放位置...")
+
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
         self.player.play()
         self.play_state = True
         self.stop_btn.setText("暂停")
-
-        # 从数据库加载上次播放位置，延迟等媒体加载完成后跳转
-        saved_pos = self._load_position()
-        if saved_pos > 0:
-            QTimer.singleShot(500, lambda: self._seek_to_saved_position(saved_pos))
 
         self.timer.start()
 
@@ -370,11 +377,75 @@ class VideoShowLayout(QVBoxLayout):
         except Exception as e:
             logger.warning(f"更新标题栏失败: {e}")
 
-    def _seek_to_saved_position(self, saved_pos):
-        """跳转到保存的播放位置"""
-        if saved_pos < self.player.duration():
+    def _seek_to_saved_position(self, saved_pos, duration=None):
+        """
+        跳转到保存的播放位置。
+        
+        Args:
+            saved_pos: 要跳转的位置（毫秒）
+            duration: 当前视频时长（毫秒），可选。传 None 时从 player.duration() 获取
+        """
+        if duration is None:
+            duration = self.player.duration()
+        if saved_pos > 0 and saved_pos < duration:
             self.player.setPosition(saved_pos)
             self.main_window.notice(f"已恢复上次播放位置")
+            return True
+        logger.debug(f"跳转失败: saved_pos={saved_pos}, duration={duration}")
+        return False
+
+    def _on_media_status_changed(self, status):
+        """
+        媒体状态变化时，尝试执行待跳转。
+        QMediaPlayer 状态枚举：
+            2=LoadingMedia, 3=LoadedMedia, 4=StalledMedia, 
+            5=BufferingMedia, 6=BufferedMedia, 7=EndOfMedia, 8=InvalidMedia
+        macOS AVFoundation 上，bufferedMedia(6) 是确认媒体已完全可操作的最佳时机。
+        """
+        logger.debug(f"媒体状态变化: {status}, 待跳转位置: {self._pending_seek_position}")
+        if self._pending_seek_position > 0:
+            if status in (QMediaPlayer.BufferedMedia, QMediaPlayer.LoadedMedia):
+                # 延迟 200ms 确保播放器内部状态已就绪，setPosition 不会丢失
+                QTimer.singleShot(200, lambda: self._try_pending_seek())
+        elif status in (QMediaPlayer.InvalidMedia, QMediaPlayer.EndOfMedia):
+            self._pending_seek_position = -1
+
+    def _on_duration_changed(self, duration):
+        """
+        durationChanged 作为 _on_media_status_changed 的后备。
+        如果 _pending_seek_position 还未被消费，在此处触发延迟跳转。
+        """
+        logger.debug(f"时长已就绪: {duration}ms, 待跳转位置: {self._pending_seek_position}")
+        if self._pending_seek_position > 0 and duration > 0:
+            QTimer.singleShot(200, lambda: self._try_pending_seek())
+
+    def _try_pending_seek(self):
+        """
+        执行待跳转。仅当播放器处于 BufferedMedia/LoadedMedia 状态时才跳转，
+        否则延迟重试。macOS AVFoundation 在 Loading 状态下调用 setPosition 会被忽略。
+        """
+        if self._pending_seek_position <= 0:
+            return
+        
+        # 检查播放器状态：仅在 BufferedMedia(6) 或 LoadedMedia(3) 时才能安全 seek
+        media_status = self.player.mediaStatus()
+        if media_status not in (QMediaPlayer.BufferedMedia, QMediaPlayer.LoadedMedia):
+            logger.debug(f"播放器未就绪（状态={media_status}），延迟重试跳转 position={self._pending_seek_position}")
+            # 每秒重试一次，最多重试 5 次
+            self._pending_seek_attempts += 1
+            if self._pending_seek_attempts <= 5:
+                QTimer.singleShot(1000, self._try_pending_seek)
+            else:
+                logger.warning(f"等待播放器就绪超时，放弃跳转 position={self._pending_seek_position}")
+                self._pending_seek_position = -1
+            return
+        
+        saved_pos = self._pending_seek_position
+        self._pending_seek_position = -1  # 清除标记，避免重复跳转
+        self._pending_seek_attempts = 0
+        success = self._seek_to_saved_position(saved_pos)
+        if success:
+            logger.info(f"已恢复上次播放位置: {saved_pos}")
 
     def slider_start(self, value):
         tangent = value / self.bar_slider_maxvalue * self.player.duration()
@@ -606,46 +677,17 @@ class VideoShowLayout(QVBoxLayout):
         else:
             self.next()
 
-    def _init_position_table(self):
-        """创建播放位置记忆表（如果不存在）"""
-        sql = """CREATE TABLE IF NOT EXISTS video_play_position (
-            file_path TEXT PRIMARY KEY NOT NULL,
-            position INTEGER NOT NULL,
-            duration INTEGER NOT NULL,
-            update_time TEXT NOT NULL DEFAULT (datetime('now','localtime'))
-        )"""
-        self.db_client.exeUpdate(sql)
-
     def _save_position(self):
         """保存当前播放位置到数据库"""
         if not self.path or not os.path.exists(self.path):
             return
         position = self.player.position()
         duration = self.player.duration()
-        if position <= 30:  # 刚开始几秒不保存
-            return
-        # 使用 INSERT OR REPLACE 更新记录
-        sql = f"""INSERT OR REPLACE INTO video_play_position (file_path, position, duration, update_time)
-                  VALUES ('{self.path.replace("'", "''")}', {position}, {duration}, datetime('now','localtime'))"""
-        try:
-            self.db_client.exeUpdate(sql)
-        except Exception as e:
-            logger.warning(f"保存播放位置失败: {e}")
+        self.position_manager.save_position(self.path, position, duration)
 
     def _load_position(self):
-        """从数据库加载播放位置，返回 position（毫秒），无记录则返回 0"""
-        if not self.path:
-            return 0
-        escaped_path = self.path.replace("'", "''")
-        sql = f"SELECT position FROM video_play_position WHERE file_path = '{escaped_path}'"
-        try:
-            cursor = self.db_client.exeQuery(sql)
-            row = cursor.fetchone()
-            if row:
-                return row[0]
-        except Exception as e:
-            logger.warning(f"加载播放位置失败: {e}")
-        return 0
+        """从数据库加载上次播放位置，返回 position（毫秒），无记录则返回 0"""
+        return self.position_manager.load_position(self.path)
 
     def eventFilter(self, obj, event):
         """监听窗口大小变化事件，视频 QVideoWidget 自适应"""
@@ -658,8 +700,7 @@ class VideoShowLayout(QVBoxLayout):
         """实际执行文件删除并播放下一个（在媒体释放后调用）"""
         try:
             # 清理数据库中的播放位置记录
-            escaped_path = deleted_file_path.replace("'", "''")
-            self.db_client.exeUpdate(f"DELETE FROM video_play_position WHERE file_path = '{escaped_path}'")
+            self.position_manager.delete_position(deleted_file_path)
 
             os.chdir(path)
             send2trash.send2trash(filename)

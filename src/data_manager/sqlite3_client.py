@@ -18,14 +18,26 @@ class Sqlite3Client:
         for row in cursor:
             logger.info(row)
 
-    def exeQuery(self, sql):
+    def exeQuery(self, sql, params=None):
         c = self.conn.cursor()
-        cursor = c.execute(sql)
+        if params:
+            cursor = c.execute(sql, params)
+        else:
+            cursor = c.execute(sql)
         return cursor
 
-    def exeUpdate(self, sql):
+    def exeUpdate(self, sql, params=None):
         c = self.conn.cursor()
-        c.execute(sql)
+        if params:
+            c.execute(sql, params)
+        else:
+            c.execute(sql)
+        # apsw 没有 commit() 方法，需要显式执行 COMMIT 语句提交事务
+        # 如果是 DDL（如 CREATE TABLE IF NOT EXISTS 表已存在）可能无活动事务，忽略错误
+        try:
+            self.conn.execute("COMMIT")
+        except apsw.SQLError:
+            pass
 
     def close(self):
         self.conn.close()

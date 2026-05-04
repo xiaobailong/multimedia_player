@@ -94,7 +94,12 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.FramelessWindowHint)
 
         self.setWindowTitle('多媒体播放器')
-        self.resize(1500, 700)
+        # 根据屏幕可用尺寸调整窗口大小，确保不超出屏幕
+        desktop = QApplication.desktop()
+        screen_rect = desktop.availableGeometry()
+        win_w = min(1500, screen_rect.width() - 80)
+        win_h = min(700, screen_rect.height() - 80)
+        self.resize(win_w, win_h)
 
         # ---- 全局暗色主题 ----
         self.setStyleSheet("""
@@ -651,8 +656,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """关闭窗口时清理视频播放器资源，防止 macOS AVFoundation 崩溃"""
-        # 停止定时器
         if hasattr(self, 'video_show_layout'):
+            # 关闭前先保存当前播放位置（无论是否处于暂停状态）
+            if self.video_show_layout.path and os.path.exists(self.video_show_layout.path):
+                pos = self.video_show_layout.player.position()
+                dur = self.video_show_layout.player.duration()
+                self.video_show_layout.position_manager.save_position(
+                    self.video_show_layout.path, pos, dur
+                )
+
             if self.video_show_layout.timer.isActive():
                 self.video_show_layout.timer.stop()
             # 停止播放并释放媒体资源
