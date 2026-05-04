@@ -25,8 +25,9 @@ class VideoShowLayout(QVBoxLayout):
     video_screenshot_path_key = 'video.screenshot.path'
     video_cut_path_key = 'video.cut.path'
     ffmpeg_path_key = "video.ffmpeg.path"
-    play_mode_one = 0
-    play_mode_list = 1
+    play_mode_one = 0       # 单次播放
+    play_mode_list = 1      # 列表播放
+    play_mode_one_loop = 2  # 单视频循环播放
 
     def __init__(self, main_window, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
@@ -120,6 +121,11 @@ class VideoShowLayout(QVBoxLayout):
         self.list_btn.setText("播放列表")
         self.list_btn.clicked.connect(self.run_list)
         self.controal_hbox.addWidget(self.list_btn)
+        self.loop_btn = QPushButton()
+        self.loop_btn.setText("🔂 单曲循环")
+        self.loop_btn.setCheckable(True)
+        self.loop_btn.toggled.connect(self._toggle_loop)
+        self.controal_hbox.addWidget(self.loop_btn)
         self.next_btn = QPushButton()
         self.next_btn.setText("下一个")
         self.next_btn.clicked.connect(self.next)
@@ -285,19 +291,30 @@ class VideoShowLayout(QVBoxLayout):
         self.play(self.play_list[self.play_list_index])
 
     def run_list(self):
-        if len(self.play_list) == 0 or len(self.play_list) == self.play_list_index:
-            self.main_window.notice('列表未加载或已全部播放完毕')
-            self.play_mode = VideoShowLayout.play_mode_one
+        # 如果按钮文本是"重播列表"，表示用户想重新播放整个列表
+        if self.list_btn.text() == "重播列表":
+            self.play_list_index = 0
+            self.list_btn.setText("播放列表")
+            self.play_state = True
+            self.stop_btn.setText('暂停')
+            self.play_mode = VideoShowLayout.play_mode_list
+            if len(self.play_list) > 0:
+                self.play(self.play_list[0])
             return
-        self.play_state = True
-        self.stop_btn.setText('暂停')
-        self.play_mode = VideoShowLayout.play_mode_list
-        if self.play_list_index >= len(self.play_list):
+
+        if len(self.play_list) == 0 or self.play_list_index >= len(self.play_list):
+            # 列表播放完毕，切换按钮为"重播列表"
+            self.list_btn.setText("重播列表")
+            self.main_window.notice('列表已全部播放完毕，点击"重播列表"重新播放')
             self.play_mode = VideoShowLayout.play_mode_one
             self.play_state = False
             self.stop_btn.setText('播放')
-        else:
-            self.play(self.play_list[self.play_list_index])
+            return
+
+        self.play_state = True
+        self.stop_btn.setText('暂停')
+        self.play_mode = VideoShowLayout.play_mode_list
+        self.play(self.play_list[self.play_list_index])
 
     def up_time(self):
         num = self.player.position() + int(self.player.duration() / 100)
@@ -506,9 +523,25 @@ class VideoShowLayout(QVBoxLayout):
                 self.play_list_index += 1
                 self.run_list()
                 return
+            elif self.play_mode == VideoShowLayout.play_mode_one_loop:
+                # 单视频循环：从头重新播放
+                self.player.setPosition(0)
+                self.player.play()
+                self.play_state = True
+                self.stop_btn.setText("暂停")
+                return
             self.stop_btn.setText("播放")
             self.play_state = False
             self.timer.stop()
+
+    def _toggle_loop(self, checked):
+        """切换单视频循环模式"""
+        if checked:
+            self.play_mode = VideoShowLayout.play_mode_one_loop
+            self.main_window.notice("已开启单曲循环")
+        else:
+            self.play_mode = VideoShowLayout.play_mode_one
+            self.main_window.notice("已关闭单曲循环")
 
     def is_video(self, path):
         return path.lower().endswith(('.mp4', '.mkv'))
@@ -640,6 +673,9 @@ class VideoShowLayout(QVBoxLayout):
         if len(self.play_list) > 0:
             self.play_list.clear()
             self.play_list_index = 0
+
+        # 重新加载列表时恢复按钮文本为"播放列表"
+        self.list_btn.setText("播放列表")
 
         files = filter(os.path.isfile, glob.glob(os.path.join(path, "*.mp4")))
 
