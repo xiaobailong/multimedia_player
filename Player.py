@@ -349,6 +349,7 @@ class MainWindow(QMainWindow):
             self.expand_path(expand_path_config)
 
     def expand_path(self, path):
+        original_path = path  # 保存原始目标路径，用于后续滚动定位
         self.treeView.setExpanded(self.model.index(path), True)
         while True:
             if path != os.path.dirname(path):
@@ -356,6 +357,9 @@ class MainWindow(QMainWindow):
                 self.treeView.setExpanded(self.model.index(path), True)
             else:
                 break
+        # 展开完成后将原始目标目录滚动到树形控件中间位置
+        target_index = self.model.index(original_path)
+        self.treeView.scrollTo(target_index, QAbstractItemView.PositionAtCenter)
 
     def right_click_menu(self, pos):
         try:
