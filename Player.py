@@ -7,18 +7,18 @@ import send2trash
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-from PyQt5.QtGui import QFontMetrics, QPainter, QPen, QColor
+from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtMultimedia import QMediaContent
 from PyQt5.QtWidgets import QApplication
 
 from loguru import logger
 
-from src.data_manager.config_manager import ConfigManager
-from src.layout.pic_input_layout import PicInputLayout
-from src.layout.pic_show_layout import PicShowLayout
-from src.layout.video_show_layout import VideoShowLayout
-from src.layout.custom_title_bar import CustomTitleBar
-from src.utils import get_log_path
+from src import ConfigManager
+from src import PicInputLayout
+from src import PicShowLayout
+from src import VideoShowLayout
+from src import CustomTitleBar
+from src.utils.utils import get_log_path
 
 import warnings
 

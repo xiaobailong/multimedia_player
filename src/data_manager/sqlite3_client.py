@@ -2,7 +2,7 @@
 
 import apsw
 from loguru import logger
-from src.utils import get_db_path
+from src.utils.utils import get_db_path
 
 
 class Sqlite3Client:

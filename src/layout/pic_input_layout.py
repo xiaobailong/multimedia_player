@@ -4,8 +4,7 @@ import os
 
 from loguru import logger
 
-from src.data_manager.config_manager import ConfigManager
-from src.utils import get_log_path
+from src import ConfigManager
 
 
 class PicInputLayout(QHBoxLayout):

@@ -4,12 +4,11 @@ import send2trash
 from PIL import Image
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-from PyQt5.QtGui import (QPixmap, QImage, QMovie)
+from PyQt5.QtGui import (QPixmap, QImage)
 
 from loguru import logger
 
-from src.layout.pic_input_layout import PicInputLayout
-from src.utils import get_log_path
+from src import PicInputLayout
 
 
 class PicShowLayout(QVBoxLayout):
