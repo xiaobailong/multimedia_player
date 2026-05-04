@@ -408,7 +408,6 @@ class VideoShowLayout(QVBoxLayout):
             self.player.setPosition(saved_pos)
             self.main_window.notice(f"已恢复上次播放位置")
             return True
-        logger.debug(f"跳转失败: saved_pos={saved_pos}, duration={duration}")
         return False
 
     def _on_media_status_changed(self, status):
@@ -419,7 +418,6 @@ class VideoShowLayout(QVBoxLayout):
             5=BufferingMedia, 6=BufferedMedia, 7=EndOfMedia, 8=InvalidMedia
         macOS AVFoundation 上，bufferedMedia(6) 是确认媒体已完全可操作的最佳时机。
         """
-        logger.debug(f"媒体状态变化: {status}, 待跳转位置: {self._pending_seek_position}")
         if self._pending_seek_position > 0:
             if status in (QMediaPlayer.BufferedMedia, QMediaPlayer.LoadedMedia):
                 # 延迟 200ms 确保播放器内部状态已就绪，setPosition 不会丢失
@@ -432,7 +430,6 @@ class VideoShowLayout(QVBoxLayout):
         durationChanged 作为 _on_media_status_changed 的后备。
         如果 _pending_seek_position 还未被消费，在此处触发延迟跳转。
         """
-        logger.debug(f"时长已就绪: {duration}ms, 待跳转位置: {self._pending_seek_position}")
         if self._pending_seek_position > 0 and duration > 0:
             QTimer.singleShot(200, lambda: self._try_pending_seek())
 
@@ -447,7 +444,6 @@ class VideoShowLayout(QVBoxLayout):
         # 检查播放器状态：仅在 BufferedMedia(6) 或 LoadedMedia(3) 时才能安全 seek
         media_status = self.player.mediaStatus()
         if media_status not in (QMediaPlayer.BufferedMedia, QMediaPlayer.LoadedMedia):
-            logger.debug(f"播放器未就绪（状态={media_status}），延迟重试跳转 position={self._pending_seek_position}")
             # 每秒重试一次，最多重试 5 次
             self._pending_seek_attempts += 1
             if self._pending_seek_attempts <= 5:
