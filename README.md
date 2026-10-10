@@ -1,3 +1,5 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 # 多媒体播放器
 
 ## 简介
@@ -26,6 +28,11 @@ Python 3.9.13
 
 ## 感谢
 
+> This is an optional voluntary donation to support project development.
+> Donation is NOT required to use this software and grants no commercial license.
+
 如果这个工具帮到了您，欢迎随意赞赏，无论多少都是对我最大的鼓励！
 
 ![pay.jpg](img/pay.jpg)
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
