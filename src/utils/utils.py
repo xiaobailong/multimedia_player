@@ -27,10 +27,13 @@ def get_app_data_path():
     获取应用程序的数据存储目录（数据库、日志等）。
 
     在 macOS 下使用 ~/Library/Application Support/多媒体播放器/
+    在 Windows/PyInstaller 打包后使用可执行文件所在目录下的 data/ 子目录
     确保该目录存在且有写入权限。
     """
     if sys.platform == 'darwin':
         data_dir = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', '多媒体播放器')
+    elif getattr(sys, 'frozen', False):
+        data_dir = os.path.join(os.path.dirname(sys.executable), 'data')
     else:
         data_dir = os.path.join(os.path.dirname(get_resource_base_path()), 'data')
 
