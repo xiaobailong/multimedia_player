@@ -210,7 +210,7 @@ echo.>> "!NOTES_FILE!"
 
 if "!HAS_ZIP!"=="1" (
     set "PRODUCT_LINE=!APP_NAME!_v!VERSION!.zip (!ZIP_SIZE! bytes)"
-    echo - **便携版 (ZIP)**: !APP_NAME!_v!VERSION!.zip>> "!NOTES_FILE!"
+    echo - [便携版 ZIP]: !APP_NAME!_v!VERSION!.zip>> "!NOTES_FILE!"
     echo   - 大小: !ZIP_SIZE! bytes>> "!NOTES_FILE!"
     echo   - SHA-256: `!ZIP_SHA!`>> "!NOTES_FILE!"
     echo   - 解压后运行 `!APP_NAME!\!APP_NAME!.exe`>> "!NOTES_FILE!"
@@ -218,7 +218,7 @@ if "!HAS_ZIP!"=="1" (
 )
 if "!HAS_EXE!"=="1" (
     set "PRODUCT_LINE=!APP_NAME!_v!VERSION!.exe (!EXE_SIZE! bytes)"
-    echo - **单文件版 (EXE)**: !APP_NAME!_v!VERSION!.exe>> "!NOTES_FILE!"
+    echo - [单文件版 EXE]: !APP_NAME!_v!VERSION!.exe>> "!NOTES_FILE!"
     echo   - 大小: !EXE_SIZE! bytes>> "!NOTES_FILE!"
     echo   - SHA-256: `!EXE_SHA!`>> "!NOTES_FILE!"
     echo   - 直接双击运行，无需安装>> "!NOTES_FILE!"
