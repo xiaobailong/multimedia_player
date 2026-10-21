@@ -35,16 +35,17 @@
 ### 3. `.bat` 文件编码必须是 UTF-8 无 BOM + CRLF；`chcp 65001` 位置有讲究
 - **现象**：
   1. `.bat` 文件带 BOM 时第一行 `@echo off` 变 garbage（cmd 报错/首行不生效）
-  2. `chcp 65001` 放在 `title` **之前**会导致 title 中文行被 cmd 错误解析（如 `'uild' is not recognized`）
+  2. `chcp 65001` 放在任何中文行**之前**→ 后续所有中文行被 cmd 错误解析（如 `'uild' is not recognized`、`'参数时，通过' is not recognized`）
   3. 完全不用 `chcp 65001` 时，UTF-8 中文 echo 在 GBK 默认代码页的 cmd 窗口中显示为乱码
 - **原因**：
   1. cmd.exe 对 BOM 敏感
-  2. `chcp 65001` 切换代码页后，cmd 重新解析 `title` 行中的多字节 UTF-8 中文时发生字节混淆
+  2. `chcp 65001` 切换代码页后，cmd 重新解析后续行中的多字节 UTF-8 中文时发生字节错位，REM 关键字丢失、title 参数被截断
   3. cmd 默认代码页是 GBK（936），直接输出 UTF-8 中文 = 乱码
 - **解决方案/规避**：
   1. `.bat` 文件：UTF-8 无 BOM、CRLF 行尾
-  2. `chcp 65001 >nul 2>nul` 必须放在 `title` **之后**、第一个中文 echo **之前**
+  2. `chcp 65001 >nul 2>nul` 必须出现在**所有中文行之后**：PASS 1 中放在 `if` 块内（仅影响子进程编码），PASS 2 中放在 `title` **之后**、第一个中文 echo **之前**
   3. 标题行保留中文也没问题（只要 `chcp` 在其后）
+  4. **切勿**把 `chcp 65001` 放在脚本开头（第 2 行），会导致整个脚本的中文 REM/title 全部错位
 
 ### 4. 批处理 `if/for ( )` 块内 `%ERRORLEVEL%` 取到旧值
 - **现象**：`( )` 块内用 `%ERRORLEVEL%` 判断上一条命令的退出码，永远走到旧值对应的分支（假成功/假失败）

@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 >nul 2>nul
 setlocal enabledelayedexpansion
 
 REM ============================================
@@ -23,6 +22,7 @@ REM  原理：无 --log 参数时，通过 PowerShell 管道
 REM  重新调用自身，将所有输出同时写入控制台和日志文件
 REM ============================================
 if "%~1" NEQ "--log" (
+    chcp 65001 >nul 2>nul
     if not exist "%PROJECT_ROOT%build" mkdir "%PROJECT_ROOT%build" 2>nul
     powershell -NoProfile -Command ^
         "$OutputEncoding = [Console]::OutputEncoding = [Console]::InputEncoding = [Text.Encoding]::UTF8; " ^
@@ -39,6 +39,9 @@ REM  PASS 2: 实际构建逻辑（仅在 --log 模式下执行）
 REM ============================================
 
 title 多媒体播放器 Build
+
+REM 切换控制台编码为 UTF-8，使中文输出正常显示（必须在 title 之后，避免 cmd 解析错位）
+chcp 65001 >nul 2>nul
 
 REM ---- 切换到项目根目录 ----
 cd /d "%PROJECT_ROOT%"
