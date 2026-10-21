@@ -12,10 +12,15 @@ libs/ffmpeg/ffmpeg.exe
 build/
 dist/
 *.spec
+*.sha256
+release_notes_*.md
 
 # 运行时数据
 player.db
 log/
+
+# 临时文件目录（Cline 工作产物）
+/tmp/
 
 # Python 缓存
 __pycache__/

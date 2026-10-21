@@ -1,1 +1,0 @@
-cd '/Users/gaoqingyue/WorkSpace/Code/multimedia_player/' && '/usr/local/bin/python3'  '/Users/gaoqingyue/WorkSpace/Code/multimedia_player/Player.py'  && echo Exit status: $? && exit 1

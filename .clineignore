@@ -1,0 +1,48 @@
+# .clineignore —— 让 Cline 别扫构建产物（token 最大的一处浪费）
+# 语法同 .gitignore（含 `!` 反选）。
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyc.bak
+
+# 构建产物（PyInstaller）
+/build/
+/dist/
+*.spec
+*.sha256
+
+# 二进制 / 分发产物
+*.exe
+*.dll
+*.pyd
+*.zip
+*.7z
+*.tar.gz
+
+# 运行时数据
+*.db
+log/
+
+# 临时文件
+/tmp/
+
+# 文档配图
+img/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# 私密 / 凭据
+*.key
+*.pem
+*.jks
+*.keystore
+key.properties
