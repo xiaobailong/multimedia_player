@@ -19,6 +19,8 @@ if !ERRORLEVEL! neq 0 (
 
 title 多媒体播放器 Clean
 
+chcp 65001 >nul 2>nul
+
 echo.
 echo ============================================
 echo  清理构建产物
