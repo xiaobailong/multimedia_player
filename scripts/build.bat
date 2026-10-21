@@ -28,7 +28,7 @@ if "%~1" NEQ "--log" (
         "$OutputEncoding = [Console]::OutputEncoding = [Console]::InputEncoding = [Text.Encoding]::UTF8; " ^
         "$utf8NoBom = [Text.UTF8Encoding]::new($false); " ^
         "$sw = [System.IO.StreamWriter]::new('%PROJECT_ROOT%build\build_full.log', $false, $utf8NoBom); $sw.AutoFlush = $true; " ^
-        "try { cmd /c '%~f0 --log %*' 2>&1 | ForEach-Object { Write-Host $_; $sw.WriteLine($_) } } finally { $sw.Close(); exit $LASTEXITCODE }"
+        "try { cmd /c 'chcp 65001 ^>nul 2^>nul ^&^& call %~f0 --log %*' 2>&1 | ForEach-Object { Write-Host $_; $sw.WriteLine($_) } } finally { $sw.Close(); exit $LASTEXITCODE }"
     exit /b
 ) else (
     shift
