@@ -70,6 +70,7 @@
 | Pillow | ≥10.4.0 |
 | loguru | 0.7.0 |
 | send2trash | 1.8.3 |
+| platformdirs | —（跨平台配置目录定位） |
 | apsw | — |
 | cryptography | ≥42（私密模式 AES-256-GCM） |
 | pywin32 | —（仅 Windows） |
@@ -170,10 +171,15 @@ multimedia_player/
 │   └── utils/                        # 工具层
 │       └── utils.py                  # 通用工具函数
 ├── scripts/                          # 构建与发布脚本
-│   ├── build.bat                     # Windows 一键构建
+│   ├── build.bat                     # Windows 一键构建（含 onedir + onefile + zip + Release）
+│   ├── build_onedir.bat              # 仅构建目录版
+│   ├── build_onefile.bat             # 仅构建单文件版
 │   ├── build_mac.sh                  # macOS 构建
+│   ├── clean.bat                     # 清理构建产物
 │   ├── push_release.bat              # GitHub Release 推送
-│   └── start.sh                      # 启动脚本
+│   ├── start.sh                      # 启动脚本
+│   └── tools/
+│       └── bump_version.ps1          # 版本号自增工具
 ├── 解码器/                            # LAVFilters 安装包
 └── img/                              # 文档配图
 ```
