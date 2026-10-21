@@ -8,7 +8,7 @@ import send2trash
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtCore import QTranslator, QLibraryInfo
-from PyQt5.QtGui import QFontMetrics, QKeySequence
+from PyQt5.QtGui import QFontMetrics, QKeySequence, QPixmap, QPainter, QPen, QColor, QPolygon
 from PyQt5.QtMultimedia import QMediaContent
 from PyQt5.QtWidgets import QApplication
 
@@ -21,7 +21,7 @@ from src import VideoShowLayout
 from src import CustomTitleBar
 from src.private_mode.private_batch_thread import PrivateBatchThread
 from src.private_mode.private_service import PrivateService
-from src.utils.utils import get_log_path
+from src.utils.utils import get_log_path, get_app_data_path
 
 import warnings
 
@@ -86,6 +86,49 @@ def _install_chinese_translator():
     button_translator = _StandardButtonTranslator(app)
     app.installTranslator(button_translator)
     app._zh_cn_button_translator = button_translator
+
+
+def _draw_tree_branch_icon(path, expanded, color='#a6adc8'):
+    """画一个浅色 chevron（收起 → `>`，展开 → `v`），用于目录树 branch 指示器。"""
+    pixmap = QPixmap(16, 16)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    pen = QPen(QColor(color))
+    pen.setWidth(2)
+    pen.setCapStyle(Qt.RoundCap)
+    pen.setJoinStyle(Qt.RoundJoin)
+    painter.setPen(pen)
+    if expanded:
+        points = [QPoint(4, 6), QPoint(8, 10), QPoint(12, 6)]
+    else:
+        points = [QPoint(6, 4), QPoint(10, 8), QPoint(6, 12)]
+    painter.drawPolyline(QPolygon(points))
+    painter.end()
+    pixmap.save(path)
+    return path.replace('\\', '/')
+
+
+def _ensure_tree_branch_icons():
+    """生成（或复用）目录树展开 / 收起箭头图标，返回 (closed_url, open_url)。
+
+    为什么不用 Qt 默认绘制：样式表里出现 `QTreeView::branch` 规则后，
+    没有显式 image 的状态会由样式引擎用接近底色的颜色绘制，
+    深色主题下"展开后的收起箭头"几乎与背景同色、看不见（见 ISSUE-008）。
+    这里自绘两个浅色 chevron，closed / open 两种状态都显式指定 image。
+    """
+    icon_dir = os.path.join(get_app_data_path(), 'theme')
+    os.makedirs(icon_dir, exist_ok=True)
+    closed_path = os.path.join(icon_dir, 'tree_branch_closed.png')
+    open_path = os.path.join(icon_dir, 'tree_branch_open.png')
+    try:
+        if not os.path.isfile(closed_path):
+            _draw_tree_branch_icon(closed_path, expanded=False)
+        if not os.path.isfile(open_path):
+            _draw_tree_branch_icon(open_path, expanded=True)
+    except Exception as e:
+        logger.warning(f'生成目录树箭头图标失败: {e}')
+    return closed_path.replace('\\', '/'), open_path.replace('\\', '/')
 
 
 class FileDisplayDelegate(QStyledItemDelegate):
@@ -168,6 +211,9 @@ class MainWindow(QMainWindow):
         self.resize(win_w, win_h)
 
         # ---- 全局暗色主题 ----
+        # 目录树展开/收起箭头：closed / open 两种状态都显式指定 image
+        # （原来 closed 只有 border-image: none，open 没有图像 ⇒ 展开后的箭头与深色背景同色、看不见）
+        branch_closed_icon, branch_open_icon = _ensure_tree_branch_icons()
         self.setStyleSheet("""
             QMainWindow, QWidget {
                 background-color: #1e1e2e;
@@ -257,7 +303,11 @@ class MainWindow(QMainWindow):
                 background-color: #313244;
             }
             QTreeView::branch:has-children:closed {
+                image: url("__TREE_BRANCH_CLOSED__");
                 border-image: none;
+            }
+            QTreeView::branch:has-children:open {
+                image: url("__TREE_BRANCH_OPEN__");
             }
             QHeaderView::section {
                 background-color: #181825;
@@ -310,7 +360,8 @@ class MainWindow(QMainWindow):
                 background-color: #89b4fa;
                 border-radius: 3px;
             }
-        """)
+        """.replace('__TREE_BRANCH_CLOSED__', branch_closed_icon)
+           .replace('__TREE_BRANCH_OPEN__', branch_open_icon))
 
         self.mainQWidget = QSplitter(Qt.Horizontal)
 
@@ -571,10 +622,8 @@ class MainWindow(QMainWindow):
         if os.path.isfile(self.path_right_click):
             return
 
-        self.config_manager.add_or_update(PicInputLayout.pic_show_list_key, self.path_right_click)
         self.change_show(MainWindow.show_type_pic)
-        self.inputAndExeLayout.inputPath.setText(self.path_right_click)
-        self.inputAndExeLayout.load_pic_list()
+        self.inputAndExeLayout.set_content_path(self.path_right_click)
 
     def delete(self):
         try:
@@ -605,8 +654,7 @@ class MainWindow(QMainWindow):
         if os.path.isdir(self.path):
             if not self.pic_show_qwidget.isVisible():
                 self.change_show(MainWindow.show_type_pic)
-            self.inputAndExeLayout.inputPath.setText(self.path)
-            self.inputAndExeLayout.load_pic_list()
+            self.inputAndExeLayout.set_content_path(self.path)
         elif os.path.isfile(self.path):
             if self.video_show_layout.is_video(self.path):
                 # 点击单个视频：退出列表播放模式
@@ -651,6 +699,8 @@ class MainWindow(QMainWindow):
         self.statusbar.setVisible(True)
         # 恢复标题栏
         self.title_bar.setVisible(True)
+        # 恢复菜单栏（全屏时被隐藏）
+        self.menu_bar.setVisible(True)
         self._central_widget.setStyleSheet("""
             #centralWidget {
                 background-color: #1e1e2e;
@@ -746,6 +796,8 @@ class MainWindow(QMainWindow):
         self.statusbar.setVisible(False)
         # 隐藏标题栏
         self.title_bar.setVisible(False)
+        # 全屏时隐藏菜单栏（Esc / F 退出全屏后恢复）
+        self.menu_bar.setVisible(False)
         self._central_widget.setStyleSheet("""
             #centralWidget {
                 background-color: #1e1e2e;
@@ -784,6 +836,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         """关闭窗口时清理视频播放器资源，防止 macOS AVFoundation 崩溃"""
+        # 停止后台目录扫描线程，避免退出时 QThread 仍在运行
+        if hasattr(self, 'inputAndExeLayout'):
+            self.inputAndExeLayout.cancel_scan(wait_ms=1500)
         if hasattr(self, 'video_show_layout'):
             # 关闭前先保存当前播放位置（无论是否处于暂停状态）
             if self.video_show_layout.path and os.path.exists(self.video_show_layout.path):
@@ -944,6 +999,26 @@ class MainWindow(QMainWindow):
         self.private_mode_action.triggered.connect(lambda checked: checked and self._toggle_private_mode(True))
         mode_group.addAction(self.private_mode_action)
         view_menu.addAction(self.private_mode_action)
+
+        # ---- 控制菜单（图片悬浮控制栏的显隐）----
+        control_menu = self.menu_bar.addMenu("控制(&C)")
+
+        self.show_control_action = QAction("显示控制器", self)
+        self.show_control_action.setCheckable(True)
+        self.show_control_action.setChecked(True)
+        self.show_control_action.triggered.connect(self._toggle_pic_control_panel)
+        control_menu.addAction(self.show_control_action)
+
+        # 点击面板 ✕ 隐藏后，回写菜单勾选状态
+        self.pic_show_layout.controlPanelVisibilityChanged.connect(
+            self._on_pic_control_panel_visibility_changed)
+
+        # ---- 设置菜单 ----
+        settings_menu = self.menu_bar.addMenu("设置(&S)")
+
+        self.slideshow_settings_action = QAction("幻灯片...", self)
+        self.slideshow_settings_action.triggered.connect(self._show_slideshow_settings)
+        settings_menu.addAction(self.slideshow_settings_action)
 
         # ---- 帮助菜单 ----
         help_menu = self.menu_bar.addMenu("帮助(&H)")
@@ -1153,7 +1228,10 @@ class MainWindow(QMainWindow):
             self.notice('没有可展示的图片（可能是缺少配套密钥）')
             return
 
-        self.inputAndExeLayout.inputPath.setText(dir_path)
+        # 私密模式：文件已解密到缓存目录，列表直接用解密后的明文路径
+        # （先取消后台扫描，避免其它目录的扫描结果覆盖这里的列表）
+        self.inputAndExeLayout.cancel_scan()
+        self.inputAndExeLayout.content_path = dir_path
         self.inputAndExeLayout.list_files.clear()
         self.inputAndExeLayout.list_files.extend(playable)
         self.pic_show_layout.counter = 0
@@ -1425,6 +1503,55 @@ class MainWindow(QMainWindow):
                 info.get('created_at') or '-',
                 info.get('encrypted_count', 0),
                 '有' if info.get('salt') else '无'))
+
+    def _show_slideshow_settings(self):
+        """「设置 → 幻灯片」：调整幻灯片自动播放的时间间隔（秒），确认后立即生效并持久化。"""
+        layout = self.inputAndExeLayout
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("幻灯片设置")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(360)
+
+        spin = QSpinBox()
+        spin.setRange(PicInputLayout.min_interval_seconds, PicInputLayout.max_interval_seconds)
+        spin.setSuffix(" 秒")
+        spin.setValue(layout.get_interval_seconds())
+
+        form = QFormLayout()
+        form.setContentsMargins(20, 16, 20, 8)
+        form.setSpacing(10)
+        form.addRow("幻灯片播放时间间隔:", spin)
+
+        tip = QLabel("设置后立即生效，下次启动沿用该间隔。")
+        tip.setWordWrap(True)
+        form.addRow(tip)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        root = QVBoxLayout(dialog)
+        root.addLayout(form)
+        root.addWidget(buttons)
+
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        seconds = layout.set_interval_seconds(spin.value())
+        self.notice("幻灯片时间间隔已设置为 %d 秒" % seconds)
+
+    def _toggle_pic_control_panel(self, checked):
+        """菜单「控制 → 显示控制器」：勾选显示、取消隐藏。"""
+        if checked:
+            self.pic_show_layout.show_control_panel()
+        else:
+            self.pic_show_layout.hide_control_panel()
+
+    def _on_pic_control_panel_visibility_changed(self, visible):
+        """点击悬浮面板上的 ✕ 隐藏后，同步菜单勾选状态。"""
+        if hasattr(self, 'show_control_action'):
+            self.show_control_action.setChecked(visible)
 
     def _show_about_dialog(self):
         """显示关于对话框"""

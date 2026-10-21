@@ -17,6 +17,7 @@ player.db
 log/
 private_keys.db
 private_cache/
+data/theme/
 
 # 临时文件目录（Cline 工作产物）
 /tmp/

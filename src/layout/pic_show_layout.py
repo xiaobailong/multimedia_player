@@ -4,7 +4,7 @@ import send2trash
 from PIL import Image
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-from PyQt5.QtGui import (QPixmap, QImage)
+from PyQt5.QtGui import (QPixmap, QImage, QColor)
 
 from loguru import logger
 
@@ -12,6 +12,52 @@ from src.layout.pic_input_layout import PicInputLayout
 
 
 class PicShowLayout(QVBoxLayout):
+    # 悬浮控制面板显隐变化，供菜单「控制 → 显示控制器」同步勾选状态
+    controlPanelVisibilityChanged = pyqtSignal(bool)
+    # 悬浮控制面板距图片区底部的间距（像素）
+    CONTROL_PANEL_BOTTOM_MARGIN = 24
+
+    # 暗黑透明玻璃风格：半透明底 + 细描边 + 圆角
+    # （Qt5 无法做真实高斯模糊，用半透明叠色 + 描边 + 投影模拟）
+    CONTROL_PANEL_QSS = """
+        #picControlPanel {
+            background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                stop:0 rgba(58, 58, 80, 150),
+                stop:0.5 rgba(36, 36, 54, 140),
+                stop:1 rgba(22, 22, 34, 158));
+            border: 1px solid rgba(205, 214, 244, 55);
+            border-radius: 14px;
+        }
+        #picControlPanel QPushButton {
+            background-color: rgba(255, 255, 255, 20);
+            color: #cdd6f4;
+            border: 1px solid rgba(205, 214, 244, 35);
+            border-radius: 9px;
+            padding: 4px 12px;
+            font-size: 12px;
+        }
+        #picControlPanel QPushButton:hover {
+            background-color: rgba(137, 180, 250, 70);
+            border-color: rgba(137, 180, 250, 150);
+            color: #ffffff;
+        }
+        #picControlPanel QPushButton:pressed {
+            background-color: rgba(137, 180, 250, 120);
+        }
+        #picControlClose {
+            background-color: rgba(255, 255, 255, 30);
+            color: rgba(205, 214, 244, 220);
+            border: none;
+            border-radius: 12px;
+            padding: 0px;
+            font-size: 13px;
+            font-weight: bold;
+        }
+        #picControlClose:hover {
+            background-color: rgba(243, 139, 168, 190);
+            color: #1e1e2e;
+        }
+    """
 
     def __init__(self, main_window, *args, **kwargs):
         super(*args, **kwargs).__init__(*args, **kwargs)
@@ -23,10 +69,11 @@ class PicShowLayout(QVBoxLayout):
         self.scale = (main_window.right * 4 + 3) / ((main_window.right + main_window.left) * 4)
 
         self.inputAndExeLayout = PicInputLayout(self)
+        # 控制按钮不再放在顶部：改为悬浮在图片区底部居中的玻璃面板（见 _setup_control_panel）
         self.inputQWidget = QWidget()
-        self.inputAndExeLayout.setContentsMargins(0, 0, 0, 0)
         self.inputQWidget.setLayout(self.inputAndExeLayout)
-        self.addWidget(self.inputQWidget)
+        self.control_panel = self.inputQWidget
+        self.control_panel_visible = True
 
         self.inputAndExeLayout.btn.pressed.connect(self.start_process)
         self.inputAndExeLayout.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
@@ -56,8 +103,73 @@ class PicShowLayout(QVBoxLayout):
         self.qscrollarea.setWidget(self.pictureQLabel)
         self.addWidget(self.qscrollarea)
 
+        # 悬浮控制面板：覆盖在图片区底部居中（暗黑透明玻璃效果）
+        self._setup_control_panel()
+
         # 监听窗口大小变化：窗口缩放时自动等比例缩放当前显示内容
         self.main_window.installEventFilter(self)
+
+    def _setup_control_panel(self):
+        """把控制按钮做成悬浮在图片区底部居中、右上角带关闭徽标的暗黑玻璃面板。"""
+        # 面板以 viewport 为父控件：只在图片区域内浮动，且始终盖在图片之上
+        self.control_panel.setParent(self.qscrollarea.viewport())
+        self.control_panel.setObjectName("picControlPanel")
+        # 显式开启样式表背景绘制（对纯 QWidget 更稳妥）
+        self.control_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.control_panel.setStyleSheet(self.CONTROL_PANEL_QSS)
+
+        # 关闭按钮与操作按钮同一行、排在最右侧
+        self.inputAndExeLayout.setContentsMargins(12, 6, 8, 6)
+        self.inputAndExeLayout.setSpacing(8)
+
+        self.close_control_btn = QPushButton("✕")
+        self.close_control_btn.setObjectName("picControlClose")
+        self.close_control_btn.setFixedSize(24, 24)
+        self.close_control_btn.setToolTip("隐藏控制栏（菜单「控制 → 显示控制器」可恢复）")
+        self.close_control_btn.setCursor(Qt.PointingHandCursor)
+        self.close_control_btn.clicked.connect(self.hide_control_panel)
+        self.inputAndExeLayout.addWidget(self.close_control_btn)
+
+        try:
+            shadow = QGraphicsDropShadowEffect(self.control_panel)
+            shadow.setBlurRadius(26)
+            shadow.setOffset(0, 4)
+            shadow.setColor(QColor(0, 0, 0, 150))
+            self.control_panel.setGraphicsEffect(shadow)
+        except Exception as e:
+            logger.warning(f"控制面板阴影效果创建失败: {e}")
+
+        self.control_panel.show()
+        self.qscrollarea.viewport().installEventFilter(self)
+        QTimer.singleShot(0, self._position_control_panel)
+
+    def _position_control_panel(self):
+        """把控制面板定位到图片区底部居中。"""
+        panel = getattr(self, 'control_panel', None)
+        if panel is None:
+            return
+        viewport = self.qscrollarea.viewport()
+        if viewport is None or viewport.width() <= 0 or viewport.height() <= 0:
+            return
+        panel.adjustSize()
+        x = max(0, (viewport.width() - panel.width()) // 2)
+        y = max(0, viewport.height() - panel.height() - self.CONTROL_PANEL_BOTTOM_MARGIN)
+        panel.move(x, y)
+        panel.raise_()
+
+    def show_control_panel(self):
+        """显示悬浮控制面板（菜单「控制 → 显示控制器」）。"""
+        self.control_panel_visible = True
+        self.control_panel.show()
+        self.control_panel.raise_()
+        self._position_control_panel()
+        self.controlPanelVisibilityChanged.emit(True)
+
+    def hide_control_panel(self):
+        """隐藏悬浮控制面板（点击面板上的 ✕）。"""
+        self.control_panel_visible = False
+        self.control_panel.hide()
+        self.controlPanelVisibilityChanged.emit(False)
 
     def play(self, filePath):
         self.path = filePath
@@ -305,8 +417,9 @@ class PicShowLayout(QVBoxLayout):
         else:
             self.qscrollarea.setGeometry(
                 QRect(0, 0, self.main_window.mainQWidget.width(), self.main_window.mainQWidget.height()))
-        self.inputQWidget.setVisible(visible)
-        self.titleQLabel.setVisible(visible)
+        # 控制面板是 viewport 的子控件，随图片区一起显隐；自身显隐由 ✕ / 菜单控制
+        self.titleQLabel.setVisible(False)
+        self._position_control_panel()
 
     def refreshPictures(self):
         self.counter += 1
@@ -334,8 +447,13 @@ class PicShowLayout(QVBoxLayout):
         self.refreshPicturesOnly()
 
     def start_process(self):
+        # 目录扫描在后台线程执行：列表为空时先请求扫描，
+        # 扫描完成的回调（PicInputLayout._on_scan_finished）里会自动开始播放
         if len(self.inputAndExeLayout.list_files) == 0:
+            self.inputAndExeLayout.load_pic_list(start_slideshow=True)
             return
+        if self.counter < 0 or self.counter >= len(self.inputAndExeLayout.list_files):
+            self.counter = 0
         self.inputAndExeLayout.timer.start()
         self.play(self.inputAndExeLayout.list_files[self.counter])
 
@@ -367,5 +485,7 @@ class PicShowLayout(QVBoxLayout):
             # 窗口缩放时重绘静态图片
             if hasattr(self, '_current_static_image') and self._current_static_image is not None:
                 self._render_static_image()
+            # 图片区尺寸变化后重新把控制面板贴到底部居中
+            self._position_control_panel()
             # GIF 帧缩放由 _advance_gif_frame 每次绘制时获取最新窗口尺寸处理
         return super().eventFilter(obj, event)

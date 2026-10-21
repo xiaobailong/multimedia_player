@@ -60,6 +60,14 @@
 | PowerShell 跑 Python 报 `NativeCommandError` / 输出乱码 | `PIT-007` |
 | QMessageBox 按钮还是 `&Yes / &No / OK / Cancel` | `PIT-008`（qt_zh_CN.qm 不够，要兜底 QTranslator） |
 | `QMediaPlayer` 报 `ResourceError`、任何本地视频都放不了 | `ISSUE-006`（未定位，明文同样失败 ⇒ 与加密无关） |
+| 幻灯片间隔要持久化 / 播放区路径与刷新间隔输入框已移除 | `ADR-010`（设置菜单 → 幻灯片弹框） |
+| `run_commands` 内联 PowerShell 的 `$` 变量消失、`foreach` 报语法错 | `PIT-009`（改用 `tmp\` 下的脚本文件） |
+| `read_files` 对同一文件的行段读取返回 `[outdated - see the latest file content]` | `PIT-010`（先导出到 `tmp\` 再读） |
+| 图片控制栏要悬浮在底部居中 / 玻璃效果 / 关闭与恢复显示 | `ADR-011`（控制菜单 → 显示控制器） |
+| offscreen 抓图里按钮文字全空白 | `PIT-011`（offscreen 无字体，改用 windows 平台抓图） |
+| 点击左侧树目录后程序无响应/被关闭（像是崩溃） | `ISSUE-007`（GUI 线程同步 `os.walk`）、`ADR-012`（后台扫描线程） |
+| 报“崩溃”但日志无 traceback，怎么判断是卡死还是崩溃 | `PIT-012`（事件查看器 AppHang≠Application Error + faulthandler） |
+| 目录树展开后收起箭头看不见（与深色背景同色） | `ISSUE-008`（QSS `::branch` 缺 open 图像）、`ADR-013` |
 
 ## 5. 条目模板
 
@@ -100,4 +108,4 @@
 
 ---
 
-最后更新: 2026-10-21（新增 ADR-009 私密模式/privi 兼容方案、ISSUE-005、PIT-005~007）
+最后更新: 2026-10-21（新增 ISSUE-008 目录树箭头不可见、ADR-013 箭头图标方案；ADR-011 复核见前次）

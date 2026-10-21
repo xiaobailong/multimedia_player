@@ -121,3 +121,80 @@
   本条目就是靠对照组排除的
 - 相关文件: `Player.py`（视频播放链路未改动）、`src/private_mode/private_service.py`
 - 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
+
+## ISSUE-007 点击左侧树目录后“程序崩溃”：实际是 GUI 线程被 os.walk 卡死（Windows AppHang）
+- 状态: 已修复
+- 症状 / 现场: 点击左侧目录树里的目录后程序无响应，约 30~40 秒后被 Windows 关闭（用户感知为“崩溃”）；
+  `data/log/file_*.log` 只有启动日志、没有异常栈，最后一条是启动期的“数据库路径”
+- 复发判据:
+  ① 事件查看器里能看到 python.exe 的 **Application Hang (Id=1002)** + WER `EventType=AppHangB1`
+     （不是 Application Error(1000)）；
+  ② 带 faulthandler 的复现脚本点一次大目录，20 秒后打印的栈落在
+     `src/layout/pic_input_layout.py` 的 `loadData` → `<frozen os> ... walk`（不是 Qt 内部）
+- 根因: `PicInputLayout.loadData()` 在 GUI 线程里同步 `os.walk` 目标目录，并对每个文件调 `os.path.getmtime`；
+  目录大（实测 `C:\Windows\WinSxS` 20s 扫不完）或文件系统被安全软件/DLP 挂钩时，
+  事件循环被长时间占住 ⇒ Windows 判定“未响应”并强制关闭。
+  （历史遗留的同步扫描，不是本次 UI 改造引入；只是点到的大目录把问题暴露出来）
+- 证据:
+  1. WER 报告：`EventType=AppHangB1`、`IsFatal=1`、`UI[3]=Python 未响应`、`UI[5]=关闭程序`；
+     日志里没有任何 Python traceback（AppHang ≠ Application Error）；
+  2. 复现脚本（`faulthandler.dump_traceback_later(20, exit=True)`）点击 `C:\Windows\WinSxS` 后输出：
+     ```
+     Timeout (0:00:20)!
+     Thread 0x00004110 (most recent call first):
+       File "<frozen os>", line 377 in walk
+       .../src/layout/pic_input_layout.py, line 105 in loadData
+       .../src/layout/pic_input_layout.py, line 53 in set_content_path
+       .../Player.py, line 606 in on_tree_clicked
+     ```
+  3. 改造前点击仓库根（含 `.venv`）同步耗时 2.76s；改造后同一操作 0.042s 返回，扫描在后台继续；
+     扫描 `WinSxS` 期间 50ms 心跳定时器 1 秒内触发 16 次 ⇒ 事件循环存活。
+- 修法:
+  1. 新增 `src/layout/pic_scan_thread.py::PicScanThread`（QThread，信号 `scanned(token, path, files)`），
+     扫描全部移到后台线程；用 `os.scandir` 递归（Windows 下 stat 结果缓存，比 walk+getmtime 快），
+     逐条目检查 `isInterruptionRequested()`；
+  2. `PicInputLayout.loadData()` 改为启动线程（不再阻塞），token 递增丢弃过期结果，
+     新请求会中断旧线程；`cancel_scan()` 用于私密模式手工填列表 / 关窗；
+  3. 「幻灯片」在列表为空时用 `_pending_slideshow` 记下意图，扫描完成的回调里自动开始播放；
+  4. `MainWindow.closeEvent` 里 `cancel_scan(wait_ms=1500)`，避免退出时 QThread 仍在跑。
+- 反例 / 易误判:
+  - 看到“程序没了 + 日志无异常”就当段错误/闪退 —— 先查事件查看器：AppHang(1002) 是 UI 阻塞，
+    Application Error(1000) 才是崩溃；
+  - 怀疑 `QGraphicsDropShadowEffect` / 悬浮面板 / `raise_()`（本轮 UI 改造的嫌疑对象），
+    实际栈在 `os.walk`；
+  - 怀疑 `QDirModel` 展开目录慢（实测 `expand()` 0.000s，慢的是我们自己的递归扫描）。
+- 相关文件: `src/layout/pic_input_layout.py`、`src/layout/pic_scan_thread.py`、
+  `src/layout/pic_show_layout.py`、`Player.py`
+- 相关条目: `PIT-012`（AppHang vs Application Error 判定与 faulthandler 定位）、`ADR-012`
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
+
+## ISSUE-008 目录树展开后"收起箭头"看不见：与深色底同色
+- 状态: 已修复
+- 症状 / 现场: 左侧目录树里未展开的目录有浅灰 `>` 箭头，点击展开后箭头变成几乎看不见的暗色
+  （只有一层比背景略深/略浅的痕迹），用户误以为按钮消失了
+- 复发判据: 启动后展开任意目录，抓 `treeView` 截图；展开行的 branch 区域（条目左侧、缩进区内）
+  取样只剩背景色 `#1e1e2e`，而同高度未展开行能取到 `#a6adc8` 附近的亮像素
+- 根因: `Player.py` 全局样式表里只声明了
+  `QTreeView::branch:has-children:closed { border-image: none; }`，
+  **open（展开）状态没有任何 image/border-image**。样式表一旦接管 `::branch`，
+  没有显式图像的状态就由样式引擎按接近底色的颜色自绘 ⇒ 深色主题下展开箭头与背景同色。
+- 证据:
+  1. 修复前抓图（`tmp/tree_crop.png`）：未展开行有浅灰 `>`；展开的 `src` 行箭头是暗色、几乎不可辨；
+  2. 修复前后像素统计（同一段代码采样 branch 区亮像素，阈值 RGB 均 >110）：
+     修复前 open 行 = 0（只有 `#1e1e2e`）；修复后 open 行 = 28、closed 行 = 28，两者一致；
+  3. 试验对比：仅去掉 branch 规则仍不可见；给 open 加 `image:` 后立刻正常 ⇒ 与"缺少显式图像"直接相关。
+- 修法:
+  1. `Player.py` 新增 `_draw_tree_branch_icon()` / `_ensure_tree_branch_icons()`：
+     用 `QPainter` 画两个 16×16 浅色 chevron（收起 `>`、展开 `v`，颜色 `#a6adc8`），
+     首次启动写到 `data/theme/tree_branch_{closed,open}.png`（已存在则复用，不重复写盘）；
+  2. 样式表里 closed / open 两种状态都显式指定
+     `image: url("...")`（用 `__TREE_BRANCH_CLOSED__` / `__TREE_BRANCH_OPEN__` 占位符替换）；
+  3. `.gitignore` 增加 `data/theme/`（运行时生成的图标不入库）。
+- 反例 / 易误判:
+  - 以为是"展开后按钮被隐藏/禁用"（实际是颜色问题，箭头仍存在、可点击）；
+  - 只删掉 `::branch` 规则指望回退原生绘制（实测展开箭头依旧和背景同色）；
+  - 用固定路径的图片资源手工放仓库（换机器/打包后路径失效，且多一份二进制资产）。
+- 相关文件: `Player.py`、`.gitignore`
+- 相关条目: `ADR-013`（箭头图标方案的取舍）
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
+

@@ -99,3 +99,59 @@
 - 反例: 以为装了 qt_zh_CN.qm 就万事大吉；或给每个对话框手写 `addButton('是', ...)`
   （静态 `QMessageBox.question()` 改不了按钮，只能逐个替换，工作量大）
 - 首次记录: 2026-10-21
+
+## PIT-009 用 `run_commands` 内联执行复杂 PowerShell（`foreach` + `$` 变量）时变量名会被吞掉
+- 触发条件: 直接让工具执行
+  `powershell -NoProfile -Command "foreach($f in @('a','b')){ $b=[IO.File]::ReadAllBytes($f)[0..2]; ... }"`
+- 错误现象: 命令里的 `$f` / `$b` 全部消失，PowerShell 报
+  `Missing variable name after foreach` / `Unexpected token ')'`；
+  而同样带 `$_` 的简单管道（`Get-ChildItem ... | %{ $_.Name }`）却正常，极易误判成语法写错
+- 正确做法: 稍复杂的逻辑一律写成脚本文件放在 `tmp\` 再执行：
+  ```
+  cmd /c "set PYTHONIOENCODING=utf-8&& .venv\Scripts\python.exe tmp\probe.py > tmp\probe.txt 2>&1"
+  ```
+  单行查询改用 `cmd /c findstr /n /c:"..."`，或拆成多条最简单的 PowerShell 单行
+- 反例: 反复调引号/转义想让 `foreach` 内联跑通（耗时且结果不稳定）
+- 首次记录: 2026-10-21
+
+## PIT-010 `read_files` 对同一文件再次按行段读取会返回 `[outdated - see the latest file content]`
+- 触发条件: 先整篇读某文件（超过 2000 行 / 47k 字符被截断），再用 `start_line/end_line` 读同一文件的其它区间
+- 错误现象: 返回内容只有一行 `[outdated - see the latest file content]`，拿不到行段（文件本身没有改动）
+- 正确做法: 用 `tmp\dump_lines.py` 之类的小脚本把目标行段写到 `tmp\dump_xxx.txt`，再用 Read 读该 txt；
+  或者一开始就按行段分块读、不要先整篇读
+- 反例: 以为文件被改动或读工具坏了，转去 `SearchCodebase`（本仓库常超时，更慢）
+- 首次记录: 2026-10-21
+
+## PIT-011 offscreen 平台下 Qt 没有任何字体：抓图里按钮文字全是空白
+- 触发条件: 用 `QT_QPA_PLATFORM=offscreen` 跑 PyQt5 并 `widget.grab().save(...)` 做视觉验证
+- 错误现象: 圆角/半透明背景/布局都正常，但按钮文字（中文和 `✕`）完全不见；
+  `QFontDatabase().families()` 返回 `[]`，按钮 `font().family()` 是 `Helvetica`、`pointSizeF()` 是 `-1.0`
+- 根因: offscreen 平台插件不加载系统字体库，`QFontDatabase` 为空 ⇒ 画不出任何字形；
+  布局尺寸仍按字体度量计算，所以按钮宽度是对的，极易误判成"QSS 把文字藏了/颜色不对"
+- 正确做法: 需要看真实文字时用 Windows 平台抓图（本机自动化会话可用）：
+  ```
+  cmd /c "set PYTHONIOENCODING=utf-8&& set QT_QPA_PLATFORM=windows&& .venv\Scripts\python.exe tmp\preview.py"
+  ```
+  只验证几何/颜色/显隐逻辑时 offscreen 足够
+- 反例: 看到文字空白就反复改 `color` / `padding` / 去掉 `QGraphicsDropShadowEffect`（都不是原因）
+- 首次记录: 2026-10-21
+
+## PIT-012 区分「UI 线程卡死(AppHang)」与「真崩溃(Application Error)」，用 faulthandler 定位卡点
+- 触发条件: 用户报「点击某处程序崩溃/闪退」，但 `data/log/*.log` 里只有启动日志、没有 traceback
+- 错误现象: 误判成段错误或 PyQt 异常，去翻 UI 代码 / 加 try-except，方向全错（本次真凶是历史遗留的 `os.walk`）
+- 正确做法:
+  1. 先查事件查看器（脚本写进 `tmp\*.ps1`，别在命令里内联 `$` 变量，见 PIT-009）：
+     - **Application Hang (Id 1002)** / WER `EventType=AppHangB1` / `UI[3]=Python 未响应`
+       ⇒ GUI 线程被阻塞，程序本身没崩；
+     - **Application Error (Id 1000)** ⇒ 真崩溃（PyQt5 未捕获异常也会 abort，需要 stderr/控制台输出）。
+  2. 定位卡在哪：复现脚本开头 `faulthandler.enable()`，在可疑操作前后加
+     `faulthandler.dump_traceback_later(20, exit=True)`，超时会打印所有线程栈：
+     ```
+     cmd /c "set PYTHONIOENCODING=utf-8&& .venv\Scripts\python.exe tmp\repro.py > tmp\repro.log 2>&1"
+     ```
+  3. 栈里出现 `<frozen os> ... walk` / `scandir` / `getmtime` ⇒ 同步文件 IO 卡住 GUI 线程；
+     出现 `Qt5Widgets` 内部 ⇒ 再查重入/死循环。
+- 反例:
+  - 把「无响应被系统关掉」当崩溃上报，浪费一轮排查；
+  - 只盯着最近改过的 UI 代码找原因（本次的 `QGraphicsDropShadowEffect`/`raise_()` 全是冤枉的）。
+- 首次记录: 2026-10-21
