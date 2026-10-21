@@ -268,6 +268,7 @@ if not exist "build\dist\onefile" mkdir "build\dist\onefile" 2>nul
 echo 清理旧的 onefile 构建产物...
 if exist "build\dist\onefile\%APP_NAME%.exe" del "build\dist\onefile\%APP_NAME%.exe" 2>nul
 if exist "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" del "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" 2>nul
+if exist "build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe" del "build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe" 2>nul
 
 echo 开始打包 onefile...
 python -m PyInstaller -F -w --clean --distpath "build\dist\onefile" --workpath "build\pyi-work" --specpath "build" --hidden-import=loguru --add-data="%PROJECT_ROOT%%FFMPEG_TARGET%;ffmpeg" --name "%APP_NAME%" "%MAIN_SCRIPT%"
@@ -276,8 +277,8 @@ if !ERRORLEVEL! neq 0 (
     exit /b 1
 )
 
-REM 重命名输出文件，加上版本号
-set "ONEFILE_DEST=build\dist\onefile\%APP_NAME%_v%VERSION%.exe"
+REM 重命名输出文件，加上版本号（使用英文前缀，避免 GitHub Release 中文名丢失）
+set "ONEFILE_DEST=build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe"
 if exist "build\dist\onefile\%APP_NAME%.exe" (
     move /y "build\dist\onefile\%APP_NAME%.exe" "%ONEFILE_DEST%" >nul 2>&1
     echo onefile 构建完成: %ONEFILE_DEST%
@@ -296,15 +297,17 @@ echo ============================================
 echo  打包 ZIP
 echo ============================================
 
-set "ZIP_DEST=build\dist\%APP_NAME%_v%VERSION%.zip"
+REM 打包 zip（使用英文前缀，避免 GitHub Release 中文名丢失）
+set "ZIP_DEST=build\dist\%APP_NAME_EN%_v%VERSION%.zip"
 
 if not exist "build\dist\%APP_NAME%" (
     echo [错误] 未找到 build\dist\%APP_NAME%\，请先执行 onedir 构建
     exit /b 1
 )
 
-REM 删除旧 zip
+REM 删除旧 zip（兼容中英文前缀）
 if exist "%ZIP_DEST%" del "%ZIP_DEST%" 2>nul
+if exist "build\dist\%APP_NAME%_v%VERSION%.zip" del "build\dist\%APP_NAME%_v%VERSION%.zip" 2>nul
 
 echo 正在打包 %ZIP_DEST%...
 powershell -NoProfile -Command "Compress-Archive -Path 'build\dist\%APP_NAME%' -DestinationPath '%ZIP_DEST%' -Force"
@@ -344,11 +347,11 @@ echo  构建摘要
 echo ============================================
 echo  版本: %VERSION%
 echo  产物:
-if exist "build\dist\%APP_NAME%_v%VERSION%.zip" (
-    for %%f in ("build\dist\%APP_NAME%_v%VERSION%.zip") do echo    [ZIP]  %%~nxf  (%%~zf bytes)
+if exist "build\dist\%APP_NAME_EN%_v%VERSION%.zip" (
+    for %%f in ("build\dist\%APP_NAME_EN%_v%VERSION%.zip") do echo    [ZIP]  %%~nxf  (%%~zf bytes)
 )
-if exist "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" (
-    for %%f in ("build\dist\onefile\%APP_NAME%_v%VERSION%.exe") do echo    [EXE]  %%~nxf  (%%~zf bytes)
+if exist "build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe" (
+    for %%f in ("build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe") do echo    [EXE]  %%~nxf  (%%~zf bytes)
 )
 echo ============================================
 

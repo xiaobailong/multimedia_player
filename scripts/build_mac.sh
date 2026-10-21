@@ -131,7 +131,7 @@ echo "========================================="
 echo " 打包 ZIP"
 echo "========================================="
 
-ZIP_NAME="${APP_NAME}_v${VERSION}.zip"
+ZIP_NAME="${APP_NAME_EN}_v${VERSION}.zip"
 cd dist
 zip -r "$ZIP_NAME" "$APP_NAME.app"
 cd "$PROJECT_DIR"

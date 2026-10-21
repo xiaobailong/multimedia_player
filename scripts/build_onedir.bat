@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 
 REM ============================================
 REM  MultimediaPlayer OneDir Build Script
-REM  Usage: build_onedir [nobump]
+REM  Usage: build_onedir [nobump] [norelease]
 REM ============================================
 
 REM ---- SCRIPT_DIR / PROJECT_ROOT ----
@@ -60,6 +60,10 @@ REM ---- 参数解析 ----
 if not defined SKIP_BUMP set "SKIP_BUMP=0"
 if not "%~1"=="" for %%a in (%*) do if /i "%%a"=="nobump" set "SKIP_BUMP=1"
 
+REM ---- Release 推送开关 ----
+if not defined SKIP_RELEASE set "SKIP_RELEASE=0"
+if not "%~1"=="" for %%a in (%*) do if /i "%%a"=="norelease" set "SKIP_RELEASE=1"
+
 REM ---- 版本号递增 ----
 if "!SKIP_BUMP!"=="0" (
     call :bump_version
@@ -75,7 +79,16 @@ if !ERRORLEVEL! neq 0 exit /b 1
 call :build_onedir
 if !ERRORLEVEL! neq 0 exit /b 1
 
+call :build_zip
+if !ERRORLEVEL! neq 0 exit /b 1
+
 call :print_summary
+
+if "!SKIP_RELEASE!"=="0" (
+    echo.
+    echo 正在推送 Release...
+    call "%SCRIPT_DIR%push_release.bat"
+)
 
 echo.
 echo 构建完成，窗口将在 30 秒后关闭，或按任意键...
@@ -220,6 +233,38 @@ echo onedir 构建完成: build\dist\%APP_NAME%\
 exit /b 0
 
 REM ============================================
+REM  打包 zip（压缩目录版）
+REM ============================================
+:build_zip
+echo.
+echo ============================================
+echo  打包 ZIP
+echo ============================================
+
+REM 打包 zip（使用英文前缀，避免 GitHub Release 中文名丢失）
+set "ZIP_DEST=build\dist\%APP_NAME_EN%_v%VERSION%.zip"
+
+if not exist "build\dist\%APP_NAME%" (
+    echo [错误] 未找到 build\dist\%APP_NAME%\，请先执行 onedir 构建
+    exit /b 1
+)
+
+REM 删除旧 zip（兼容中英文前缀）
+if exist "%ZIP_DEST%" del "%ZIP_DEST%" 2>nul
+if exist "build\dist\%APP_NAME%_v%VERSION%.zip" del "build\dist\%APP_NAME%_v%VERSION%.zip" 2>nul
+
+echo 正在打包 %ZIP_DEST%...
+powershell -NoProfile -Command "Compress-Archive -Path 'build\dist\%APP_NAME%' -DestinationPath '%ZIP_DEST%' -Force"
+if !ERRORLEVEL! neq 0 (
+    echo [错误] ZIP 打包失败！
+    exit /b 1
+)
+
+for %%f in ("%ZIP_DEST%") do set "ZIP_SIZE=%%~zf"
+echo ZIP 打包完成: %ZIP_DEST% (!ZIP_SIZE! bytes)
+exit /b 0
+
+REM ============================================
 REM  打印构建摘要
 REM ============================================
 :print_summary
@@ -232,6 +277,9 @@ echo  模式: onedir（目录版）
 echo  产物:
 if exist "build\dist\%APP_NAME%" (
     echo    [DIR]  build\dist\%APP_NAME%\
+)
+if exist "build\dist\%APP_NAME_EN%_v%VERSION%.zip" (
+    for %%f in ("build\dist\%APP_NAME_EN%_v%VERSION%.zip") do echo    [ZIP]  %%~nxf  (%%~zf bytes)
 )
 echo ============================================
 

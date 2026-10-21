@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 
 REM ============================================
 REM  MultimediaPlayer OneFile Build Script
-REM  Usage: build_onefile [nobump]
+REM  Usage: build_onefile [nobump] [norelease]
 REM ============================================
 
 REM ---- SCRIPT_DIR / PROJECT_ROOT ----
@@ -60,6 +60,10 @@ REM ---- 参数解析 ----
 if not defined SKIP_BUMP set "SKIP_BUMP=0"
 if not "%~1"=="" for %%a in (%*) do if /i "%%a"=="nobump" set "SKIP_BUMP=1"
 
+REM ---- Release 推送开关 ----
+if not defined SKIP_RELEASE set "SKIP_RELEASE=0"
+if not "%~1"=="" for %%a in (%*) do if /i "%%a"=="norelease" set "SKIP_RELEASE=1"
+
 REM ---- 版本号递增 ----
 if "!SKIP_BUMP!"=="0" (
     call :bump_version
@@ -76,6 +80,12 @@ call :build_onefile
 if !ERRORLEVEL! neq 0 exit /b 1
 
 call :print_summary
+
+if "!SKIP_RELEASE!"=="0" (
+    echo.
+    echo 正在推送 Release...
+    call "%SCRIPT_DIR%push_release.bat"
+)
 
 echo.
 echo 构建完成，窗口将在 30 秒后关闭，或按任意键...
@@ -211,6 +221,7 @@ if not exist "build\dist\onefile" mkdir "build\dist\onefile" 2>nul
 echo 清理旧的 onefile 构建产物...
 if exist "build\dist\onefile\%APP_NAME%.exe" del "build\dist\onefile\%APP_NAME%.exe" 2>nul
 if exist "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" del "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" 2>nul
+if exist "build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe" del "build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe" 2>nul
 
 echo 开始打包 onefile...
 python -m PyInstaller -F -w --clean --distpath "build\dist\onefile" --workpath "build\pyi-work" --specpath "build" --hidden-import=loguru --add-data="%PROJECT_ROOT%%FFMPEG_TARGET%;ffmpeg" --name "%APP_NAME%" "%MAIN_SCRIPT%"
@@ -219,8 +230,8 @@ if !ERRORLEVEL! neq 0 (
     exit /b 1
 )
 
-REM 重命名输出文件，加上版本号
-set "ONEFILE_DEST=build\dist\onefile\%APP_NAME%_v%VERSION%.exe"
+REM 重命名输出文件，加上版本号（使用英文前缀，避免 GitHub Release 中文名丢失）
+set "ONEFILE_DEST=build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe"
 if exist "build\dist\onefile\%APP_NAME%.exe" (
     move /y "build\dist\onefile\%APP_NAME%.exe" "%ONEFILE_DEST%" >nul 2>&1
     echo onefile 构建完成: %ONEFILE_DEST%
@@ -241,8 +252,8 @@ echo ============================================
 echo  版本: %VERSION%
 echo  模式: onefile（单文件版）
 echo  产物:
-if exist "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" (
-    for %%f in ("build\dist\onefile\%APP_NAME%_v%VERSION%.exe") do echo    [EXE]  %%~nxf  (%%~zf bytes)
+if exist "build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe" (
+    for %%f in ("build\dist\onefile\%APP_NAME_EN%_v%VERSION%.exe") do echo    [EXE]  %%~nxf  (%%~zf bytes)
 )
 echo ============================================
 

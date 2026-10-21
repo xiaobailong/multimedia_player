@@ -73,6 +73,7 @@ class FileDisplayDelegate(QStyledItemDelegate):
 
 class MainWindow(QMainWindow):
     expand_path_config_key = 'default.expand.path'
+    private_library_path_key = 'private.library.path'
     show_type_video = 'video'
     show_type_pic = 'pic'
     normal = 0
@@ -89,6 +90,7 @@ class MainWindow(QMainWindow):
         self.config_manager = ConfigManager()
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
+        self.private_mode = False
 
         # -- 无边框窗口设置 --
         self.setWindowFlags(Qt.FramelessWindowHint)
@@ -285,11 +287,55 @@ class MainWindow(QMainWindow):
         self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.mainQWidget.addWidget(self.treeView)
 
+        # ---- 私密模式左侧树 ----
+        self.private_tree_model = QDirModel()
+        self.private_tree_model.sort(3, order=Qt.SortOrder.DescendingOrder)
+        self.private_tree_view = QTreeView()
+        self.private_tree_view.setModel(self.private_tree_model)
+        self.private_tree_view.setColumnHidden(1, True)
+        self.private_tree_view.setColumnHidden(2, True)
+        self.private_tree_view.setColumnHidden(3, True)
+        private_header = self.private_tree_view.header()
+        private_header.setStretchLastSection(False)
+        private_header.setSectionResizeMode(0, QHeaderView.Fixed)
+        private_header.setVisible(False)
+        self.private_tree_view.setColumnWidth(0, 360)
+        self.private_tree_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        self.private_tree_view.setItemDelegate(FileDisplayDelegate(self.private_tree_view))
+        self.private_tree_view.clicked.connect(self._on_private_tree_clicked)
+        self.private_tree_view.setVisible(False)
+        self.mainQWidget.addWidget(self.private_tree_view)
+
         self.work = QVBoxLayout()
         self.work.setContentsMargins(0, 0, 0, 0)
         self.work.addWidget(self.video_show_qwidget)
         self.video_show_qwidget.setVisible(False)
         self.work.addWidget(self.pic_show_qwidget)
+
+        # ---- 私密模式覆盖层：无路径时显示"打开私密库"按钮 ----
+        self.private_overlay_widget = QWidget()
+        private_overlay_layout = QVBoxLayout(self.private_overlay_widget)
+        private_overlay_layout.setAlignment(Qt.AlignCenter)
+        self.open_private_lib_btn = QPushButton("打开私密库")
+        self.open_private_lib_btn.setFixedSize(160, 48)
+        self.open_private_lib_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #89b4fa;
+                color: #1e1e2e;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #b4d0fb;
+            }
+        """)
+        self.open_private_lib_btn.clicked.connect(self._open_private_library)
+        private_overlay_layout.addWidget(self.open_private_lib_btn)
+        self.private_overlay_widget.setVisible(False)
+        self.work.addWidget(self.private_overlay_widget)
+
         self.workQWidget = QWidget()
         self.workQWidget.setLayout(self.work)
 
@@ -320,7 +366,7 @@ class MainWindow(QMainWindow):
         # 记录展开时的窗口比例，用于恢复
         self.tree_sizes = [10000 * self.left, 10000 * self.right]
 
-        # -- 主布局: 标题列 + mainQWidget + 状态栏 --
+        # -- 主布局: 标题列 + 菜单栏 + mainQWidget + 状态栏 --
         self._central_widget = QWidget()
         self._central_widget.setObjectName("centralWidget")
         self._central_widget.setStyleSheet("""
@@ -334,6 +380,11 @@ class MainWindow(QMainWindow):
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.title_bar)
+
+        # -- 菜单栏 --
+        self._setup_menu_bar()
+        central_layout.addWidget(self.menu_bar)
+
         central_layout.addWidget(self.mainQWidget, stretch=1)
         central_layout.addWidget(self.statusbar)
 
@@ -524,7 +575,11 @@ class MainWindow(QMainWindow):
             self.video_show_layout.setVisible(True)
         if self.pic_show_qwidget.isVisible():
             self.pic_show_layout.setVisible(True)
-        self.treeView.setVisible(True)
+        if self.private_mode:
+            self.treeView.setVisible(False)
+            self.private_tree_view.setVisible(True)
+        else:
+            self.treeView.setVisible(True)
         self.statusbar.setVisible(True)
         # 恢复标题栏
         self.title_bar.setVisible(True)
@@ -619,6 +674,7 @@ class MainWindow(QMainWindow):
             self.pic_show_layout.setVisible(False)
 
         self.treeView.setVisible(False)
+        self.private_tree_view.setVisible(False)
         self.statusbar.setVisible(False)
         # 隐藏标题栏
         self.title_bar.setVisible(False)
@@ -680,6 +736,8 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def toggle_tree(self):
+        if self.private_mode:
+            return
         if self.tree_visible:
             # 隐藏前保存当前比例
             self.tree_sizes = self.mainQWidget.sizes()
@@ -726,6 +784,251 @@ class MainWindow(QMainWindow):
 
     def notice(self, content):
         self.statusLabel.setText(content)
+
+    # ============================================
+    #  菜单栏
+    # ============================================
+    def _setup_menu_bar(self):
+        self.menu_bar = QMenuBar(self)
+        self.menu_bar.setStyleSheet("""
+            QMenuBar {
+                background-color: #181825;
+                color: #cdd6f4;
+                border-bottom: 1px solid #313244;
+                padding: 2px 8px;
+                font-size: 13px;
+            }
+            QMenuBar::item {
+                padding: 4px 10px;
+                border-radius: 4px;
+            }
+            QMenuBar::item:selected {
+                background-color: #45475a;
+            }
+            QMenu {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 28px 6px 16px;
+                border-radius: 4px;
+            }
+            QMenu::item:selected {
+                background-color: #45475a;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #313244;
+                margin: 4px 8px;
+            }
+        """)
+
+        # ---- 文件菜单 ----
+        file_menu = self.menu_bar.addMenu("文件(&F)")
+        exit_action = QAction("退出(&Q)", self)
+        exit_action.setShortcut(QKeySequence("Ctrl+Q"))
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # ---- 视图菜单 ----
+        view_menu = self.menu_bar.addMenu("视图(&V)")
+
+        mode_group = QActionGroup(self)
+        mode_group.setExclusive(True)
+
+        self.normal_mode_action = QAction("普通模式", self)
+        self.normal_mode_action.setCheckable(True)
+        self.normal_mode_action.setChecked(True)
+        self.normal_mode_action.triggered.connect(lambda checked: checked and self._toggle_private_mode(False))
+        mode_group.addAction(self.normal_mode_action)
+        view_menu.addAction(self.normal_mode_action)
+
+        self.private_mode_action = QAction("私密模式", self)
+        self.private_mode_action.setCheckable(True)
+        self.private_mode_action.setChecked(False)
+        self.private_mode_action.triggered.connect(lambda checked: checked and self._toggle_private_mode(True))
+        mode_group.addAction(self.private_mode_action)
+        view_menu.addAction(self.private_mode_action)
+
+        # ---- 帮助菜单 ----
+        help_menu = self.menu_bar.addMenu("帮助(&H)")
+        about_action = QAction("关于(&A)...", self)
+        about_action.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(about_action)
+
+    def _toggle_private_mode(self, enable):
+        if enable == self.private_mode:
+            return
+
+        self.private_mode = enable
+
+        if enable:
+            # 切换到私密模式
+            self._save_normal_state()
+            self.normal_mode_action.setChecked(False)
+            self.private_mode_action.setChecked(True)
+
+            # 隐藏普通树
+            self.treeView.setVisible(False)
+            self.toggle_tree_btn.setEnabled(False)
+
+            # 显示私密树
+            self.private_tree_view.setVisible(True)
+
+            # 隐藏普通模式的视频/图片
+            self.video_show_qwidget.setVisible(False)
+            self.pic_show_qwidget.setVisible(False)
+
+            # 检查是否有私密库路径
+            if self.config_manager.exist(MainWindow.private_library_path_key):
+                private_path = self.config_manager.get(MainWindow.private_library_path_key)
+                if os.path.isdir(private_path):
+                    self._load_private_library(private_path)
+                    self.private_overlay_widget.setVisible(False)
+                else:
+                    self._show_private_overlay()
+            else:
+                self._show_private_overlay()
+
+            self.statusLabel.setText("私密模式")
+        else:
+            # 切换回普通模式
+            self.normal_mode_action.setChecked(True)
+            self.private_mode_action.setChecked(False)
+
+            # 隐藏私密切换相关控件
+            self.private_tree_view.setVisible(False)
+            self.private_overlay_widget.setVisible(False)
+
+            # 恢复普通模式状态
+            self._restore_normal_state()
+            self.toggle_tree_btn.setEnabled(True)
+
+            self.statusLabel.setText("普通模式")
+
+    def _save_normal_state(self):
+        """保存普通模式下的UI状态"""
+        self._saved_tree_visible = self.tree_visible
+        self._saved_tree_sizes = self.mainQWidget.sizes()
+        self._saved_video_visible = self.video_show_qwidget.isVisible()
+        self._saved_pic_visible = self.pic_show_qwidget.isVisible()
+
+    def _restore_normal_state(self):
+        """恢复普通模式下的UI状态"""
+        if hasattr(self, '_saved_tree_visible'):
+            self.tree_visible = self._saved_tree_visible
+            self.treeView.setVisible(self._saved_tree_visible)
+            if self._saved_tree_visible:
+                self.toggle_tree_btn.setText("◀ 隐藏列表")
+            else:
+                self.toggle_tree_btn.setText("▶ 展开列表")
+        else:
+            self.treeView.setVisible(True)
+            self.toggle_tree_btn.setText("◀ 隐藏列表")
+            self.tree_visible = True
+
+        if hasattr(self, '_saved_video_visible') and self._saved_video_visible:
+            self.video_show_qwidget.setVisible(True)
+        if hasattr(self, '_saved_pic_visible') and self._saved_pic_visible:
+            self.pic_show_qwidget.setVisible(True)
+
+        if hasattr(self, '_saved_tree_sizes'):
+            self.mainQWidget.setSizes(self._saved_tree_sizes)
+
+    def _show_private_overlay(self):
+        """显示私密模式覆盖层（无路径状态）"""
+        self.private_overlay_widget.setVisible(True)
+        self.video_show_qwidget.setVisible(False)
+        self.pic_show_qwidget.setVisible(False)
+        # 重置私密树到默认根路径
+        self.private_tree_view.setRootIndex(self.private_tree_model.index(""))
+
+    def _open_private_library(self):
+        """打开私密库文件夹选择对话框"""
+        selected_path = QFileDialog.getExistingDirectory(self, "选择私密库文件夹")
+        if not selected_path or not os.path.isdir(selected_path):
+            return
+
+        self.config_manager.add_or_update(MainWindow.private_library_path_key, selected_path)
+        self._load_private_library(selected_path)
+
+    def _load_private_library(self, path):
+        """加载私密库路径到左侧树"""
+        self.private_overlay_widget.setVisible(False)
+        root_index = self.private_tree_model.index(path)
+        self.private_tree_view.setRootIndex(root_index)
+        # 展开根目录
+        self.private_tree_view.setExpanded(root_index, True)
+
+    def _on_private_tree_clicked(self, qmodelindex):
+        """私密模式下树节点点击事件"""
+        file_path = self.private_tree_model.filePath(qmodelindex)
+
+        if os.path.isdir(file_path):
+            self.pic_show_qwidget.setVisible(False)
+            self.video_show_qwidget.setVisible(False)
+            self.private_overlay_widget.setVisible(False)
+            return
+
+        if not os.path.isfile(file_path):
+            return
+
+        # 停止幻灯片定时器
+        if self.inputAndExeLayout.timer.isActive():
+            self.inputAndExeLayout.timer.stop()
+
+        # 根据文件类型切换显示
+        if self.video_show_layout.is_video(file_path):
+            self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
+            self.video_show_layout.play_list.clear()
+            self.video_show_layout.play_list_index = 0
+            self.change_show(MainWindow.show_type_video)
+            self.video_show_layout.play(file_path)
+        elif self.pic_show_layout.is_pic(file_path):
+            self.pic_show_layout.counter = 0
+            self.pic_show_layout.inputAndExeLayout.list_files.clear()
+            self.change_show(MainWindow.show_type_pic)
+            self.pic_show_layout.play(file_path)
+        else:
+            self.video_show_layout.titleQLabel.setText('文件格式错误!!!')
+            self.pic_show_layout.titleQLabel.setText('文件格式错误!!!')
+            self.notice('文件格式错误!!!')
+
+    def _show_about_dialog(self):
+        """显示关于对话框"""
+        version = "未知"
+        try:
+            version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+            if os.path.exists(version_path):
+                with open(version_path, "r", encoding="utf-8") as f:
+                    version = f.read().strip()
+        except Exception:
+            pass
+
+        import platform
+        python_version = platform.python_version()
+        try:
+            from PyQt5.QtCore import QT_VERSION_STR
+            pyqt_version = QT_VERSION_STR
+        except ImportError:
+            pyqt_version = "5.15.10"
+
+        about_text = (
+            f"<h2>多媒体播放器</h2>"
+            f"<p><b>版本:</b> {version}</p>"
+            f"<p><b>构建信息:</b></p>"
+            f"<ul>"
+            f"<li>Python: {python_version}</li>"
+            f"<li>PyQt5: {pyqt_version}</li>"
+            f"<li>操作系统: {platform.system()} {platform.release()}</li>"
+            f"</ul>"
+            f"<p>基于 PyQt5 与 OpenCV 的桌面多媒体播放器，<br>"
+            f"支持视频/音频播放、裁剪、截图、幻灯片等功能。</p>"
+        )
+
+        QMessageBox.about(self, "关于 多媒体播放器", about_text)
 
 
 if __name__ == '__main__':

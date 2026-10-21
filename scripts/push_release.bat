@@ -31,8 +31,9 @@ echo 当前版本: !VERSION!
 
 REM ---- 检查构建产物 ----
 set "APP_NAME=多媒体播放器"
-set "ZIP_FILE=build\dist\!APP_NAME!_v!VERSION!.zip"
-set "EXE_FILE=build\dist\onefile\!APP_NAME!_v!VERSION!.exe"
+set "APP_NAME_EN=MultimediaPlayer"
+set "ZIP_FILE=build\dist\!APP_NAME_EN!_v!VERSION!.zip"
+set "EXE_FILE=build\dist\onefile\!APP_NAME_EN!_v!VERSION!.exe"
 
 set "HAS_ZIP=0"
 set "HAS_EXE=0"
@@ -142,8 +143,8 @@ set "ALREADY_PUBLISHED=0"
 if !ERRORLEVEL! equ 0 (
     set "ZIP_ASSET_OK=0"
     set "EXE_ASSET_OK=0"
-    for /f "delims=" %%a in ('"%GH_EXE%" release view "!RELEASE_TAG!" --json assets !REL_REPO_ARG! 2^>nul ^| findstr /c:"\"name\":\"!APP_NAME!_v!VERSION!.zip\""') do set "ZIP_ASSET_OK=1"
-    for /f "delims=" %%a in ('"%GH_EXE%" release view "!RELEASE_TAG!" --json assets !REL_REPO_ARG! 2^>nul ^| findstr /c:"\"name\":\"!APP_NAME!_v!VERSION!.exe\""') do set "EXE_ASSET_OK=1"
+    for /f "delims=" %%a in ('"%GH_EXE%" release view "!RELEASE_TAG!" --json assets !REL_REPO_ARG! 2^>nul ^| findstr /c:"\"name\":\"!APP_NAME_EN!_v!VERSION!.zip\""') do set "ZIP_ASSET_OK=1"
+    for /f "delims=" %%a in ('"%GH_EXE%" release view "!RELEASE_TAG!" --json assets !REL_REPO_ARG! 2^>nul ^| findstr /c:"\"name\":\"!APP_NAME_EN!_v!VERSION!.exe\""') do set "EXE_ASSET_OK=1"
 
     set "ALL_OK=1"
     if "!HAS_ZIP!"=="1" if "!ZIP_ASSET_OK!"=="0" set "ALL_OK=0"
@@ -209,16 +210,16 @@ echo ## 下载>> "!NOTES_FILE!"
 echo.>> "!NOTES_FILE!"
 
 if "!HAS_ZIP!"=="1" (
-    set "PRODUCT_LINE=!APP_NAME!_v!VERSION!.zip (!ZIP_SIZE! bytes)"
-    echo - [便携版 ZIP]: !APP_NAME!_v!VERSION!.zip>> "!NOTES_FILE!"
+    set "PRODUCT_LINE=!APP_NAME_EN!_v!VERSION!.zip (!ZIP_SIZE! bytes)"
+    echo - [便携版 ZIP]: !APP_NAME_EN!_v!VERSION!.zip>> "!NOTES_FILE!"
     echo   - 大小: !ZIP_SIZE! bytes>> "!NOTES_FILE!"
     echo   - SHA-256: `!ZIP_SHA!`>> "!NOTES_FILE!"
     echo   - 解压后运行 `!APP_NAME!\!APP_NAME!.exe`>> "!NOTES_FILE!"
     echo.>> "!NOTES_FILE!"
 )
 if "!HAS_EXE!"=="1" (
-    set "PRODUCT_LINE=!APP_NAME!_v!VERSION!.exe (!EXE_SIZE! bytes)"
-    echo - [单文件版 EXE]: !APP_NAME!_v!VERSION!.exe>> "!NOTES_FILE!"
+    set "PRODUCT_LINE=!APP_NAME_EN!_v!VERSION!.exe (!EXE_SIZE! bytes)"
+    echo - [单文件版 EXE]: !APP_NAME_EN!_v!VERSION!.exe>> "!NOTES_FILE!"
     echo   - 大小: !EXE_SIZE! bytes>> "!NOTES_FILE!"
     echo   - SHA-256: `!EXE_SHA!`>> "!NOTES_FILE!"
     echo   - 直接双击运行，无需安装>> "!NOTES_FILE!"
@@ -226,8 +227,8 @@ if "!HAS_EXE!"=="1" (
 )
 echo ## 校验>> "!NOTES_FILE!"
 echo ```powershell>> "!NOTES_FILE!"
-if "!HAS_ZIP!"=="1" echo Get-FileHash -Algorithm SHA256 .\!APP_NAME!_v!VERSION!.zip>> "!NOTES_FILE!"
-if "!HAS_EXE!"=="1" echo Get-FileHash -Algorithm SHA256 .\!APP_NAME!_v!VERSION!.exe>> "!NOTES_FILE!"
+if "!HAS_ZIP!"=="1" echo Get-FileHash -Algorithm SHA256 .\!APP_NAME_EN!_v!VERSION!.zip>> "!NOTES_FILE!"
+if "!HAS_EXE!"=="1" echo Get-FileHash -Algorithm SHA256 .\!APP_NAME_EN!_v!VERSION!.exe>> "!NOTES_FILE!"
 echo ```>> "!NOTES_FILE!"
 
 REM ---- 构建待上传文件列表 ----
