@@ -273,20 +273,23 @@ echo ============================================
 
 call :ensure_ffmpeg
 
+if not exist "build\dist\onefile" mkdir "build\dist\onefile" 2>nul
+
 echo 清理旧的 onefile 构建产物...
-if exist "build\dist\%APP_NAME%.exe" del "build\dist\%APP_NAME%.exe" 2>nul
+if exist "build\dist\onefile\%APP_NAME%.exe" del "build\dist\onefile\%APP_NAME%.exe" 2>nul
+if exist "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" del "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" 2>nul
 
 echo 开始打包 onefile...
-python -m PyInstaller -F -w --clean --distpath "build\dist" --workpath "build\pyi-work" --specpath "build" --hidden-import=loguru --add-data="%PROJECT_ROOT%%FFMPEG_TARGET%;ffmpeg" --name "%APP_NAME%" "%MAIN_SCRIPT%"
+python -m PyInstaller -F -w --clean --distpath "build\dist\onefile" --workpath "build\pyi-work" --specpath "build" --hidden-import=loguru --add-data="%PROJECT_ROOT%%FFMPEG_TARGET%;ffmpeg" --name "%APP_NAME%" "%MAIN_SCRIPT%"
 if !ERRORLEVEL! neq 0 (
     echo [错误] onefile 构建失败！
     exit /b 1
 )
 
 REM 重命名输出文件，加上版本号
-set "ONEFILE_DEST=build\dist\%APP_NAME%_v%VERSION%.exe"
-if exist "build\dist\%APP_NAME%.exe" (
-    move /y "build\dist\%APP_NAME%.exe" "%ONEFILE_DEST%" >nul 2>&1
+set "ONEFILE_DEST=build\dist\onefile\%APP_NAME%_v%VERSION%.exe"
+if exist "build\dist\onefile\%APP_NAME%.exe" (
+    move /y "build\dist\onefile\%APP_NAME%.exe" "%ONEFILE_DEST%" >nul 2>&1
     echo onefile 构建完成: %ONEFILE_DEST%
 ) else (
     echo [错误] onefile 输出文件未生成
@@ -354,8 +357,8 @@ echo  产物:
 if exist "build\dist\%APP_NAME%_v%VERSION%.zip" (
     for %%f in ("build\dist\%APP_NAME%_v%VERSION%.zip") do echo    [ZIP]  %%~nxf  (%%~zf bytes)
 )
-if exist "build\dist\%APP_NAME%_v%VERSION%.exe" (
-    for %%f in ("build\dist\%APP_NAME%_v%VERSION%.exe") do echo    [EXE]  %%~nxf  (%%~zf bytes)
+if exist "build\dist\onefile\%APP_NAME%_v%VERSION%.exe" (
+    for %%f in ("build\dist\onefile\%APP_NAME%_v%VERSION%.exe") do echo    [EXE]  %%~nxf  (%%~zf bytes)
 )
 echo ============================================
 
