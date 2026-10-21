@@ -2,8 +2,9 @@
 
 # ============================================
 #  MultimediaPlayer macOS OneDir Build Script
-#  仅构建 macOS 目录版 (.app) + ZIP 压缩包
+#  构建 macOS 目录版 (.app) + ZIP 压缩包，并推送 GitHub Release
 #  Usage: build_mac_onedir.sh [nobump] [norelease]
+#    默认构建后自动推送 Release；加 norelease 可跳过推送
 #  兼容 macOS 10.13+（2013 年后机型）
 # ============================================
 

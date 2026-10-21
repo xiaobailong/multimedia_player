@@ -3,6 +3,7 @@
 # ============================================
 #  MultimediaPlayer macOS Build Script
 #  Usage: build_mac.sh [clean|onedir|onefile|zip|norelease|nobump]
+#    默认构建后自动推送 Release；加 norelease 可跳过推送
 #  兼容 macOS 10.13+（2013 年后机型）
 # ============================================
 
