@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul 2>nul
 setlocal enabledelayedexpansion
 
 title 多媒体播放器 Release Push
@@ -30,8 +31,8 @@ echo 当前版本: !VERSION!
 
 REM ---- 检查构建产物 ----
 set "APP_NAME=多媒体播放器"
-set "ZIP_FILE=build\dist\%APP_NAME%_v!VERSION!.zip"
-set "EXE_FILE=build\dist\onefile\%APP_NAME%_v!VERSION!.exe"
+set "ZIP_FILE=build\dist\!APP_NAME!_v!VERSION!.zip"
+set "EXE_FILE=build\dist\onefile\!APP_NAME!_v!VERSION!.exe"
 
 set "HAS_ZIP=0"
 set "HAS_EXE=0"
