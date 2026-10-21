@@ -1,15 +1,10 @@
 @echo off
+chcp 65001 >nul 2>nul
 setlocal enabledelayedexpansion
 
 REM ============================================
-REM  多媒体播放器 一键构建脚本
-REM  用法: build              (完整构建：onedir + onefile + zip)
-REM        build clean        (清理构建产物)
-REM        build onedir       (仅构建目录版)
-REM        build onefile      (仅构建单文件版)
-REM        build zip          (仅打包 zip)
-REM        build norelease    (构建但不自动推送 Release)
-REM        build nobump       (构建但不递增版本号)
+REM  MultimediaPlayer One-Click Build Script
+REM  Usage: build [clean|onedir|onefile|zip|norelease|nobump]
 REM ============================================
 
 REM ---- SCRIPT_DIR / PROJECT_ROOT ----
@@ -17,31 +12,26 @@ for %%i in ("%~dp0.") do set "SCRIPT_DIR=%%~fi\"
 for %%i in ("%~dp0..") do set "PROJECT_ROOT=%%~fi\"
 
 REM ============================================
-REM  PASS 1: 日志双写（控制台 + build\build_full.log）
-REM  原理：无 --log 参数时，通过 PowerShell 管道
-REM  重新调用自身，将所有输出同时写入控制台和日志文件
+REM  PASS 1: Tee stdout to console + build\build_full.log
+REM  When no --log arg, re-invoke self via PowerShell pipe
 REM ============================================
 if "%~1" NEQ "--log" (
-    chcp 65001 >nul 2>nul
     if not exist "%PROJECT_ROOT%build" mkdir "%PROJECT_ROOT%build" 2>nul
     powershell -NoProfile -Command ^
         "$OutputEncoding = [Console]::OutputEncoding = [Console]::InputEncoding = [Text.Encoding]::UTF8; " ^
         "$utf8NoBom = [Text.UTF8Encoding]::new($false); " ^
         "$sw = [System.IO.StreamWriter]::new('%PROJECT_ROOT%build\build_full.log', $false, $utf8NoBom); $sw.AutoFlush = $true; " ^
-        "try { cmd /c 'chcp 65001 ^>nul 2^>nul ^&^& call %~f0 --log %*' 2>&1 | ForEach-Object { Write-Host $_; $sw.WriteLine($_) } } finally { $sw.Close(); exit $LASTEXITCODE }"
+        "try { cmd /c '%~f0 --log %*' 2>&1 | ForEach-Object { Write-Host $_; $sw.WriteLine($_) } } finally { $sw.Close(); exit $LASTEXITCODE }"
     exit /b
 ) else (
     shift
 )
 
 REM ============================================
-REM  PASS 2: 实际构建逻辑（仅在 --log 模式下执行）
+REM  PASS 2: Build logic (only in --log mode)
 REM ============================================
 
 title 多媒体播放器 Build
-
-REM 切换控制台编码为 UTF-8，使中文输出正常显示（必须在 title 之后，避免 cmd 解析错位）
-chcp 65001 >nul 2>nul
 
 REM ---- 切换到项目根目录 ----
 cd /d "%PROJECT_ROOT%"
