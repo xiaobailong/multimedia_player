@@ -19,6 +19,7 @@ class PicShowLayout(QVBoxLayout):
         self.main_window = main_window
         self.counter = 0
         self.path = ''
+        # 右侧工作区占窗口宽度的比例（普通模式树可见时），实际渲染以 viewport 为准
         self.scale = (main_window.right * 4 + 3) / ((main_window.right + main_window.left) * 4)
 
         self.inputAndExeLayout = PicInputLayout(self)
@@ -184,9 +185,14 @@ class PicShowLayout(QVBoxLayout):
             self._gif_idx = 0
             self._gif_playing = True
 
-            # 显示第一帧
-            screen_w = int(self.main_window.width() * self.scale)
-            screen_h = int(self.main_window.height() * self.scale)
+            # 显示第一帧（使用视口实际尺寸，适配普通/私密模式）
+            viewport = self.qscrollarea.viewport()
+            if viewport:
+                screen_w = viewport.width()
+                screen_h = viewport.height()
+            else:
+                screen_w = int(self.main_window.width() * self.scale)
+                screen_h = int(self.main_window.height() * self.scale)
             self.pictureQLabel.resize(screen_w, screen_h)
             self.pictureQLabel.setPixmap(self._gif_frames[0].scaled(
                 screen_w, screen_h, Qt.KeepAspectRatio, Qt.SmoothTransformation))

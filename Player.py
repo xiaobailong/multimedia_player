@@ -7,7 +7,7 @@ import send2trash
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
-from PyQt5.QtGui import QFontMetrics
+from PyQt5.QtGui import QFontMetrics, QKeySequence
 from PyQt5.QtMultimedia import QMediaContent
 from PyQt5.QtWidgets import QApplication
 
@@ -340,7 +340,9 @@ class MainWindow(QMainWindow):
         self.workQWidget.setLayout(self.work)
 
         self.mainQWidget.addWidget(self.workQWidget)
-        sizes = [10000 * self.left, 10000 * self.right]
+        # splitter 含 3 个 widget: treeView / private_tree_view / workQWidget
+        # 普通模式下 private_tree_view 隐藏，比例为 left : 0 : right
+        sizes = [10000 * self.left, 0, 10000 * self.right]
         self.mainQWidget.setSizes(sizes)
 
         # -- 自定义标题栏 --
@@ -874,9 +876,6 @@ class MainWindow(QMainWindow):
             self.treeView.setVisible(False)
             self.toggle_tree_btn.setEnabled(False)
 
-            # 显示私密树
-            self.private_tree_view.setVisible(True)
-
             # 隐藏普通模式的视频/图片
             self.video_show_qwidget.setVisible(False)
             self.pic_show_qwidget.setVisible(False)
@@ -886,7 +885,6 @@ class MainWindow(QMainWindow):
                 private_path = self.config_manager.get(MainWindow.private_library_path_key)
                 if os.path.isdir(private_path):
                     self._load_private_library(private_path)
-                    self.private_overlay_widget.setVisible(False)
                 else:
                     self._show_private_overlay()
             else:
@@ -942,8 +940,9 @@ class MainWindow(QMainWindow):
         self.private_overlay_widget.setVisible(True)
         self.video_show_qwidget.setVisible(False)
         self.pic_show_qwidget.setVisible(False)
-        # 重置私密树到默认根路径
-        self.private_tree_view.setRootIndex(self.private_tree_model.index(""))
+        self.private_tree_view.setVisible(False)
+        # 无路径时树隐藏，右侧工作区占满
+        self.mainQWidget.setSizes([0, 0, 1])
 
     def _open_private_library(self):
         """打开私密库文件夹选择对话框"""
@@ -957,10 +956,13 @@ class MainWindow(QMainWindow):
     def _load_private_library(self, path):
         """加载私密库路径到左侧树"""
         self.private_overlay_widget.setVisible(False)
+        self.private_tree_view.setVisible(True)
         root_index = self.private_tree_model.index(path)
         self.private_tree_view.setRootIndex(root_index)
         # 展开根目录
         self.private_tree_view.setExpanded(root_index, True)
+        # 私密树 : 工作区 = left : right
+        self.mainQWidget.setSizes([0, 10000 * self.left, 10000 * self.right])
 
     def _on_private_tree_clicked(self, qmodelindex):
         """私密模式下树节点点击事件"""
