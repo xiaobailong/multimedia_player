@@ -8,3 +8,4 @@ send2trash==1.8.3
 platformdirs
 pywin32
 apsw
+cryptography>=42

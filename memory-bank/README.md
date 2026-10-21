@@ -53,6 +53,13 @@
 | 版本号递增策略 / `bump_version.ps1` | `ADR-006`（每构建 +1 patch，满 100 进位） |
 | Python 3.14 依赖升级（numpy/opencv/pyinstaller） | `ADR-007`（numpy>=2.0, opencv>=4.8, pyinstaller>=6.15） |
 | 构建日志双写（控制台 + build_full.log） | `ADR-008`（PowerShell 管道 tee，零侵入） |
+| 私密模式 / 密钥包 / 与 privi 互通 | `ADR-009`（privi 兼容的密钥与加解密方案） |
+| `requirement.txt` 缺 `cryptography` 导致私密模式 import 失败 | `ISSUE-005` |
+| apsw 报 `no attribute 'executescript'` / `ExecutionCompleteError` | `PIT-005` |
+| 用编辑器「按行插入」追加代码，函数被切成两半且编译通过 | `PIT-006` |
+| PowerShell 跑 Python 报 `NativeCommandError` / 输出乱码 | `PIT-007` |
+| QMessageBox 按钮还是 `&Yes / &No / OK / Cancel` | `PIT-008`（qt_zh_CN.qm 不够，要兜底 QTranslator） |
+| `QMediaPlayer` 报 `ResourceError`、任何本地视频都放不了 | `ISSUE-006`（未定位，明文同样失败 ⇒ 与加密无关） |
 
 ## 5. 条目模板
 
@@ -93,4 +100,4 @@
 
 ---
 
-最后更新: 2026-10-21（初始化）
+最后更新: 2026-10-21（新增 ADR-009 私密模式/privi 兼容方案、ISSUE-005、PIT-005~007）

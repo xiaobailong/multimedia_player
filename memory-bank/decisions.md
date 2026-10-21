@@ -108,3 +108,61 @@
   - `script`/`tee` 命令（Windows 无原生 tee）
   - 自定义 Python 脚本做 tee（引入额外依赖，构建前就要装好）
 - 影响 / 约束: `build\build_full.log` 每次构建覆盖（不追加）；日志文件编码 UTF-8 无 BOM
+
+## ADR-009 私密模式密钥与加解密：完全对齐 privi（读 v1+v2、写 v2），密钥包用 privi v2 SQLite
+- 日期: 2026-10-21 | 状态: 已采纳
+- 背景: 用户要求 ① 菜单新增「密钥管理」，能导入 privi 导出的密钥数据库、也能导出同样格式；
+  ② 选择私密路径后能用导入的密钥解开路径下的加密文件并正常播放/展示；
+  ③ 私密模式左侧树右键可批量加密/解密某路径下的图片与视频（内容 + 文件名，加密后删源文件）；
+  ④ 方案必须与 `D:\WorkSpace\test\privi` 兼容。
+- 决策:
+  1. **算法与容器照抄 privi**（`media_encryption_service.dart` + `CryptoHandler.kt`）：
+     AES-256-GCM；DEK 包裹 = `base64(nonce12|ciphertext32|tag16)`；
+     文件容器**读 v1 与 v2，写出统一 v2**：
+     `[b'PRV2'][baseNonce:8][plaintextSize:8][chunkSize:4] + n×(ciphertext + tag16)`，
+     chunk nonce = `baseNonce(8) || int32_be(index)`，chunkSize = 1 MiB。
+     （v2 是 privi 为了避开单流 GCM 的内存峰值而引入的；只写 v1 会让 privi 侧大文件解密变慢甚至 OOM）
+  2. **密钥包 = privi v2 SQLite**：`meta(key,value)` / `key_material(id=1, salt, kek BLOB, source, created_at)` /
+     `media_keys`（14 列，与 privi 一字不差），`PRAGMA user_version = 2`，
+     文件名 `privi-key-YYYYMMDD-HHMMSS.db`，`meta.format = 'privi-key-backup'`。
+  3. **本机索引放在独立库** `data/private_keys.db`，`media_keys` 额外有 `file_name / local_path / updated_at`
+     三列（只在本地用）；导出时只写 privi 的 14 列，`private_path` 优先写 `local_path`。
+  4. **跨设备匹配靠文件名**：privi 的 `private_path` 是 Android 路径，拷到 Windows 必然对不上；
+     `find_media()` 依次按「绝对路径 → `private_path` → `basename(file_name)`」匹配，命中后回写 `local_path`。
+  5. **崩溃安全顺序**：加密 = 先写 DEK 记录 → 写密文临时文件 → 校验长度 → `os.replace` → 删源文件；
+     解密 = 解密到临时文件 → 校验非空 → 原子替换成原名 → 删密文 → 删记录。
+     （与 privi 的 "先持久化 DEK 再加密" / "最后才清 DEK" 一致）
+  6. **加密文件名**：32 位小写 hex、无扩展名（privi ADR-042）。所以播放前必须先解密成带扩展名的明文。
+  7. **播放路径**：解密到 `data/private_cache/<md5(源绝对路径)[:12]>/<原文件名>`，
+     保留原扩展名 ⇒ 现有 `VideoShowLayout` / `PicShowLayout`（按扩展名判类型）零改动复用；
+     启动、退出、批量操作后清空缓存。
+  8. **批量操作放 QThread**（`PrivateBatchThread`，线程内自建 `PrivateService` + 独立 sqlite 连接），
+     UI 用 `QProgressDialog` 显示进度、支持取消。
+  9. **密钥冲突**：本机已有不同 KEK 时默认拒绝导入，用户明确确认后才覆盖（沿用 privi `saltConflict` 语义）。
+- 理由:
+  - 只有复刻字节级格式，密钥包与密文才能双向交换（用户的核心诉求）；
+  - 写出 v2 而不是 v1，是为了让 privi 打开我们加密的大视频时不会因为单流 GCM 吃内存而崩；
+  - 独立密钥库不动既有 `player.db` 表结构，避免污染配置/播放位置表；
+  - 先落库 DEK 再写密文，任何时刻崩溃都不会产生"有密文没密钥"的死文件；
+  - 解密到缓存再复用现有布局，比改两个布局（且 `pic_show_layout.py` 本身是乱码文本）风险小得多。
+- 备选与为何不选:
+  - 直接复制 privi 的 drift 数据库当密钥包：会带走相册/播放历史等无关数据，且包格式被内部 schema 迁移绑死（privi ADR-047 也明确不这么做）；
+  - KEK 只放内存 / 只在导出时生成：重启即丢，无法解释密文；
+  - 把 DEK 写进密文文件头：彻底破坏与 privi 的互通；
+  - 自造 zip/JSON 容器：privi 读不了；
+  - 只支持 v2、不读 v1：老库里的 v1 密文会全部打不开（privi 明确保留 v1 读取）。
+- 影响 / 约束:
+  - 新增运行时依赖 `cryptography>=42`（PyInstaller 官方 hook，无需 hidden-import）；
+  - 密钥包 = 明文 KEK，连同私密目录即可解开全部文件，UI 文案必须保留安全警告；
+  - 加密后源文件删除、文件名变随机 hex，只能通过密钥库恢复原名；删除 `data/private_keys.db` 等于丢失解密能力；
+  - `data/private_cache/` 里是明文，必须保证启动/退出时清空（`closeEvent` 已处理）；
+  - 批量加密/解密只处理图片（`.jpg/.png/...`）与视频（`.mp4/.mkv`），其它类型与已加密文件跳过。
+- 相关文件: `src/private_mode/privi_crypto.py`、`key_store.py`、`private_service.py`、
+  `private_batch_thread.py`、`Player.py`、`requirement.txt`
+- 相关条目: `ISSUE-005`、`PIT-005`、`ADR-007`（Python 3.14 依赖）
+- 首次记录: 2026-10-21
+- 复核（2026-10-21，真实 PNG + 真实 MP4 端到端）:
+  密文直接打开 → `QImage` 为空、OpenCV `VideoCapture` 打不开（**不能直接播放**）；
+  私密树点击 → 解密到 `data/private_cache/<hash>/<原名>.<扩展名>`：
+  缓存文件与原始文件**字节完全一致**，图片已实际渲染出图，视频 OpenCV 可打开并读帧。
+  `QMediaPlayer` 在本机自动化会话里连明文 mp4 都 `ResourceError`，见 `ISSUE-006`（与加密无关）。

@@ -49,8 +49,8 @@ class VideoShowLayout(QVBoxLayout):
 
         self.get_ffmpeg_path()
 
-        self.titleQLabel = QLabel("Title")
-        self.titleQLabel.setText("Title")
+        self.titleQLabel = QLabel("标题")
+        self.titleQLabel.setText("标题")
         self.titleQLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.titleQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
         self.titleQLabel.setVisible(False)  # 路径已移至窗口标题栏显示

@@ -41,3 +41,61 @@
   类型/导入检查用 `python -c "import py_compile; py_compile.compile('<file>', doraise=True)"`
 - 反例: 以为 `py_compile` 通过就万事大吉（还要看运行时 import 是否成功）
 - 首次记录: 2026-10-21
+
+## PIT-005 apsw 与 `sqlite3` 模块 API 不同：没有 `executescript`，`cursor.description` 取完行就报错
+- 触发条件: 用 apsw 执行多语句 DDL，或在 fetch 之后读 `cursor.description`
+- 错误现象:
+  1. `AttributeError: 'apsw.Connection' object has no attribute 'executescript'`
+  2. `apsw.ExecutionCompleteError: SQL execution never started, or has completed`
+     （`_exec_dicts` 里先 `fetchall()` 再读 `cursor.description` 时触发）
+- 正确做法:
+  1. 多语句脚本按 `;` 拆开逐条 `conn.execute(...)`（见 `src/private_mode/key_store.py` 的 `_run_script`）
+  2. 先取列名再迭代结果：
+     ```python
+     cursor.execute(sql, params)
+     names = [d[0] for d in (cursor.description or [])]
+     for row in cursor:
+         ...
+     ```
+- 反例: 直接把 `sqlite3` 的写法（`executescript` / `cursor.description` 随时可读）搬到 apsw
+- 首次记录: 2026-10-21
+
+## PIT-006 用编辑器「按行插入」追加代码时插到函数中间，会把函数体切成两半（py_compile 查不出）
+- 触发条件: 用 `insert_line=N` 在文件末尾追加内容，但 N 算错（例如按旧行数而不是当前行数）
+- 错误现象: `python -m py_compile` 通过、import 也正常；但某个函数只剩下前半段
+  （本仓库 `unwrap_dek` 的解密分支被落到 `looks_encrypted` 末尾成了死代码，
+  表现为"包裹后解不开、固定返回 None"）
+- 正确做法:
+  1. 追加代码前先确认**当前**行数（`(Get-Content 文件).Count`），`insert_line = 行数 + 1`
+  2. 或者用 `old_text` 锚点做替换式追加（最稳）
+  3. 插入后回读插入点前后的 10 行，确认函数边界完整
+- 反例: 只跑 `py_compile` 就认为追加成功（缩进合法的死代码不会报错）
+- 首次记录: 2026-10-21
+
+## PIT-007 PowerShell 里直接跑 Python 并把 stderr 重定向，会被包成 `NativeCommandError`
+- 触发条件: 在 PowerShell 里 `python xxx.py 2>&1 | ...` 或 `python xxx.py > out.txt 2>&1`
+- 错误现象: 终端只显示
+  `所在位置 行:1 ... NativeCommandError`，Python 的 traceback 丢失；
+  `>` 重定向出来的文件还是 UTF-16LE，读出来是乱码/带 `\0`
+- 正确做法: 用 cmd 包一层 + 显式 UTF-8：
+  ```
+  cmd /c "set PYTHONIOENCODING=utf-8&& .venv\Scripts\python.exe tmp\test.py > tmp\out.txt 2>&1"
+  ```
+  然后优先用 Read 工具读 `tmp\out.txt`
+- 反例: 直接 `python x.py 2>&1 | Tee-Object`（stderr 一出现就被 PowerShell 当错误，输出被截断）
+- 首次记录: 2026-10-21
+
+## PIT-008 只装 `qt_zh_CN.qm` 还不够：QMessageBox 标准按钮仍是 `&Yes / &No / OK / Cancel`
+- 触发条件: 已 `app.installTranslator(QTranslator().load('qt_zh_CN'))`，
+  但对话框用的是 Qt **标准按钮**（`QMessageBox.Yes / No / Ok / Cancel`，含静态 `question()`）
+- 错误现象: 按钮文本仍为英文；而 `QCoreApplication.translate('QDialogButtonBox', '&Yes')`
+  已经能返回「是(&Y)」，`translate('QPlatformTheme', 'OK')` 却仍返回 `OK`
+- 根因: Windows 平台主题取标准按钮文案走的是 `QPlatformTheme` 上下文，
+  `qt_zh_CN.qm` 里没有这些条目（QDialogButtonBox 的条目只在非平台主题路径生效）
+- 正确做法: 继承 `QTranslator` 覆盖 `translate()`，只对
+  `QPlatformTheme` / `QDialogButtonBox` 两个 context 返回中文映射，其它 context 返回 **空串**
+  （空串表示"不翻译"，Qt 会继续问下一个已安装的翻译）。实现见
+  `Player.py::_StandardButtonTranslator` + `_install_chinese_translator()`
+- 反例: 以为装了 qt_zh_CN.qm 就万事大吉；或给每个对话框手写 `addButton('是', ...)`
+  （静态 `QMessageBox.question()` 改不了按钮，只能逐个替换，工作量大）
+- 首次记录: 2026-10-21

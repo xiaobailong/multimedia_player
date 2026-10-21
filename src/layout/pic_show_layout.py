@@ -32,15 +32,15 @@ class PicShowLayout(QVBoxLayout):
         self.inputAndExeLayout.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
         self.inputAndExeLayout.startAndFullScreenBtn.pressed.connect(self.startProcessWithFullScreen)
 
-        self.titleQLabel = QLabel("Title")
-        self.titleQLabel.setText("Title")
+        self.titleQLabel = QLabel("标题")
+        self.titleQLabel.setText("标题")
         self.titleQLabel.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.titleQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
         self.titleQLabel.setVisible(False)  # 路径已移至窗口标题栏显示
         self.addWidget(self.titleQLabel)
 
-        self.pictureQLabel = QLabel("Picture")
-        self.pictureQLabel.setText("Picture")
+        self.pictureQLabel = QLabel("图片")
+        self.pictureQLabel.setText("图片")
         self.pictureQLabel.setAlignment(Qt.AlignHCenter | Qt.AlignVCenter)
 
         self.qscrollarea = QScrollArea()

@@ -7,6 +7,7 @@ import send2trash
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
+from PyQt5.QtCore import QTranslator, QLibraryInfo
 from PyQt5.QtGui import QFontMetrics, QKeySequence
 from PyQt5.QtMultimedia import QMediaContent
 from PyQt5.QtWidgets import QApplication
@@ -18,6 +19,8 @@ from src import PicInputLayout
 from src import PicShowLayout
 from src import VideoShowLayout
 from src import CustomTitleBar
+from src.private_mode.private_batch_thread import PrivateBatchThread
+from src.private_mode.private_service import PrivateService
 from src.utils.utils import get_log_path
 
 import warnings
@@ -29,6 +32,60 @@ logger.add(os.path.join(log_dir, "file_{time:YYYY-MM-DD}.log"), rotation="500 MB
            filter="",
            level="INFO")
 logger.info(f"日志目录: {log_dir}")
+
+
+class _StandardButtonTranslator(QTranslator):
+    """标准对话框按钮的兜底中文映射。
+
+    Windows 平台主题（QPlatformTheme）取「是/否/确定/取消」时不会命中
+    qt_zh_CN.qm 里的 QDialogButtonBox 条目，实测按钮仍显示 &Yes / &No / OK / Cancel。
+    这里补一层 translate() 覆盖，context 不匹配时返回空串，交给后面的 Qt 翻译。
+    """
+
+    _TEXTS = {
+        '&Yes': '是(&Y)', 'Yes': '是(&Y)',
+        '&No': '否(&N)', 'No': '否(&N)',
+        'OK': '确定', '&OK': '确定(&O)',
+        'Cancel': '取消', '&Cancel': '取消(&C)',
+        '&Apply': '应用(&A)', 'Apply': '应用',
+        'Close': '关闭', '&Close': '关闭',
+        'Abort': '中止', 'Retry': '重试', 'Ignore': '忽略',
+        '&Save': '保存(&S)', 'Save': '保存',
+        '&Discard': '放弃(&D)', 'Discard': '放弃',
+        'Open': '打开', '&Open': '打开',
+        'Help': '帮助', 'Reset': '重置',
+        'Restore Defaults': '恢复默认值',
+    }
+
+    def translate(self, context, source_text, disambiguation=None, n=-1):
+        if context in ('QPlatformTheme', 'QDialogButtonBox'):
+            return self._TEXTS.get(source_text, '')
+        return ''
+
+
+def _install_chinese_translator():
+    """加载 Qt 自带的中文翻译（qt_zh_CN.qm）+ 标准按钮兜底。
+
+    不做这一步时，QMessageBox（是 / 否 / 确定 / 取消）、QFileDialog 等
+    Qt 标准对话框的按钮仍然是英文 —— 即使我们自己的文案全写成中文。
+    """
+    app = QApplication.instance()
+    if app is None:
+        return
+    if getattr(app, '_zh_cn_translator', None) is not None:
+        return
+    translations_path = QLibraryInfo.location(QLibraryInfo.TranslationsPath)
+    translator = QTranslator(app)
+    if translator.load('qt_zh_CN', translations_path):
+        app.installTranslator(translator)
+        app._zh_cn_translator = translator
+        logger.info(f"已加载 Qt 中文翻译: {translations_path}")
+    else:
+        logger.warning(f"未找到 qt_zh_CN.qm（{translations_path}），标准对话框按钮可能仍为英文")
+
+    button_translator = _StandardButtonTranslator(app)
+    app.installTranslator(button_translator)
+    app._zh_cn_button_translator = button_translator
 
 
 class FileDisplayDelegate(QStyledItemDelegate):
@@ -83,11 +140,18 @@ class MainWindow(QMainWindow):
 
         super(MainWindow, self).__init__(*args, **kwargs)
 
+        # 界面全中文：加载 Qt 自带中文翻译，标准对话框（是/否/确定/取消）才不会显示英文
+        _install_chinese_translator()
+
         self.path = ''
         self.path_right_click = ''
         self.left = 1
         self.right = 6
         self.config_manager = ConfigManager()
+        # -- 私密模式密钥服务（与 privi 完全兼容的密钥包 / 加解密）--
+        self.private_service = PrivateService()
+        self.private_service.clear_cache()   # 上次运行残留的解密明文一律清掉
+        self.private_batch_thread = None
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
         self.private_mode = False
@@ -303,6 +367,8 @@ class MainWindow(QMainWindow):
         self.private_tree_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.private_tree_view.setItemDelegate(FileDisplayDelegate(self.private_tree_view))
         self.private_tree_view.clicked.connect(self._on_private_tree_clicked)
+        self.private_tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.private_tree_view.customContextMenuRequested.connect(self._private_right_click_menu)
         self.private_tree_view.setVisible(False)
         self.mainQWidget.addWidget(self.private_tree_view)
 
@@ -356,7 +422,7 @@ class MainWindow(QMainWindow):
         self.statusbar = QStatusBar(self)
         self.statusbar.setObjectName("statusbar")
         self.statusLabel = QLabel()
-        self.statusLabel.setText("状态栏")
+        self.statusLabel.setText("就绪")
         self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
 
         self.toggle_tree_btn = QPushButton("◀ 隐藏列表")
@@ -667,7 +733,7 @@ class MainWindow(QMainWindow):
         if (event.key() == Qt.Key_B) and QApplication.keyboardModifiers() == Qt.ControlModifier:
             self.toggle_tree()
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
-            self.notice("shift + o")
+            self.notice("快捷键：Shift + O")
 
     def full_screen_custom(self):
         if self.video_show_qwidget.isVisible():
@@ -734,6 +800,14 @@ class MainWindow(QMainWindow):
             self.video_show_layout.player.setMedia(QMediaContent())
             # 断开视频输出，防止 CVDisplayLink 回调访问已释放对象
             self.video_show_layout.player.setVideoOutput(None)
+
+        # 退出时清掉私密模式的解密缓存（明文不应落盘留存）
+        try:
+            if hasattr(self, 'private_service'):
+                self.private_service.clear_cache()
+                self.private_service.close()
+        except Exception as e:
+            logger.warning(f'退出时清理私密缓存失败: {e}')
 
         event.accept()
 
@@ -833,6 +907,23 @@ class MainWindow(QMainWindow):
         exit_action.setShortcut(QKeySequence("Ctrl+Q"))
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        # ---- 密钥菜单（privi 兼容的密钥包导入 / 导出）----
+        key_menu = self.menu_bar.addMenu("密钥(&K)")
+
+        self.import_key_action = QAction("导入密钥...", self)
+        self.import_key_action.triggered.connect(self._import_key_package)
+        key_menu.addAction(self.import_key_action)
+
+        self.export_key_action = QAction("导出密钥...", self)
+        self.export_key_action.triggered.connect(self._export_key_package)
+        key_menu.addAction(self.export_key_action)
+
+        key_menu.addSeparator()
+
+        self.key_status_action = QAction("密钥状态...", self)
+        self.key_status_action.triggered.connect(self._show_key_status)
+        key_menu.addAction(self.key_status_action)
 
         # ---- 视图菜单 ----
         view_menu = self.menu_bar.addMenu("视图(&V)")
@@ -957,21 +1048,24 @@ class MainWindow(QMainWindow):
         """加载私密库路径到左侧树"""
         self.private_overlay_widget.setVisible(False)
         self.private_tree_view.setVisible(True)
+        self.private_tree_model.refresh()
         root_index = self.private_tree_model.index(path)
         self.private_tree_view.setRootIndex(root_index)
         # 展开根目录
         self.private_tree_view.setExpanded(root_index, True)
         # 私密树 : 工作区 = left : right
         self.mainQWidget.setSizes([0, 10000 * self.left, 10000 * self.right])
+        if self.private_service.has_key():
+            self.notice('私密模式：已加载密钥')
+        else:
+            self.notice('私密模式：尚未导入密钥，加密文件请先「密钥 → 导入密钥」')
 
     def _on_private_tree_clicked(self, qmodelindex):
-        """私密模式下树节点点击事件"""
+        """私密模式下树节点点击事件（点到密文时先解密再交给现有展示逻辑）"""
         file_path = self.private_tree_model.filePath(qmodelindex)
 
         if os.path.isdir(file_path):
-            self.pic_show_qwidget.setVisible(False)
-            self.video_show_qwidget.setVisible(False)
-            self.private_overlay_widget.setVisible(False)
+            self._load_private_slideshow(file_path)
             return
 
         if not os.path.isfile(file_path):
@@ -981,22 +1075,356 @@ class MainWindow(QMainWindow):
         if self.inputAndExeLayout.timer.isActive():
             self.inputAndExeLayout.timer.stop()
 
-        # 根据文件类型切换显示
-        if self.video_show_layout.is_video(file_path):
+        # 密文 → 解密到本次运行缓存；明文 → 原样返回
+        try:
+            play_path, display_name = self.private_service.resolve_playable(file_path)
+        except Exception as e:
+            logger.error(f'私密文件解密失败 {file_path}: {e}')
+            self.notice('解密失败：' + str(e))
+            QMessageBox.warning(self, '私密文件', str(e))
+            return
+
+        # 根据文件类型切换显示（复用普通模式的播放 / 看图功能）
+        if self.video_show_layout.is_video(play_path):
             self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
             self.video_show_layout.play_list.clear()
             self.video_show_layout.play_list_index = 0
             self.change_show(MainWindow.show_type_video)
-            self.video_show_layout.play(file_path)
-        elif self.pic_show_layout.is_pic(file_path):
+            self.video_show_layout.play(play_path)
+        elif self.pic_show_layout.is_pic(play_path):
             self.pic_show_layout.counter = 0
             self.pic_show_layout.inputAndExeLayout.list_files.clear()
+            self.pic_show_layout.inputAndExeLayout.list_files.append(play_path)
             self.change_show(MainWindow.show_type_pic)
-            self.pic_show_layout.play(file_path)
+            self.pic_show_layout.play(play_path)
         else:
-            self.video_show_layout.titleQLabel.setText('文件格式错误!!!')
-            self.pic_show_layout.titleQLabel.setText('文件格式错误!!!')
-            self.notice('文件格式错误!!!')
+            message = '文件格式不支持：' + display_name
+            self.video_show_layout.titleQLabel.setText(message)
+            self.pic_show_layout.titleQLabel.setText(message)
+            self.notice(message)
+            return
+
+        # 标题栏显示原始文件名（而不是解密缓存里的路径）
+        try:
+            self.title_bar.setInfo(os.path.splitext(display_name)[0], '')
+        except Exception:
+            pass
+
+    def _load_private_slideshow(self, dir_path):
+        """私密目录：把目录下的图片（含密文）准备好，交给幻灯片功能展示。"""
+        try:
+            images = self.private_service.list_images(dir_path)
+        except Exception as e:
+            logger.error(f'读取私密目录失败 {dir_path}: {e}')
+            self.notice('读取目录失败：' + str(e))
+            return
+
+        if not images:
+            self.pic_show_qwidget.setVisible(False)
+            self.video_show_qwidget.setVisible(False)
+            self.private_overlay_widget.setVisible(False)
+            self.notice('该目录下没有可展示的图片')
+            return
+
+        progress = QProgressDialog('正在解密图片...', '取消', 0, len(images), self)
+        progress.setWindowTitle('私密模式')
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+
+        playable = []
+        display_names = []
+        for index, path in enumerate(images):
+            if progress.wasCanceled():
+                break
+            progress.setValue(index)
+            progress.setLabelText('解密：' + os.path.basename(path))
+            QApplication.processEvents()
+            try:
+                cache_path, display_name = self.private_service.resolve_playable(path)
+            except Exception as e:
+                logger.warning(f'私密图片解密失败 {path}: {e}')
+                continue
+            playable.append(cache_path)
+            display_names.append(display_name)
+        progress.setValue(len(images))
+        progress.close()
+
+        if not playable:
+            self.notice('没有可展示的图片（可能是缺少配套密钥）')
+            return
+
+        self.inputAndExeLayout.inputPath.setText(dir_path)
+        self.inputAndExeLayout.list_files.clear()
+        self.inputAndExeLayout.list_files.extend(playable)
+        self.pic_show_layout.counter = 0
+        self.change_show(MainWindow.show_type_pic)
+        self.pic_show_layout.play(playable[0])
+        try:
+            self.title_bar.setInfo(os.path.splitext(display_names[0])[0],
+                                   '(1/%d)' % len(playable))
+        except Exception:
+            pass
+
+    # ============================================
+    #  私密模式：左侧树右键（加密 / 解密）
+    # ============================================
+    def _private_right_click_menu(self, pos):
+        """私密模式左侧树右键菜单（只有私密模式才有）。"""
+        if not self.private_mode:
+            return
+
+        index = self.private_tree_view.indexAt(pos)
+        if index.isValid():
+            target = self.private_tree_model.filePath(index)
+        else:
+            root_index = self.private_tree_view.rootIndex()
+            target = self.private_tree_model.filePath(root_index) if root_index.isValid() else ''
+        if not target:
+            self.notice('请先在左侧树中选择目录')
+            return
+
+        menu = QMenu(self.private_tree_view)
+        encrypt_action = menu.addAction('加密该路径下的图片和视频')
+        decrypt_action = menu.addAction('解密该路径下的文件')
+        menu.addSeparator()
+        refresh_action = menu.addAction('刷新')
+
+        chosen = menu.exec_(self.private_tree_view.viewport().mapToGlobal(pos))
+        if chosen == encrypt_action:
+            self._encrypt_private_path(target)
+        elif chosen == decrypt_action:
+            self._decrypt_private_path(target)
+        elif chosen == refresh_action:
+            self.private_tree_model.refresh()
+
+    def _encrypt_private_path(self, target):
+        try:
+            files, skipped = self.private_service.scan_encryptable(target)
+        except Exception as e:
+            logger.error(f'扫描待加密文件失败 {target}: {e}')
+            self.notice('扫描失败：' + str(e))
+            return
+        if not files:
+            QMessageBox.information(self, '加密', '该路径下没有需要加密的图片/视频文件。')
+            return
+
+        if not self.private_service.has_key():
+            answer = QMessageBox.question(
+                self, '尚未导入密钥',
+                '当前还没有密钥。\n继续将自动生成一把新的随机密钥'
+                '（可通过「密钥 → 导出密钥」备份）。\n\n继续？',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if answer != QMessageBox.Yes:
+                return
+
+        answer = QMessageBox.question(
+            self, '加密确认',
+            '即将加密 %d 个图片/视频文件：\n%s\n\n'
+            '将同时加密文件内容与文件名，加密后源文件会被删除，只保留加密文件。\n'
+            '另有 %d 个非媒体 / 已加密文件会被跳过。\n\n继续？'
+            % (len(files), target, skipped),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        self._run_private_batch('encrypt', target, len(files))
+
+    def _decrypt_private_path(self, target):
+        try:
+            files, missing_key = self.private_service.scan_decryptable(target)
+        except Exception as e:
+            logger.error(f'扫描待解密文件失败 {target}: {e}')
+            self.notice('扫描失败：' + str(e))
+            return
+        if not files:
+            message = '该路径下没有可解密的文件。'
+            if missing_key:
+                message += '\n另有 %d 个密文没有配套密钥记录（请先导入密钥）。' % missing_key
+            QMessageBox.information(self, '解密', message)
+            return
+
+        detail = ''
+        if missing_key:
+            detail = '\n另有 %d 个密文没有配套密钥记录，会被跳过。' % missing_key
+        answer = QMessageBox.question(
+            self, '解密确认',
+            '即将解密 %d 个文件：\n%s\n\n'
+            '解密后恢复原文件名并删除密文。%s\n\n继续？'
+            % (len(files), target, detail),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if answer != QMessageBox.Yes:
+            return
+        self._run_private_batch('decrypt', target, len(files))
+
+    def _run_private_batch(self, mode, target, total):
+        if self.private_batch_thread is not None and self.private_batch_thread.isRunning():
+            QMessageBox.information(self, '私密模式', '已有加解密任务在运行，请等待完成。')
+            return
+
+        title = '正在加密' if mode == 'encrypt' else '正在解密'
+        progress = QProgressDialog(title, '取消', 0, max(total, 1), self)
+        progress.setWindowTitle('私密模式')
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        thread = PrivateBatchThread(mode, target, parent=self)
+        thread.progress.connect(
+            lambda done, all_count, name: self._on_private_batch_progress(progress, done, all_count, name))
+        thread.completed.connect(
+            lambda stats: self._on_private_batch_completed(mode, stats, progress))
+        thread.failed.connect(
+            lambda message: self._on_private_batch_failed(message, progress))
+        progress.canceled.connect(thread.cancel)
+
+        self.private_batch_thread = thread
+        self.statusLabel.setText('%s：%s' % (title, target))
+        thread.start()
+
+    @staticmethod
+    def _on_private_batch_progress(progress, done, total, name):
+        progress.setMaximum(max(total, 1))
+        progress.setValue(min(done, max(total, 1)))
+        if name:
+            progress.setLabelText(name)
+
+    def _on_private_batch_completed(self, mode, stats, progress):
+        progress.setValue(progress.maximum())
+        progress.close()
+        self.private_batch_thread = None
+
+        # 加解密后缓存里的明文已经过期，清掉重新按需解密
+        self.private_service.clear_cache()
+        self.private_tree_model.refresh()
+        self.model.refresh()
+
+        if mode == 'encrypt':
+            message = '加密完成：成功 %d 个，跳过 %d 个，失败 %d 个。' % (
+                stats.get('encrypted', 0), stats.get('skipped', 0), stats.get('failed', 0))
+            if stats.get('kept_source'):
+                message += '\n有 %d 个文件已加密但源文件删除失败（密文已生成）。' % stats['kept_source']
+        else:
+            message = '解密完成：成功 %d 个，失败 %d 个。' % (
+                stats.get('decrypted', 0), stats.get('failed', 0))
+            if stats.get('missing_key'):
+                message += '\n有 %d 个密文没有配套密钥记录，已跳过。' % stats['missing_key']
+            if stats.get('kept_source'):
+                message += '\n有 %d 个文件明文已恢复但密文删除失败。' % stats['kept_source']
+        if stats.get('cancelled'):
+            message += '\n任务已被取消（已处理的文件不受影响，可重跑）。'
+        errors = stats.get('errors') or []
+        if errors:
+            message += '\n\n前几个错误：\n' + '\n'.join(errors[:5])
+
+        QMessageBox.information(self, '私密模式', message)
+        self.notice(message.replace('\n', ' '))
+
+    def _on_private_batch_failed(self, message, progress):
+        progress.close()
+        self.private_batch_thread = None
+        logger.error('私密批量操作失败: ' + message)
+        QMessageBox.critical(self, '私密模式', '操作失败：\n' + message)
+        self.notice('私密操作失败：' + message)
+
+    # ============================================
+    #  密钥管理（导入 / 导出 / 状态）
+    # ============================================
+    def _import_key_package(self):
+        """导入 privi 导出的密钥数据库（v2 SQLite，兼容 v1 JSON）。"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, '导入 privi 密钥数据库', '',
+            '密钥数据库 (*.db *.json);;所有文件 (*.*)')
+        if not file_path:
+            return
+
+        try:
+            summary = self.private_service.inspect_key_package(file_path)
+        except Exception as e:
+            logger.error(f'检查密钥包失败: {e}')
+            summary = None
+        if summary is None:
+            QMessageBox.warning(
+                self, '导入密钥',
+                '该文件不是 privi 导出的密钥包。\n'
+                '（需要 privi「设置 → 导出密钥」生成的 .db，或旧版 v1 JSON）')
+            return
+
+        detail = ('密钥包版本：%s\n创建时间：%s\n文件记录：%d 条（其中 %d 条带加密密钥）\n包含盐值：%s' % (
+            summary.get('version', '-'),
+            summary.get('created_at') or '-',
+            summary.get('file_count', 0),
+            summary.get('encrypted_file_count', 0),
+            '是' if summary.get('has_salt') else '否'))
+        answer = QMessageBox.question(
+            self, '导入密钥',
+            detail + '\n\n导入后将使用该密钥包解开本机的私密文件，继续？',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer != QMessageBox.Yes:
+            return
+
+        result = self.private_service.import_key_package(file_path)
+        if not result.get('ok') and result.get('reason') == 'key_conflict':
+            answer = QMessageBox.question(
+                self, '密钥冲突',
+                result.get('message', '') + '\n\n仍要覆盖本机密钥吗？',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                self.notice('已取消导入密钥')
+                return
+            result = self.private_service.import_key_package(file_path, overwrite_key=True)
+
+        if not result.get('ok'):
+            QMessageBox.warning(self, '导入密钥', result.get('message') or '导入失败')
+            return
+
+        message = ('密钥导入成功。\n新增文件记录 %d 条，更新 %d 条，跳过 %d 条。' % (
+            result.get('imported', 0), result.get('updated', 0), result.get('skipped', 0)))
+        QMessageBox.information(self, '导入密钥', message)
+        self.notice(message.replace('\n', ' '))
+        self.private_tree_model.refresh()
+
+    def _export_key_package(self):
+        """导出与 privi 完全一致的密钥数据库文件（SQLite，*.db）。"""
+        if not self.private_service.has_key():
+            QMessageBox.warning(
+                self, '导出密钥',
+                '当前还没有可导出的密钥。\n'
+                '请先导入 privi 导出的密钥包，或先对文件执行一次加密（会自动生成密钥）。')
+            return
+
+        directory = QFileDialog.getExistingDirectory(self, '选择密钥导出目录')
+        if not directory:
+            return
+
+        try:
+            path = self.private_service.export_key_package(directory)
+        except Exception as e:
+            logger.error(f'导出密钥失败: {e}')
+            QMessageBox.critical(self, '导出密钥', '导出失败：\n' + str(e))
+            return
+
+        QMessageBox.information(
+            self, '导出密钥',
+            '已导出与 privi 完全兼容的密钥数据库：\n%s\n\n'
+            '⚠ 密钥包等同于明文密钥，配合私密目录可解密全部文件；'
+            '请离线保存或放进加密网盘，不要外传。' % path)
+        self.notice('已导出密钥：' + path)
+
+    def _show_key_status(self):
+        info = self.private_service.key_info()
+        if info is None:
+            QMessageBox.information(
+                self, '密钥状态',
+                '尚未导入密钥。\n\n'
+                '可通过「密钥 → 导入密钥」选择 privi 导出的 .db 密钥包；\n'
+                '也可以直接对私密目录执行加密（会自动生成新密钥）。')
+            return
+        QMessageBox.information(
+            self, '密钥状态',
+            '密钥来源：%s\n创建时间：%s\n已记录加密文件：%d 个\n盐值：%s' % (
+                info.get('source') or '-',
+                info.get('created_at') or '-',
+                info.get('encrypted_count', 0),
+                '有' if info.get('salt') else '无'))
 
     def _show_about_dialog(self):
         """显示关于对话框"""
@@ -1019,12 +1447,12 @@ class MainWindow(QMainWindow):
 
         about_text = (
             f"<h2>多媒体播放器</h2>"
-            f"<p><b>版本:</b> {version}</p>"
-            f"<p><b>构建信息:</b></p>"
+            f"<p><b>版本：</b>{version}</p>"
+            f"<p><b>构建信息：</b></p>"
             f"<ul>"
-            f"<li>Python: {python_version}</li>"
-            f"<li>PyQt5: {pyqt_version}</li>"
-            f"<li>操作系统: {platform.system()} {platform.release()}</li>"
+            f"<li>Python 运行环境：{python_version}</li>"
+            f"<li>Qt（PyQt5）版本：{pyqt_version}</li>"
+            f"<li>操作系统：{platform.system()} {platform.release()}</li>"
             f"</ul>"
             f"<p>基于 PyQt5 与 OpenCV 的桌面多媒体播放器，<br>"
             f"支持视频/音频播放、裁剪、截图、幻灯片等功能。</p>"

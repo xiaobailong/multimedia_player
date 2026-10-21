@@ -77,7 +77,7 @@ class Ui_Form(object):
 
     def retranslateUi(self, Form):
         _translate = QtCore.QCoreApplication.translate
-        Form.setWindowTitle(_translate("QRangeSlider", "QRangeSlider"))
+        Form.setWindowTitle(_translate("QRangeSlider", "范围选择滑块"))
 
 
 class Element(QtWidgets.QGroupBox):

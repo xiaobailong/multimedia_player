@@ -58,6 +58,26 @@ def get_db_path():
     return os.path.join(db_dir, 'player.db')
 
 
+def get_private_key_db_path():
+    """
+    获取私密模式密钥库路径（与 player.db 同目录，独立文件，避免污染既有表结构）。
+    """
+    db_dir = get_app_data_path()
+    return os.path.join(db_dir, 'private_keys.db')
+
+
+def get_private_cache_path():
+    """
+    获取私密模式解密缓存目录。
+
+    加密文件要先解密成带正确扩展名的明文才能交给现有播放/展示逻辑，
+    这些明文只应在本次运行期间存在（启动与退出时清空）。
+    """
+    cache_dir = os.path.join(get_app_data_path(), 'private_cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
 def get_ffmpeg_path():
     """
     获取 ffmpeg 可执行文件路径。

@@ -72,3 +72,52 @@
 - 反例 / 易误判: 容易被误判为"没装 Python"或"环境坏了"；实际换源后立刻正常
 - 相关文件: `scripts/build.bat`
 - 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
+
+## ISSUE-005 私密模式依赖 `cryptography`，但 `requirement.txt` 里没有 ⇒ 换机会 import 失败
+- 状态: 已修复
+- 症状 / 现场: 新增的 `src/private_mode/privi_crypto.py` 直接 `from cryptography.hazmat...`；
+  本机 `.venv` 里恰好已装 `cryptography 50.0.2`（pip 显示 "Requirement already satisfied"），
+  但 `requirement.txt` 里没有它 —— 换机器或重建虚拟环境后 `import Player` 会 `ModuleNotFoundError`
+- 复发判据: `findstr /i cryptography requirement.txt` 无输出，或
+  `.venv\Scripts\python.exe -c "import cryptography"` 失败
+- 根因: 只在本机验证通过，遗漏了依赖声明（本机恰好预装）
+- 证据: `tmp\pip_cryptography.log` 输出
+  `Requirement already satisfied: cryptography>=42 in .\.venv\Lib\site-packages (50.0.2)`；
+  修改前 `requirement.txt` 仅 10 行且不含 cryptography
+- 修法: `requirement.txt` 末尾追加 `cryptography>=42`。
+  PyInstaller 自带 `cryptography` 官方 hook，无需额外 `--hidden-import`
+- 反例 / 易误判: "本机能跑就不用声明依赖"；把 `cryptography` 误当成 PyQt5 或 apsw 的附带依赖
+- 相关文件: `requirement.txt`、`src/private_mode/privi_crypto.py`
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
+
+## ISSUE-006 本机自动化会话里 QMediaPlayer 对任何本地视频都 `ResourceError` ⇒ 无法自动验证视频播放
+- 状态: 未定位
+- 症状 / 现场: `QMediaPlayer.setMedia(本地 mp4)` + `play()` 后，
+  `mediaStatus` 从 LoadingMedia(2) 直接跳到 InvalidMedia(8)，`error()==1`(ResourceError)、
+  `state==0`、`duration==0`、`errorString()` 为空
+- 复发判据: 8 行最小复现（真实事件循环，不用 processEvents 也能复现）：
+  ```python
+  from PyQt5.QtCore import QUrl, QTimer
+  from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+  from PyQt5.QtWidgets import QApplication
+  app = QApplication([]); p = QMediaPlayer()
+  p.setMedia(QMediaContent(QUrl.fromLocalFile(r'<任意本地 mp4>')))
+  p.play(); QTimer.singleShot(4000, app.quit); app.exec_()
+  print(p.mediaStatus(), p.error(), p.duration())   # 实测 8 1 0
+  ```
+- 证据:
+  1. 三种容器全部失败：H.264 mp4 / mpeg4 mp4 / mjpeg avi（都 `status=8 error=1`）；
+  2. **未加密的明文**与「私密模式解密缓存」表现完全一致 ⇒ 与加解密无关；
+  3. `PyQt5/Qt5/plugins/mediaservice/{dsengine.dll,wmfengine.dll}` 存在，
+     但 `QT_DEBUG_PLUGINS=1` 没有任何插件加载日志
+- 修法: 未定位。不影响本次结论：解密缓存与原始文件字节完全一致，OpenCV 可正常打开并读帧，
+  图片路径已实测渲染成功
+- 下一步验证:
+  ① 在交互式桌面会话（非本自动化会话）直接 `python Player.py` 播放明文 mp4；
+  ② 安装 LAVFilters（`解码器/LAVFilters-0.73.1.exe`）后重试；
+  ③ 检查 `QT_PLUGIN_PATH` / `QT_QPA_PLATFORM_PLUGIN_PATH` 与 mediaservice 插件依赖；
+  ④ 换用 `QVideoWidget` + 显式 `app.exec_()` 的完整 Demo 代码验证
+- 反例 / 易误判: 看到"解密后的视频播不了"就怀疑加解密 —— 必须先拿**明文对照组**跑一遍；
+  本条目就是靠对照组排除的
+- 相关文件: `Player.py`（视频播放链路未改动）、`src/private_mode/private_service.py`
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
