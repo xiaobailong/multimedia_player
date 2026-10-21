@@ -4,13 +4,13 @@
 基于 PyQt5 的桌面多媒体播放器，支持视频/音频播放、裁剪、截图等功能，可跨平台（Windows/macOS）运行。
 
 ## 技术栈
-- **语言**: Python 3
+- **语言**: Python 3.14+
 - **GUI 框架**: PyQt5 5.15.10
-- **视频处理**: OpenCV 4.7.0.72 (numpy<2.0)
-- **打包**: PyInstaller 6.10.0
+- **视频处理**: OpenCV 4.8+ (numpy>=2.0,<3.0)
+- **打包**: PyInstaller 6.15+
 - **数据库**: SQLite3 (via apsw)
 - **日志**: loguru 0.7.0
-- **图像处理**: Pillow 10.0.1
+- **图像处理**: Pillow 10.4+
 - **其他**: send2trash 1.8.3, pywin32 (Windows)
 
 ## 目录结构
@@ -61,8 +61,10 @@ multimedia_player/
   - `scripts\build.bat onefile` — 仅构建单文件版
   - `scripts\build.bat zip` — 仅打包 zip
   - `scripts\build.bat norelease` — 构建但不自动推送 Release
+  - `scripts\build.bat nobump` — 构建但不递增版本号
   - `scripts\build.bat clean` — 清理构建产物
 - **单独补发 Release**: `scripts\push_release.bat`
+- **清理构建产物**: `scripts\clean.bat`（或 `scripts\build.bat clean`）
 - **版本号**: `VERSION` 文件是唯一真源，一行语义化版本号（如 `1.0.0`）
 
 ### Python 代码校验（替代构建）
@@ -95,6 +97,12 @@ multimedia_player/
 - 知识库位于 `memory-bank/`，索引文件 `memory-bank/README.md`
 - 开工读索引 → 只读命中条目；收工照 `memory-bank/README.md` §5 模板回填
 - 禁止扫全仓库
+
+### 构建日志
+- **每次构建自动双写**：控制台实时输出 + 完整日志写入 `build\build_full.log`
+- 实现原理：首轮调用检测无 `--log` 参数 → PowerShell 管道重新调用自身 `--log` → 所有 stdout/stderr 经 `ForEach-Object` 同时输出到控制台和 `StreamWriter`
+- 日志文件 UTF-8 无 BOM，`AutoFlush=true` 保证实时可 tail
+- `build\` 目录被 `.gitignore` 忽略
 
 ### 命令等待
 - 在终端执行命令后必须等待命令执行完成，不要命令一发出就立刻查看输出并断定执行失败

@@ -58,3 +58,17 @@
   说明不是网络问题
 - 相关文件: `requirement.txt`
 - 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
+
+## ISSUE-004 pip 安装依赖超时：`Connection to pypi.org timed out`
+- 状态: 已修复
+- 症状 / 现场: `pip install -r requirement.txt` 报 `ConnectTimeoutError(..., 'Connection to pypi.org timed out. (connect timeout=15)')`
+- 复发判据: `pip install numpy -i https://pypi.org/simple/` 超时
+- 根因: 国内网络直连 PyPI 官方源不稳定，大包下载（如 PyQt5 约 50MB）极易超时
+- 修法: 所有 pip 命令添加清华镜像：
+  ```
+  pip install ... -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+  ```
+  `build.bat` 内置 `PIP_MIRROR=%PIP_MIRROR%` 变量（默认清华源），所有 pip 调用自动使用
+- 反例 / 易误判: 容易被误判为"没装 Python"或"环境坏了"；实际换源后立刻正常
+- 相关文件: `scripts/build.bat`
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21

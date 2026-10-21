@@ -87,6 +87,9 @@ scripts\build.bat onefile
 
 # 清理构建产物
 scripts\build.bat clean
+
+# 构建但不递增版本号（调试用）
+scripts\build.bat nobump
 ```
 
 构建脚本默认使用清华 pip 镜像加速下载。产物输出在 `dist/` 目录。

@@ -10,10 +10,7 @@ libs/ffmpeg/ffmpeg.exe
 
 # 构建产物
 build/
-dist/
-*.spec
 *.sha256
-release_notes_*.md
 
 # 运行时数据
 player.db

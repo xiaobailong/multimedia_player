@@ -72,3 +72,20 @@
 - **解决方案/规避**：
   - 不要让 pip 输出全部进 `nul`，保留正常输出
   - 如果必须静默，用 `> tmp\pip_log.txt 2>&1` 至少留日志文件可查
+
+### 8. `for %%i in ("%~dp0..") do set "PROJECT_ROOT=%%~fi"` 不包含末尾 `\`
+- **现象**：`if not exist "%PROJECT_ROOT%VERSION"` 实际查找路径为 `D:\...\multimedia_playerVERSION`（缺少 `\` 分隔符），始终判定文件不存在
+- **原因**：`%%~fi` 展开为完整路径时不追加 `\`
+- **解决方案/规避**：
+  - 一律写成 `set "PROJECT_ROOT=%%~fi\"`（末尾加 `\`）
+  - 或用 `if not exist "%PROJECT_ROOT%\VERSION"` 引用
+
+### 9. `pip install -i %VAR% --trusted-host HOST` 变量为空时 `--trusted-host` 被误当 `-i` 参数
+- **现象**：`pip install pyinstaller -i %PIP_MIRROR% --trusted-host pypi.tuna.tsinghua.edu.cn` 当 `%PIP_MIRROR%` 为空时，pip 把 `--trusted-host` 当 `-i` 的 URL 值，把 `pypi.tuna.tsinghua.edu.cn` 当包名，报 `The index url "--trusted-host" seems invalid` + `No matching distribution found for pypi.tuna.tsinghua.edu.cn`
+- **原因**：cmd 变量为空时参数位置漂移，`-i` 吞掉下一个 token
+- **解决方案/规避**：pip 镜像源直接硬编码在命令中，不用变量
+
+### 10. PyInstaller `--specpath` 改变 `--add-data` 相对路径基准
+- **现象**：`--specpath "build"` + `--add-data="libs\ffmpeg\ffmpeg.exe;ffmpeg"` → PyInstaller 在 `build\libs\ffmpeg\ffmpeg.exe` 找文件，报 `Unable to find`
+- **原因**：`--specpath` 指定的目录会成为 `--add-data` 相对路径的解析基准（而非当前工作目录）
+- **解决方案/规避**：`--add-data` 一律使用绝对路径：`--add-data="%PROJECT_ROOT%libs\ffmpeg\ffmpeg.exe;ffmpeg"`

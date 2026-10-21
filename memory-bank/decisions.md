@@ -49,3 +49,62 @@
 - 理由: 结论与「复发判据」沉淀成可检索的短条目，比重新排查快一个数量级
 - 备选与为何不选: 不建知识库（同一问题反复排查）；只靠 `.clinerules`（塞不下历史结论）
 - 影响 / 约束: **任何任务结束都要更新 memory-bank**；不写 token/密钥
+
+## ADR-006 版本号递增策略：每构建自动 +1 patch，满 100 进位
+- 日期: 2026-10-21 | 状态: 已采纳
+- 背景: 项目需要自动化版本管理，避免手动改版本号的遗漏和不一致；参考 privi 项目的 `bump_version.ps1` 方案
+- 决策:
+  1. 版本号遵循三段式语义化：`MAJOR.MINOR.PATCH`（如 `1.0.0`）
+  2. 每次构建自动将 PATCH +1；PATCH ≥ 100 时清零并进位 MINOR +1；MINOR ≥ 100 时清零并进位 MAJOR +1
+  3. 实现为一个独立的 PowerShell 脚本 `scripts/tools/bump_version.ps1`，用 `-File` 方式调用（避免 `-Command` 被安全策略拦截）
+  4. `build.bat` 在构建开始前调用 bump，并做**回读校验**（版本号必须真的变了）
+  5. 支持 `nobump` 参数跳过递增
+- 理由:
+  - 自动化避免手动忘记改版本号
+  - 满 100 进位而非满 1000，保持版本号简洁（99 次小迭代足以覆盖大部分场景）
+  - 独立脚本 `-File` 调用解决了 PowerShell `-Command` 被企业安全策略拦截的已知坑
+  - 回读校验防止"脚本退出了但文件没变"的静默失败
+- 备选与为何不选:
+  - 手动改版本号（容易忘，构建产物版本号不一致）
+  - 构建后 bump（万一构建失败，版本号已经 +1 了比实际发布少一版）
+  - 语义化 MAJOR.MINOR.PATCH 手动决定（对个人项目粒度太细，自动化 PATCH 递增更实用）
+- 影响 / 约束: 每次构建 VERSION 文件都会变，构建完成需提交 VERSION 的变更；
+  构建脚本依赖 `scripts/tools/bump_version.ps1` 存在
+
+## ADR-007 Python 3.14 依赖兼容性适配
+- 日期: 2026-10-21 | 状态: 已采纳
+- 背景: 本机 Python 已是 3.14.7，原 `requirement.txt` 中多个包无 3.14 wheel，构建在 `pip install` 阶段崩溃
+- 决策:
+  1. `numpy<2.0` → `numpy>=2.0,<3.0`（numpy 1.x 全系无 Python 3.14 wheel，连源码编译都极慢）
+  2. `opencv-python==4.7.0.72` → `opencv-python>=4.8.0`（4.7 无 numpy 2.x ABI 兼容，运行时会崩）
+  3. `pyinstaller==6.10.0` → `pyinstaller>=6.15.0`（6.10 不支持 Python 3.14，6.15 是门槛版本）
+  4. Pillow 已在之前升级至 `>=10.4.0`
+  5. `pyinstaller` 命令改用 `python -m PyInstaller`（用户目录安装时 `where pyinstaller` 找不到但 `pip` 能查到，裸命令照样挂）
+- 理由:
+  - numpy 1.x 在 Python 3.14 上无预编译 wheel，pip 会回退到源码 tar.gz 编译，耗时 5~10 分钟且可能编译失败
+  - opencv-python 4.7 的 C 扩展链接 numpy 1.x ABI，与 numpy 2.x 二进制不兼容
+  - PyInstaller 从 6.15 开始才正式支持 Python 3.14
+- 备选与为何不选:
+  - 降级 Python 到 3.12（放弃 3.14 新特性，且本机环境已固定）
+  - 用 `--only-binary :all:` 强制只装 wheel（numpy 1.x 直接装不上，不如升级）
+- 影响 / 约束: `opencv-python>=4.8.0` 需验证项目中所有 OpenCV API 调用兼容性（API 基本稳定，4.7→4.8 无 breaking change）
+
+## ADR-008 构建日志双写：控制台 + `build\build_full.log`
+- 日期: 2026-10-21 | 状态: 已采纳
+- 背景: 之前 `build.bat` 只输出到控制台，构建失败时无法回溯完整日志排查问题
+- 决策:
+  1. 采用 privi 项目的 PowerShell 管道日志双写策略
+  2. 首轮调用检测 `%~1` 不是 `--log` → PowerShell 管道重新调用 `%~f0 --log %*`
+  3. PowerShell 用 `StreamWriter` 写 `build\build_full.log`（UTF-8 无 BOM，AutoFlush=true）
+  4. 每个输出行同时 `Write-Host`（控制台）+ `$sw.WriteLine`（文件）
+  5. `finally { $sw.Close(); exit $LASTEXITCODE }` 确保日志完整 + 退出码正确传递
+- 理由:
+  - 零侵入：不需要修改任何 echo/pip/pyinstaller 的输出语句
+  - 实时可查：`AutoFlush=true` 保证每行即时落盘，可以边构建边 tail 日志
+  - 退出码透传：PowerShell `exit $LASTEXITCODE` 保证构建成败判断不受日志管道影响
+  - `2>&1` 合并 stderr → 日志包含所有错误信息
+- 备选与为何不选:
+  - 在每个 echo 后面追加 `>> build.log`（工作量大、容易遗漏、括号块内写文件困难）
+  - `script`/`tee` 命令（Windows 无原生 tee）
+  - 自定义 Python 脚本做 tee（引入额外依赖，构建前就要装好）
+- 影响 / 约束: `build\build_full.log` 每次构建覆盖（不追加）；日志文件编码 UTF-8 无 BOM

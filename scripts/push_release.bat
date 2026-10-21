@@ -30,8 +30,8 @@ echo 当前版本: !VERSION!
 
 REM ---- 检查构建产物 ----
 set "APP_NAME=多媒体播放器"
-set "ZIP_FILE=dist\%APP_NAME%_v!VERSION!.zip"
-set "EXE_FILE=dist\%APP_NAME%_v!VERSION!.exe"
+set "ZIP_FILE=build\dist\%APP_NAME%_v!VERSION!.zip"
+set "EXE_FILE=build\dist\%APP_NAME%_v!VERSION!.exe"
 
 set "HAS_ZIP=0"
 set "HAS_EXE=0"
@@ -187,7 +187,7 @@ if "!HAS_EXE!"=="1" (
 
 REM ---- Release 说明文件 ----
 set "RELEASE_TITLE=多媒体播放器 v!VERSION!"
-set "NOTES_FILE=dist\release_notes_!VERSION!.md"
+set "NOTES_FILE=build\dist\release_notes_!VERSION!.md"
 
 > "!NOTES_FILE!" echo # 多媒体播放器 v!VERSION!
 

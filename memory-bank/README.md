@@ -50,6 +50,9 @@
 | 批处理 `if/for` 块内变量取旧值 | `PIT-002`（延迟展开） |
 | `.bat` 中文乱码 / 首行不生效 | `PIT-003`（编码约定） |
 | `python -m py_compile` 无输出但实际有语法错 | `PIT-004`（Python 校验命令） |
+| 版本号递增策略 / `bump_version.ps1` | `ADR-006`（每构建 +1 patch，满 100 进位） |
+| Python 3.14 依赖升级（numpy/opencv/pyinstaller） | `ADR-007`（numpy>=2.0, opencv>=4.8, pyinstaller>=6.15） |
+| 构建日志双写（控制台 + build_full.log） | `ADR-008`（PowerShell 管道 tee，零侵入） |
 
 ## 5. 条目模板
 
