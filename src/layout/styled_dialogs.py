@@ -82,6 +82,15 @@ DIALOG_QSS = """
         background-color: #89b4fa;
         border-radius: 3px;
     }
+    QSpinBox, QComboBox, QLineEdit {
+        background-color: #313244;
+        color: #cdd6f4;
+        border: 1px solid #45475a;
+        border-radius: 4px;
+        padding: 2px 6px;
+        min-height: 22px;
+        font-size: 13px;
+    }
     QFileDialog QTreeView, QFileDialog QListView {
         background-color: #181825;
         color: #cdd6f4;
@@ -301,10 +310,14 @@ class MessageDialog(StyledDialog):
         btn_row.setContentsMargins(0, 0, 0, 0)
         btn_row.setSpacing(8)
         btn_row.addStretch(1)
+        primary_added = False
         for index, (text_, result) in enumerate(buttons):
             btn = QPushButton(text_)
-            if index == 0:
+            # 蓝色主按钮给"肯定"动作（是 / 确定），默认焦点按钮由调用方排在第一位的决定
+            if result == QDialog.Accepted and not primary_added:
                 btn.setObjectName("dialogPrimaryBtn")
+                primary_added = True
+            if index == 0:
                 btn.setDefault(True)
             btn.setMinimumWidth(76)
             btn.setFixedHeight(30)
@@ -391,7 +404,9 @@ class ProgressDialog(StyledDialog):
     def __init__(self, parent, title, label, maximum=100):
         super().__init__(parent, title, width=420)
         self.setWindowModality(Qt.WindowModal)
-        self._canceled = False
+        self._cancelled = False      # 用户是否主动取消
+        self._cancel_emitted = False  # canceled 信号只发一次
+        self._closing = False         # 正在走 close()（正常完成）
 
         self._label = QLabel(label)
         self._label.setObjectName("dialogText")
@@ -426,17 +441,28 @@ class ProgressDialog(StyledDialog):
     def setValue(self, value):
         self._bar.setValue(int(value))
 
+    def is_canceled(self):
+        """用户是否点了取消（或按 Esc / 点标题栏 ✕）。"""
+        return self._cancelled
+
     def reject(self):
         """取消按钮 / Esc / 标题栏 ✕ 都视为取消任务。"""
-        if not self._canceled:
-            self._canceled = True
+        if self._closing:
+            super().reject()
+            return
+        if not self._cancel_emitted:
+            self._cancel_emitted = True
+            self._cancelled = True
             self.canceled.emit()
         super().reject()
 
     def close(self):
         """任务正常结束时关闭：不算作取消，不触发 canceled。"""
-        self._canceled = True
-        super().close()
+        self._closing = True
+        try:
+            super().close()
+        finally:
+            self._closing = False
 
 
 # ------------------------- 便捷函数（替代 QMessageBox / QFileDialog） -------------------------

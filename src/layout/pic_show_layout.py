@@ -89,6 +89,8 @@ class PicShowLayout(QVBoxLayout):
 
         self.qscrollarea.setWidgetResizable(True)
         self.qscrollarea.setWidget(self.pictureQLabel)
+        # 滚动区不抢焦点：否则方向键会被它吃掉（快捷键要冒泡到主窗口）
+        self.qscrollarea.setFocusPolicy(Qt.NoFocus)
         self.addWidget(self.qscrollarea)
 
         # 悬浮控制面板：覆盖在图片区底部居中（暗黑透明玻璃效果）
@@ -171,8 +173,10 @@ class PicShowLayout(QVBoxLayout):
         else:
             QTimer.singleShot(0, lambda: self._play_static(filePath))
 
-        # 播放开始后自动聚焦到播放区域（方便键盘快捷键操作）
-        self.qscrollarea.setFocus()
+        # 播放开始后把键盘焦点交还主窗口（方向键 / 空格等快捷键才能生效）
+        self.main_window.setFocus()
+        # 状态栏右侧显示该图片已有的评分（按内容指纹查库，移动 / 改名后仍能识别）
+        self.main_window.refresh_rating_status(filePath)
 
     def _update_title_bar(self, filePath):
         """更新窗口标题栏显示文件名和播放进度"""
@@ -473,4 +477,8 @@ class PicShowLayout(QVBoxLayout):
             # 图片区尺寸变化后重新把控制面板贴到底部居中
             self._position_control_panel()
             # GIF 帧缩放由 _advance_gif_frame 每次绘制时获取最新窗口尺寸处理
+        elif event.type() == QEvent.MouseButtonPress:
+            # 点到图片区域（viewport）时把键盘焦点交还主窗口，方向键快捷键才生效
+            if obj is self.qscrollarea.viewport():
+                self.main_window.setFocus()
         return super().eventFilter(obj, event)

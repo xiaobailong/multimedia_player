@@ -2,6 +2,7 @@
 """
 路径工具模块：处理 PyInstaller 打包后的资源路径解析
 """
+import hashlib
 import os
 import sys
 
@@ -103,3 +104,39 @@ def get_ffmpeg_path():
             return candidate
 
     return 'ffmpeg'  # 返回默认值，让系统去 PATH 找
+
+
+def file_fingerprint(path, sample_size=1024 * 1024):
+    """计算文件内容指纹：`blake2b(文件大小 + 首尾各 sample_size 字节)`。
+
+    用途：媒体评分等数据按「文件内容」而不是「路径」索引，
+    文件被移动到别的目录 / 改名后仍然能识别出同一份文件。
+
+    视频文件可能很大，不做全量哈希；首尾各取 1MB 已足以区分不同文件，
+    且读盘量恒定（最多 2MB），切换文件时不会明显卡顿。
+
+    :param path: 文件路径
+    :param sample_size: 头 / 尾采样字节数
+    :return: 32 位十六进制指纹字符串；文件不可读时返回空串
+    """
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return ''
+
+    hasher = hashlib.blake2b(digest_size=16)
+    hasher.update(str(size).encode('ascii'))
+    try:
+        with open(path, 'rb') as fh:
+            head = fh.read(sample_size)
+            hasher.update(head)
+            if size > sample_size * 2:
+                # 大文件：再取尾部一段
+                fh.seek(-sample_size, os.SEEK_END)
+                hasher.update(fh.read(sample_size))
+            elif len(head) < size:
+                # 小于 2*sample_size 的文件：把头之后剩下的内容读完，等价于全量哈希
+                hasher.update(fh.read())
+    except OSError:
+        return ''
+    return hasher.hexdigest()

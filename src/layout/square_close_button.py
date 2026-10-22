@@ -44,6 +44,8 @@ class SquareCloseButton(QPushButton):
         self.setFixedSize(size, size)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setCursor(Qt.PointingHandCursor)
+        # 鼠标专用控件：不参与键盘焦点（避免点过关闭按钮后方向键失效）
+        self.setFocusPolicy(Qt.NoFocus)
         self.setToolTip(tooltip)
         self._hover = False
 

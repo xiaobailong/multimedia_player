@@ -6,6 +6,7 @@ from loguru import logger
 
 from src.data_manager.config_manager import ConfigManager
 from src.layout.pic_scan_thread import PicScanThread
+from src.layout.styled_dialogs import pick_directory
 
 
 class PicInputLayout(QHBoxLayout):
@@ -28,12 +29,15 @@ class PicInputLayout(QHBoxLayout):
         # 图片目录统一由左侧树选择（点击目录 / 右键「加载为幻灯片列表」），
         # 没有可用目录时点「幻灯片」会兜底弹出目录选择框；间隔由「设置 → 幻灯片」设置
         self.btn = QPushButton("幻灯片")
+        self.btn.setFocusPolicy(Qt.NoFocus)
         self.addWidget(self.btn)
 
         self.startAndFullScreenBtn = QPushButton("幻灯片并全屏")
+        self.startAndFullScreenBtn.setFocusPolicy(Qt.NoFocus)
         self.addWidget(self.startAndFullScreenBtn)
 
         self.fullScreenBtn = QPushButton("全屏")
+        self.fullScreenBtn.setFocusPolicy(Qt.NoFocus)
         self.addWidget(self.fullScreenBtn)
 
         self.setContentsMargins(0, 0, 0, 0)
@@ -62,7 +66,7 @@ class PicInputLayout(QHBoxLayout):
     def choose_pic_list(self, start_slideshow=False):
         """兜底：没有可用的图片目录时弹出目录选择框（左侧树是主要入口）。"""
         start_dir = self.content_path if os.path.isdir(self.content_path) else ''
-        selected_path = QFileDialog.getExistingDirectory(
+        selected_path = pick_directory(
             self.pic_show_layout.main_window, "选择图片目录", start_dir)
         if not selected_path:
             self._pending_slideshow = False

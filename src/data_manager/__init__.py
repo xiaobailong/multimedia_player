@@ -1,3 +1,4 @@
 from src.data_manager.sqlite3_client import Sqlite3Client
 from src.data_manager.config_manager import ConfigManager
 from src.data_manager.position_manager import PositionManager
+from src.data_manager.rating_manager import RatingManager

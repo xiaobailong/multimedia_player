@@ -260,6 +260,8 @@ class VideoShowLayout(QVBoxLayout):
 
         self.player = QMediaPlayer()
         self.video_widget = QVideoWidget()
+        # 方向键快捷键要能冒泡到主窗口：视频画面本身不参与键盘焦点
+        self.video_widget.setFocusPolicy(Qt.NoFocus)
         self.player.setVideoOutput(self.video_widget)
 
         # 媒体状态变化信号：加载完成后跳转到记忆位置
@@ -269,6 +271,8 @@ class VideoShowLayout(QVBoxLayout):
         self._pending_seek_attempts = 0   # 已重试次数（timer 后备）
 
         self.qscrollarea = QScrollArea()
+        # 同上：滚动区域不抢焦点，否则方向键会被它吃掉（滚动条已隐藏）
+        self.qscrollarea.setFocusPolicy(Qt.NoFocus)
 
         # Use PyQt5 QDesktopWidget instead of PIL.ImageGrab for screen size
         desktop = QApplication.desktop()
@@ -332,6 +336,8 @@ class VideoShowLayout(QVBoxLayout):
             btn.setToolTip(tooltip)
             btn.setMinimumWidth(min_w)
             btn.setFixedHeight(30)
+            # 鼠标专用按钮：不抢键盘焦点，保证方向键等快捷键始终落到主窗口
+            btn.setFocusPolicy(Qt.NoFocus)
             if obj_name:
                 btn.setObjectName(obj_name)
             if checkable:
@@ -345,11 +351,11 @@ class VideoShowLayout(QVBoxLayout):
         self.controal_hbox.setSpacing(4)
 
         # -- 左：播放控制按钮组 --
-        self.previous_btn = _icon_btn(_previous_icon, '上一个视频（W）')
+        self.previous_btn = _icon_btn(_previous_icon, '上一个视频（W / ←）')
         self.previous_btn.clicked.connect(self.previous)
         self.controal_hbox.addWidget(self.previous_btn)
 
-        self.down_btn = _icon_btn(_rewind_icon, '后退（←）')
+        self.down_btn = _icon_btn(_rewind_icon, '快退（↓）')
         self.down_btn.clicked.connect(self.down_time)
         self.controal_hbox.addWidget(self.down_btn)
 
@@ -357,11 +363,11 @@ class VideoShowLayout(QVBoxLayout):
         self.stop_btn.clicked.connect(self.run_or_stop)
         self.controal_hbox.addWidget(self.stop_btn)
 
-        self.up_btn = _icon_btn(_forward_icon, '前进（→）')
+        self.up_btn = _icon_btn(_forward_icon, '快进（↑）')
         self.up_btn.clicked.connect(self.up_time)
         self.controal_hbox.addWidget(self.up_btn)
 
-        self.next_btn = _icon_btn(_next_icon, '下一个视频（E）')
+        self.next_btn = _icon_btn(_next_icon, '下一个视频（E / →）')
         self.next_btn.clicked.connect(self.next)
         self.controal_hbox.addWidget(self.next_btn)
 
@@ -380,6 +386,7 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_label_start.setToolTip('把剪切起点设为当前播放位置')
         self.cut_bar_label_start.clicked.connect(self.get_video_start)
         self.cut_bar_label_start.setFixedHeight(30)
+        self.cut_bar_label_start.setFocusPolicy(Qt.NoFocus)
         self.controal_hbox.addWidget(self.cut_bar_label_start)
 
         self.cut_bar_edit_start = QLineEdit()
@@ -395,6 +402,7 @@ class VideoShowLayout(QVBoxLayout):
         self.cut_bar_label_end.setToolTip('把剪切终点设为当前播放位置')
         self.cut_bar_label_end.clicked.connect(self.get_video_end)
         self.cut_bar_label_end.setFixedHeight(30)
+        self.cut_bar_label_end.setFocusPolicy(Qt.NoFocus)
         self.controal_hbox.addWidget(self.cut_bar_label_end)
 
         self.cut_bar_edit_end = QLineEdit()
@@ -448,6 +456,9 @@ class VideoShowLayout(QVBoxLayout):
 
         # 监听窗口大小变化：视频 QScrollArea 自适应
         self.main_window.installEventFilter(self)
+        # 点视频画面时把键盘焦点交还主窗口（方向键快捷键）
+        self.qscrollarea.viewport().installEventFilter(self)
+        self.video_widget.installEventFilter(self)
 
     def enter_fullscreen_mode(self):
         """进入全屏模式：将控制控件移动到悬浮面板，只保留视频画面"""
@@ -614,8 +625,10 @@ class VideoShowLayout(QVBoxLayout):
 
         self.timer.start()
 
-        # 播放开始后自动聚焦到视频区域（方便键盘快捷键操作）
-        self.video_widget.setFocus()
+        # 播放开始后把键盘焦点交还主窗口（方向键 / 空格等快捷键才能生效）
+        self.main_window.setFocus()
+        # 状态栏右侧显示该视频已有的评分（按内容指纹查库，移动 / 改名后仍能识别）
+        self.main_window.refresh_rating_status(filePath)
 
     def _update_title_bar(self, filePath):
         """更新窗口标题栏显示文件名和播放进度"""
@@ -967,6 +980,10 @@ class VideoShowLayout(QVBoxLayout):
         if event.type() == QEvent.Resize:
             # QScrollArea 的 setWidgetResizable(True) 会自动处理
             pass  # 交由 QScrollArea 自身处理自适应
+        elif event.type() == QEvent.MouseButtonPress:
+            # 点到视频画面 / 滚动区时把键盘焦点交还主窗口，方向键快捷键才生效
+            if obj in (self.video_widget, self.qscrollarea.viewport()):
+                self.main_window.setFocus()
         return super().eventFilter(obj, event)
 
     def _do_delete(self, path, filename, deleted_file_path):

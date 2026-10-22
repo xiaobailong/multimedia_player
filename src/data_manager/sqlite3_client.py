@@ -7,7 +7,17 @@ from src.utils.utils import get_db_path
 
 class Sqlite3Client:
 
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, *args, **kwargs):
+        if hasattr(self, '_initialized'):
+            return
+        self._initialized = True
         db_path = get_db_path()
         self.conn = apsw.Connection(db_path)
         logger.info(f"数据库路径: {db_path}")

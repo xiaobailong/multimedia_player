@@ -1,6 +1,7 @@
 from src.data_manager.sqlite3_client import Sqlite3Client
 from src.data_manager.config_manager import ConfigManager
 from src.data_manager.position_manager import PositionManager
+from src.data_manager.rating_manager import RatingManager
 from src.layout.pic_input_layout import PicInputLayout
 from src.layout.pic_show_layout import PicShowLayout
 from src.layout.video_show_layout import VideoShowLayout

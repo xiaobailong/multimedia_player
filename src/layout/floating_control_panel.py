@@ -164,8 +164,8 @@ class FloatingControlPanel(QWidget):
         super().leaveEvent(event)
 
     def keyPressEvent(self, event):
-        """捕获键盘事件，将 Esc 转发给 MainWindow 退出全屏"""
-        if event.key() == Qt.Key_Escape:
+        """捕获键盘事件，把 Esc / 方向键转发给 MainWindow（全屏时面板是独立窗口）"""
+        if event.key() in (Qt.Key_Escape, Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down):
             # 不让事件继续传播，直接转发给父窗口（MainWindow）
             if self.parent():
                 self.parent().keyPressEvent(event)

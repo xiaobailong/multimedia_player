@@ -313,3 +313,237 @@
 - 相关条目: `ISSUE-008`
 - 首次记录: 2026-10-21
 
+## ADR-014 视频「播放进度条」与「剪切范围滑条」合并成一条时间轴（SeekCutSlider）
+- 日期: 2026-10-22 | 状态: 已采纳
+- 背景: 视频区有两行时间轴 —— 上面 `CustomSlider` 是播放进度，下面 `QRangeSlider` 选剪切范围；
+  两者都表示"整段视频的 0~100%"，重复占垂直空间。用户同时要求时间标签去掉"已播放/总时长"文字。
+- 决策:
+  1. 新增 `src/layout/seek_cut_slider.py::SeekCutSlider(QWidget)` 自绘一条时间轴：
+     - 白色圆点 = 播放头，点击/拖动任意位置 → `seekRequested(ms)`；
+     - 蓝色双竖条 = 剪切起止，拖动 → `cutRangeChanged(start_ms, end_ms)`，区间用半透明蓝带高亮；
+     - 命中优先级：剪切手柄（±8px）> 播放头；其余位置点击一律当"定位播放"；
+  2. 时间标签：`bar_label`（左）/ `bar_label_all`（右）只显示 `HH:MM:SS`，去掉"已播放:"/"总时长:"前缀；
+  3. 剪切行只保留「开始:」「结束:」按钮 + 两个时间输入框 + 「剪切」按钮，滑条由合并控件承担；
+  4. `setDuration()` 在时长变化时把剪切范围重置为整段并 `emit cutRangeChanged`，
+     自动把时间框填成 `00:00:00 ~ 总时长`（避免旧逻辑里"结束还是 00:00:00 导致剪切直接报错"）；
+  5. `onTimerOut()` 只在 `not seek_slider.is_dragging()` 时回写位置，避免定时器与用户拖动打架；
+     位置/时长文本统一走 `_format_time()`。
+- 理由: 一条时间轴同时表达"现在播到哪"和"剪哪一段"，省一行垂直空间；自绘控件能明确控制手柄命中顺序与视觉一致性；
+  `is_dragging()` 解决定时器与拖动的竞争。
+- 备选与为何不选:
+  - 两个 QSlider 叠在同一行：手柄互相抢鼠标事件，命中判定不可控；
+  - 继续用 QRangeSlider 当主滑条、额外加播放头：它内部是 QSplitter + 三个 QGroupBox，
+    没有第三个可拖标记，等于重写；
+  - 保留文字前缀只改左右位置：不满足"去掉文字"的要求。
+- 影响 / 约束:
+  - 旧属性/方法 `bar_slider`、`cut_bar_slider`、`slider_start`、`slider_end`、`slider_progress_moved`、
+    `bar_slider_maxvalue` 全部移除（仓库内无其它引用）；
+  - 剪切时间输入框最大宽度 70→90，可完整显示 `00:00:00`；
+  - 合并控件依赖 `player.duration()`；时长未知时忽略交互（与旧逻辑一致）；
+  - 全屏悬浮面板仍搬三行控件（时间行 / 按钮行 / 剪切行），行数不变；
+  - `custom_slider.py`、`range_slider.py` 保留在仓库但不再被视频布局使用（回退时可复用）。
+- 相关文件: `src/layout/seek_cut_slider.py`、`src/layout/video_show_layout.py`、`src/layout/__init__.py`
+- 首次记录: 2026-10-22
+- 变更（2026-10-22，复核）: 控制区布局优化 ——
+  左侧/右侧时间标签改**等宽字体 + 固定 66px**（数字跳动不抖）；
+  按钮行按「播放控制 | 列表与循环 | 工具」三组、用两段弹性空白分隔，统一最小宽度（72/88/92）
+  并补快捷键 tooltip，解决原来"每个按钮被拉伸成等宽大块"；
+  播放按钮用 `#video_primary_btn` 高亮；「单曲循环」去掉 emoji（避免与其它按钮高度不一致），
+  并新增全局 `QPushButton:checked` 样式给出按下反馈；
+  剪切行改为**靠右紧凑排列**，时间框 90→120px 且写入后重置光标（见 PIT-013）。
+
+## ADR-015 悬浮控制面板关闭按钮：18×18 自绘方形（常态淡底方框 + hover 粉底反色）
+- 日期: 2026-10-22 | 状态: 已采纳
+- 背景: `ISSUE-009` —— 关闭按钮被全局 QSS 的 `min-height`/`padding` 撑成 10×32 竖条；
+  而且常态只画一个漂浮的 ✕，看不出"这是按钮"
+- 决策:
+  1. 保留 `_CloseButton(QPushButton)` 自绘方案（不用 QSS 文字 ✕），尺寸 18×18、圆角 4px；
+  2. 常态：淡粉圆角方框（底 `rgba(243,139,168,26)` + 1px `rgba(243,139,168,110)` 描边）+ 粉红 ✕；
+     hover：整块 `#f38ba8` 填充 + `#1e1e2e` ✕（沿用标题栏关闭按钮的反色交互）；
+  3. 仍然"脱离布局"定位在容器右上角，但尺寸/位置统一从 `_CloseButton.SIZE` 推导，
+     容器内容区右边距 12 → 26 给按钮留 26px 槽位
+- 理由: 与面板内 30px 高图标按钮同一套圆角/配色语言；18px 比原来 10px 的点击面积约 3 倍，
+  又不会比标题栏按钮更抢眼；常态方框让"可点"这件事一目了然
+- 备选与为何不选:
+  - 纯文字 `QPushButton("✕")` + QSS：依旧受全局 `min-height`/`padding` 影响，还得另写一套边距；
+  - 做成 30×30 与行内按钮等高：右上角会挤压第一行右侧的时间标签；
+  - 把 ✕ 放进布局单独一行：`ADR-011` 第三次复核时已按用户意见改回角落方案，不再反复
+- 影响 / 约束: 容器右边距必须 ≥ `SIZE + 6`（当前 26），否则控制行内容会钻到按钮下面；
+  以后改 `SIZE` 只需改类属性，`_position_close_btn()` 自动跟随（不再写死 10）
+- 相关文件: `src/layout/floating_control_panel.py`
+- 相关条目: `ISSUE-009`、`PIT-014`、`ADR-011`
+- 首次记录: 2026-10-22
+- 变更（2026-10-22，复用）: 用户要求图片播放控制面板也换成同款样式 ——
+  类抽到独立模块 `src/layout/square_close_button.py::SquareCloseButton`，
+  边长/提示文案改成构造参数（视频悬浮面板 18px、图片面板 24px，与行内按钮齐平）；
+  `pic_show_layout.py` 原来的 `QPushButton("✕")` + `#picControlClose` 两条 QSS 删除；
+  绘制内距与笔宽改为按实际边长等比计算（`0.3*边长`、`max(1.4, 边长/12)`），两处共用同一套绘制代码。
+
+## ADR-016 所有弹框统一成「无边框 + 自绘标题栏」的深色对话框（与主窗口同风格）
+- 日期: 2026-10-22 | 状态: 已采纳
+- 背景: 主窗口是无边框 + 自定义标题栏；但 `QMessageBox` / `QFileDialog` / 手写的 `QDialog` /
+  `QProgressDialog` 全都带着 Windows 原生标题栏 —— 深色界面里冒出一条浅色系统边框，
+  风格割裂（用户明确要求"不要弹框反而用了默认标题栏风格"）。
+- 决策:
+  1. 新增 `src/layout/styled_dialogs.py`：
+     - `StyledDialog(QDialog)`：`Qt.Dialog | Qt.FramelessWindowHint` + `WA_TranslucentBackground`；
+       外壳 `#dialogRoot`（`#1e1e2e` / 1px `#45475a` / 圆角 10）+ 24px 投影；
+       `DialogTitleBar` 高 34px（`#181825` + 1px `#313244` 下边线，与主窗口标题栏一致），
+       标题 13px 加粗 `#cdd6f4`，右侧复用 `SquareCloseButton`（18px 粉框方形 ✕，见 ADR-015）；
+       标题栏按住可拖动，首次显示居中于父窗口并 clamp 到屏幕可用区。
+     - `MessageDialog`：info / warning / error / question，图标是自绘圆点 + 字符（不依赖系统图标），
+       主按钮走 `#dialogPrimaryBtn`（`#89b4fa` 蓝底深色字）。
+     - `AboutDialog`：`QLabel` RichText + 确定。
+     - `StyledFileDialog`：`QFileDialog` 强制 `DontUseNativeDialog` 且 `setWindowFlags(Qt.Widget)`
+       嵌入外壳；按钮/标签中文化（选择 / 取消 / 位置 / 文件夹 / 文件类型，目录模式的过滤器名"目录"），
+       结果走 `selected_files`；`accepted` → 外壳 `accept()`，`rejected` → `reject()`。
+     - `ProgressDialog`：标签 + `QProgressBar` + 取消；`canceled` 信号只发一次，
+       `is_canceled()` 供同步循环用，`close()`（任务正常结束）不算取消。
+  2. 便捷函数 `show_info / show_warning / show_error / ask_yes_no / show_about /
+     pick_directory / pick_open_file`；`Player.py`、`src/layout/pic_input_layout.py` 里的
+     `QMessageBox.*`、`QFileDialog.get*`、`QProgressDialog` 调用全部替换，
+     「设置 → 幻灯片」改成 `StyledDialog` + `make_button_row()`。
+- 理由: 一套外壳 + 一套配色，弹框与主窗口 / 悬浮控制面板视觉一致；调用方只需换函数名；
+  嵌入非原生 `QFileDialog` 是同时满足"深色主题 + 无系统标题栏"的稳妥做法。
+- 备选与为何不选:
+  - 只给 `QMessageBox` 套 QSS：标题栏由 Windows 绘制，改不了，仍会出现浅色边框；
+  - 自写文件浏览器：盘符 / 网络路径 / 排序 / 新建文件夹细节等于重造轮子；
+  - `QFileDialog` 保持顶层 + `FramelessWindowHint`，再往它的 `QGridLayout` 插标题栏：
+    内部行号会撞车，Qt 版本升级易碎。
+- 影响 / 约束:
+  - 弹框没有系统最小化/最大化；关闭只有自绘 ✕ 与 Esc（都是 `reject()`）；
+  - 文件框默认 720×440，小屏上会贴近屏幕边缘（居中已 clamp）；
+  - `QMessageBox` 不再使用，但 `_install_chinese_translator` 的兜底翻译保留（Qt 内部字符串仍需要，见 PIT-008）；
+  - 新增弹框请继承 `StyledDialog` 或直接用便捷函数，不要再写 `QDialog` + 系统标题栏。
+- 相关文件: `src/layout/styled_dialogs.py`、`src/layout/square_close_button.py`、`Player.py`、
+  `src/layout/pic_input_layout.py`、`src/layout/__init__.py`
+- 相关条目: `PIT-008`、`PIT-015`、`ADR-015`
+- 首次记录: 2026-10-22
+
+## ADR-017 方向键语义调整：←/→ 上一个/下一个，↑/↓ 快进/快退（原有字母快捷键不动）
+- 日期: 2026-10-22 | 状态: 已采纳
+- 背景: 用户要求方向键按播放器习惯工作 —— 左 = 上一个、右 = 下一个（图片 + 视频），
+  上 = 快进、下 = 快退（视频），同时"原有的快捷键不要动"。
+  （原实现：← → 是视频快退/快进，图片的 ← → 才是上一个/下一个）
+- 决策:
+  1. `MainWindow.keyPressEvent` 重排方向键：
+     - ← → `pic_show_layout.down()` + `video_show_layout.previous()`
+     - → → `pic_show_layout.up()` + `video_show_layout.next()`
+     - ↑ → `video_show_layout.up_time()`（仅视频）
+     - ↓ → `video_show_layout.down_time()`（仅视频）
+  2. 原有字母键全部保留：W/E（视频上/下一个）、A/D（快退/快进 + 图片上/下一个）、
+     Space（播放暂停）、F/Esc（全屏）、Delete / Ctrl+D、S、Z/X/C、Ctrl+B 等一律不动；
+     视频控制栏 tooltip 同步为 `上一个视频（W / ←）`、`下一个视频（E / →）`、`快进（↑）`、`快退（↓）`。
+  3. 为了让方向键真正生效（原 ←/→ 在点过画面或按钮后就失灵，见 `PIT-016`）：
+     - 媒体控件（`QVideoWidget`、两个 `QScrollArea`）与鼠标专用按钮
+       （视频控制栏、图片控制面板、`SquareCloseButton`）统一 `Qt.NoFocus`；
+     - 播放结束后 `main_window.setFocus()`（原来是 `video_widget.setFocus()` / `qscrollarea.setFocus()`）；
+     - 在 viewport 上装 `eventFilter`，`MouseButtonPress` 时把焦点交还主窗口；
+     - 全屏悬浮面板是独立顶层窗口，在它的 `keyPressEvent` 里把 Esc / 方向键转发给主窗口。
+- 理由: 方向键是播放器最自然的"上一个 / 下一个 / 快进 / 快退"；保留字母键不破坏老用户肌肉记忆；
+  焦点策略是 `keyPressEvent` 能收到按键的前提，否则快捷键会"有时灵有时不灵"。
+- 备选与为何不选:
+  - 用 `QShortcut(Qt.WindowShortcut)` 绑方向键：实测目录树获得焦点时也会触发，破坏树的方向键导航；
+  - 应用级 eventFilter 全局拦方向键：会误伤表格 / 输入框 / 文件框，规则难维护；
+  - 只在全屏模式生效：用户要求"适用于图片和视频播放"，普通模式也要能用。
+- 影响 / 约束:
+  - 点击媒体区 / 控制按钮后焦点回到主窗口；这些鼠标专用按钮不再参与 Tab 焦点链；
+  - 剪切起止时间输入框（`QLineEdit`）仍可聚焦，聚焦时方向键移动文本光标、不触发播放操作；
+  - 目录树保留原有方向键导航（树消费按键，不会触发播放快捷键）；
+  - 以后新增的媒体控件 / 控制按钮要沿用 `Qt.NoFocus`，否则会重新出现"快捷键被吞"。
+- 相关文件: `Player.py`、`src/layout/video_show_layout.py`、`src/layout/pic_show_layout.py`、
+  `src/layout/pic_input_layout.py`、`src/layout/floating_control_panel.py`、
+  `src/layout/square_close_button.py`
+- 相关条目: `PIT-016`、`ADR-014`
+- 首次记录: 2026-10-22
+
+## ADR-018 图片 / 视频评分：内容指纹做主键 + 独立表 `media_rating` + 数字键 1~5 + 状态栏
+- 日期: 2026-10-22 | 状态: 已采纳
+- 背景: 需求是「图片和视频都能评分；文件移动到别的目录 / 换目录后评分仍能识别；单独建表管理；
+  用 1~5 数字键触发；状态栏显示评分结果」。
+- 决策:
+  1. 新建独立表（`player.db`，不动既有表）：
+     ```sql
+     media_rating(fingerprint TEXT PRIMARY KEY, rating INTEGER, media_type TEXT,
+                  last_path TEXT, file_size INTEGER, create_time TEXT, update_time TEXT)
+     -- + CREATE INDEX idx_media_rating_last_path ON media_rating(last_path)
+     ```
+     由 `src/data_manager/rating_manager.py::RatingManager` 管理（与 `PositionManager` 同风格，
+     复用 `Sqlite3Client` 单例；`set_rating / get_rating / delete_rating / rating_count`）。
+  2. **主键是内容指纹，不是路径**：`src/utils/utils.py::file_fingerprint()` =
+     `blake2b(文件大小 + 首 1MB + 尾 1MB)`（16 字节 → 32 位 hex）。
+     视频再大也只读 2MB，切换文件不会卡；小于 2MB 的文件等价于全量哈希。
+     文件移动 / 改名 / 换目录后内容不变 ⇒ 指纹不变 ⇒ 评分照样命中。
+     `RatingManager` 内部按 `(size, mtime_ns)` 缓存指纹，同一文件不重复读盘。
+  3. 交互：`1~5` 数字键（小键盘同样支持）→ `MainWindow._apply_rating()`；
+     带 Ctrl/Alt/Shift 的组合键不触发；聚焦在剪切时间输入框等 `QLineEdit` 时由输入框自己消费，
+     不会误评分。写入成功后同步刷新 `last_path`，便于排查文件现在在哪。
+  4. 状态栏：右侧新增常驻标签 `ratingLabel`（`#ratingLabel`，蓝字 `#89b4fa`）
+     显示 `评分：★★★★☆（4 星）`，未评分显示 `评分：—`；
+     左侧 `statusLabel` 在评分后显示 `已为图片/视频评分：★★★★☆（4 星）— 文件名`。
+     `change_show()` 与图片/视频的 `play()` 都会刷新右侧标签，
+     所以移动后的文件一打开就能看到原评分。
+- 理由: 路径会因为移动 / 改名失效，内容指纹是唯一既稳定又便宜的关联方式；
+  首尾采样把读盘量钉死在 2MB；独立表 + 独立 Manager 与现有 `video_play_position` 结构一致，便于维护。
+- 备选与为何不选:
+  - 用文件路径做主键（实现最简单，但移动后就丢了，不满足需求）；
+  - 全量哈希（几个 GB 的视频每次切换都要读完，明显卡顿）；
+  - 用 `(大小, mtime)` 做主键（拷贝 / 改时间的工具会误判，且不同文件容易撞）；
+  - 存到 `config` 键值表（评分是结构化数据，独立表便于将来按评分筛选 / 统计）。
+- 影响 / 约束:
+  - 文件内容被修改后指纹变化 ⇒ 视为新文件，旧评分不再命中（旧记录留在表里，可用 `delete_rating` 清理）；
+  - 同一内容的多个副本共享评分（按内容判定，属预期行为）；
+  - 私密模式按解密后的明文内容计算指纹 ⇒ 密文移动 / 改名后也能识别；
+  - 以后要加「按评分筛选列表」，直接查 `media_rating.rating + last_path` 即可，不必改表结构。
+- 相关文件: `src/data_manager/rating_manager.py`、`src/utils/utils.py`、`Player.py`、
+  `src/layout/pic_show_layout.py`、`src/layout/video_show_layout.py`、
+  `src/data_manager/__init__.py`、`src/__init__.py`
+- 相关条目: `PIT-017`、`ADR-017`
+- 首次记录: 2026-10-22
+
+## ADR-019 「归集」菜单：按评分 / 关键字 / 路径筛选媒体并批量拷贝
+- 日期: 2026-10-22 | 状态: 已采纳
+- 背景: 需要把符合条件的图片 / 视频批量拷到一个目录：① 按评分（≥ N 星）；② 按文件名关键字；
+  ③ 按目录递归扫描。三者都要能选文件类型（图片+视频 / 仅图片 / 仅视频）与归集数量（默认不限）；
+  路径模式还要能选「顺序取前 N 个」或「随机抽取 N 个」；交互顺序是「参数弹框 → 确定 → 选保存目录」。
+- 决策:
+  1. 菜单「归集(&G)」放在「控制」与「设置」之间，三个动作共用一个 `CollectDialog`
+     （`mode='rating' / 'keyword' / 'path'`），基于 `StyledDialog`（见 ADR-016），
+     确定按钮文案「开始归集」，取消按钮「取消」。
+  2. 参数：
+     - rating：评分不低于 N 星（1~5，默认 3）+ 文件类型 + 数量（0 = 不限）；
+     - keyword：搜索目录 + 文件名关键字（不区分大小写）+ 文件类型 + 数量；
+     - path：搜索目录 + 文件类型 + 数量 + 选择方式（顺序 / 随机；数量为「不限」时该选项置灰）。
+     三种模式都先 `pick_directory()` 选保存目录，取消则什么都不做。
+  3. 逻辑分层：
+     - `src/collect/collect_service.py`：扩展名判定（图片沿用 `is_pic` 列表，视频扩到 17 种）、
+       `iter_media_files()`（`os.scandir` 递归、子目录排序保证顺序模式稳定、逐条检查取消）、
+       `unique_destination()`（重名追加 " (n)"，绝不覆盖已有文件）；
+     - `src/collect/collect_thread.py::CollectThread`：扫描 + `shutil.copy2` 全在后台线程，
+       信号 `progress(done,total,text)` / `completed(stats)` / `failed(msg)`，`cancel()` 走 `requestInterruption()`；
+     - `src/layout/collect_dialog.py`：参数弹框；
+     - `Player.py`：`_open_collect_dialog()` → `_run_collect()`，进度用 `ProgressDialog`（可取消），
+       完成后 `show_info` 汇总（拷贝/跳过/失败/取消 + 前几个错误）并写状态栏。
+  4. `kind='all'` 的语义是「图片 + 视频」，**不是**「所有文件」：`matches_kind()` 先判媒体类型，
+     避免把 `.txt` / `.srt` 一起拷进去。
+  5. 评分模式的筛选在 GUI 线程做（查库 + `os.path.isfile` + 类型过滤 + 去重，量小）；
+     扫描 / 拷贝这类重 IO 一律放 `CollectThread`（`ISSUE-007` 的教训）。
+- 理由: 三种归集只是筛选条件不同，共用一个弹框与一套线程逻辑，代码量小、行为一致；
+  后台线程避免大目录 / 大文件拷贝把窗口卡成「未响应」；重名追加序号保证不覆盖用户已有文件。
+- 备选与为何不选:
+  - 三个独立弹框 / 三套扫描代码：重复度高，后续容易走样；
+  - 先选源目录再弹参数框：与需求的交互顺序相反；
+  - 用 `shutil.move` 移动：需求明确是"拷贝到这个路径下"，源文件要保留；
+  - 覆盖同名文件：会毁数据，改为追加 " (n)"。
+- 影响 / 约束:
+  - 归集只拷贝、不删除源文件；目标目录不存在会自动创建；
+  - 同一批里同名文件依次变成 " (1)"、" (2)"；
+  - 取消后已拷贝的文件保留（与私密加解密任务的处理一致）；
+  - 扫描不跟随符号链接目录（`follow_symlinks=False`），避免循环；
+  - 评分归集依赖 `media_rating.last_path`，文件移动过且之后没再打开过的记录会计入「跳过」。
+- 相关文件: `src/collect/collect_service.py`、`src/collect/collect_thread.py`、
+  `src/layout/collect_dialog.py`、`Player.py`、`src/data_manager/rating_manager.py`、`src/layout/__init__.py`
+- 相关条目: `ADR-018`（评分表）、`ADR-012`（后台扫描）、`ADR-016`（弹框风格）
+- 首次记录: 2026-10-22
+
+

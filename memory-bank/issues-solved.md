@@ -198,3 +198,40 @@
 - 相关条目: `ADR-013`（箭头图标方案的取舍）
 - 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
 
+## ISSUE-009 全屏悬浮控制面板的关闭按钮不是正方形：被全局 QSS 撑成 10×32 竖条
+- 状态: 已修复
+- 症状 / 现场: 视频全屏后，底部悬浮控制面板右上角的 ✕ 变成一条细长竖条（截图里像一根粉色短线），
+  用户反馈"关闭按钮有点丑，不是正方形的"
+- 复发判据: `findstr /n /c:"min-height: 0px" src\layout\square_close_button.py` 无输出（控件自身没清零 QSS 度量）
+  ⇒ 高度会被抬到 32px；要定论就临时起一个面板实例打印 `btn.geometry().getRect()`，
+  出现 `(x, y, w, 32)`（正方形被拉高）即复发，正常是 `(x, y, 18, 18)` / `(x, y, 24, 24)`
+- 根因: 关闭按钮是 `QPushButton` 子类，命中 `Player.py` 全局 QSS
+  `QPushButton { padding: 4px 12px; min-height: 22px; border: 1px solid #45475a; ... }`。
+  `QStyleSheetStyle` 据此把控件的最小高度抬到 `22 + 2*4(padding) + 2*1(border) = 32px`；
+  **最小尺寸的优先级高于 `setFixedSize()` 设的 maximum**，于是 10×10 的正方形被纵向拉成 10×32
+- 证据:
+  1. 修复前临时预览脚本（`tmp/` 下，抓图随 tmp 清理）打印 `close btn: (1067, 3, 10, 32) fixed: 10 32`，
+     截图里按钮区就是一根竖条；
+  2. 修复后同一脚本打印 `close btn: (1056, 6, 18, 18) fixed: 18 18`，面板抓图里是规整的方形按钮；
+  3. 单按钮放大图：常态淡粉方框 + ✕，hover 粉底 + 深色 ✕。
+- 修法:
+  1. 关闭按钮抽成 `src/layout/square_close_button.py::SquareCloseButton`（两个面板共用），
+     `__init__` 里**先**给控件自身设样式表清零度量
+     （`padding: 0px; margin: 0px; min-width: 0px; min-height: 0px; border: none; background: transparent;`），
+     **再** `setFixedSize(size, size)`；控件自身样式表优先级高于祖先/应用级 QSS
+  2. 视觉改成方形：常态画淡粉圆角方框（`rgba(243,139,168,26)` 底 + 1px `rgba(243,139,168,110)` 描边）
+     + 粉红 ✕；hover 整块填 `#f38ba8`、✕ 反色 `#1e1e2e`；✕ 用圆头笔，边距 `0.3*边长`
+  3. 定位统一走 `_position_close_btn()`：`x = 容器宽 - 按钮宽 - 6`、`y = 6`，并 `raise_()`；
+     容器内容区右内边距 12 → 26，给按钮留槽位，控制行不会钻到按钮下面
+  4. 图片面板（`PicShowLayout`）同款：`SquareCloseButton(size=24)` 放进操作按钮行末尾，
+     删掉原 `#picControlClose` 两条 QSS（文字 ✕ 方案作废）
+- 反例 / 易误判:
+  - 以为 `setFixedSize()` 一定赢 ⇒ 实际 QSS 的 `min-height` 会把它顶掉（宽度不受影响，所以"只变高"）；
+  - 只把尺寸从 10 调成 20：高度仍被抬到 32，还是竖条；
+  - 在父容器上写 `#floatingContainer QPushButton {...}`：部分属性仍被全局 `QPushButton` 规则覆盖；
+  - 打印 `btn.width()/height()` 而不是 `geometry()`，容易看不到被 style polish 之后的实际高度。
+- 相关文件: `src/layout/square_close_button.py`、`src/layout/floating_control_panel.py`、
+  `src/layout/pic_show_layout.py`、`Player.py`（全局 QSS）
+- 相关条目: `PIT-014`、`ADR-015`
+- 首次记录: 2026-10-22 ／ 最近复核: 2026-10-22
+
