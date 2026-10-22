@@ -110,7 +110,6 @@ multimedia_player/
 │   ├── build_mac.sh           # macOS 构建脚本
 │   └── push_release.bat       # 单独补发 GitHub Release
 ├── libs/ffmpeg/               # ffmpeg 可执行文件（截图 / 裁剪）
-├── 解码器/                     # LAVFilters 解码器安装包
 └── img/                       # 文档配图
 ```
 
@@ -177,7 +176,7 @@ scripts\build.bat clean
 
 ## 解码器说明
 
-Windows 下播放部分视频格式可能需要安装 LAVFilters 解码器，安装包位于 `解码器/` 目录。
+Windows 下播放部分视频格式依赖 LAV Filters 解码器。本程序会在启动时自动检测，若未安装则引导自动下载并静默安装；自动安装失败时会提示手动下载，地址：https://github.com/Nevcairiel/LAVFilters/releases
 
 ## 许可证
 

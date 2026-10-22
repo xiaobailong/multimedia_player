@@ -29,6 +29,9 @@ from src.collect.collect_service import matches_kind
 from src.private_mode.private_batch_thread import PrivateBatchThread
 from src.private_mode.private_service import PrivateService
 from src.utils.utils import get_log_path, get_app_data_path
+from src.utils.decoder_manager import (ensure_decoder, is_lavfilters_installed,
+                                        LAV_VERSION, GITHUB_RELEASES_URL,
+                                        _format_size, _format_speed)
 
 import warnings
 
@@ -554,6 +557,36 @@ class MainWindow(QMainWindow):
         if self.config_manager.exist(MainWindow.expand_path_config_key):
             expand_path_config = self.config_manager.get(MainWindow.expand_path_config_key)
             self.expand_path(expand_path_config)
+
+        # 启动后延迟检测解码器（避免阻塞窗口显示），未安装则引导自动 / 手动安装
+        QTimer.singleShot(800, self._check_decoder)
+
+    def _check_decoder(self):
+        """检测系统解码器，未安装 LAV Filters 时引导安装，状态栏实时显示进度。"""
+        try:
+            # 初始状态
+            if is_lavfilters_installed():
+                self.statusLabel.setText(f'解码器：LAV Filters 已就绪')
+                return
+
+            self.statusLabel.setText('解码器：未安装 LAV Filters，准备下载安装…')
+
+            # 下载进度回调（可能在子线程，用 invokeMethod 切回主线程更新状态栏）
+            def on_progress(downloaded, total, speed_bps, source_url):
+                msg = (f'解码器下载中：{_format_size(downloaded)}/'
+                       f'{_format_size(total)}  速度 {_format_speed(speed_bps)}')
+                QMetaObject.invokeMethod(self.statusLabel, 'setText',
+                                         Qt.QueuedConnection, Q_ARG(str, msg))
+
+            self.statusLabel.setText('解码器：正在下载 LAV Filters…')
+            ok = ensure_decoder(parent=self, on_progress=on_progress)
+            if ok:
+                self.statusLabel.setText('解码器：LAV Filters 安装成功')
+            else:
+                self.statusLabel.setText('解码器：安装失败，请手动安装')
+        except Exception as e:
+            logger.exception(f'解码器检测异常: {e}')
+            self.statusLabel.setText('解码器：检测异常')
 
     def expand_path(self, path):
         original_path = path  # 保存原始目标路径，用于后续滚动定位
@@ -1811,6 +1844,17 @@ class MainWindow(QMainWindow):
         except ImportError:
             pyqt_version = "5.15.10"
 
+        # 解码器安装状态
+        if is_lavfilters_installed():
+            decoder_status = '<span style="color:#a6e3a1;">已安装 LAV Filters</span>'
+            decoder_hint = ''
+        else:
+            decoder_status = '<span style="color:#f38ba8;">未安装</span>'
+            decoder_hint = (
+                f'<p style="color:#bac2de;">建议手动安装 LAV Filters {LAV_VERSION}：<br>'
+                f'<a href="{GITHUB_RELEASES_URL}">{GITHUB_RELEASES_URL}</a></p>'
+            )
+
         about_text = (
             f"<h2>多媒体播放器</h2>"
             f"<p><b>版本：</b>{version}</p>"
@@ -1820,6 +1864,8 @@ class MainWindow(QMainWindow):
             f"<li>Qt（PyQt5）版本：{pyqt_version}</li>"
             f"<li>操作系统：{platform.system()} {platform.release()}</li>"
             f"</ul>"
+            f"<p><b>视频解码器：</b>{decoder_status}</p>"
+            f"{decoder_hint}"
             f"<p>基于 PyQt5 与 OpenCV 的桌面多媒体播放器，<br>"
             f"支持视频/音频播放、裁剪、截图、幻灯片等功能。</p>"
         )

@@ -335,7 +335,8 @@ class AboutDialog(StyledDialog):
         label.setObjectName("dialogText")
         label.setTextFormat(Qt.RichText)
         label.setWordWrap(True)
-        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        label.setOpenExternalLinks(True)
+        label.setTextInteractionFlags(Qt.TextBrowserInteraction)
         self._body_layout.addWidget(label)
         self._body_layout.addLayout(self.make_button_row(ok_text="确定", cancel_text=None))
 
@@ -512,5 +513,3 @@ def pick_open_file(parent=None, title="选择文件", filters=None, start_dir=""
     if dialog.exec_() == QDialog.Accepted and dialog.selected_files:
         return dialog.selected_files[0]
     return ""
-
-

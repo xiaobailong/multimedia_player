@@ -46,7 +46,6 @@ multimedia_player/
 │   ├── push_release.bat              # 单独补发 GitHub Release
 │   └── start.sh                      # 启动脚本
 ├── img/                              # 文档配图
-├── 解码器/                            # LAVFilters 解码器安装包
 ├── .clinerules/                      # Cline 强制规则
 ├── memory-bank/                      # 知识库
 └── .trae/                            # Trae IDE 项目规则
