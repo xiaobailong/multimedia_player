@@ -13,7 +13,6 @@ import os
 import sys
 import time
 import subprocess
-import tempfile
 import urllib.request
 import urllib.error
 
@@ -229,20 +228,72 @@ def install_lavfilters(installer_path, silent=True):
 # 综合：检测 + 下载 + 安装
 # ---------------------------------------------------------------------------
 
+def get_decoder_cache_path():
+    """解码器安装包缓存目录（app data 下，持久化保存，避免每次启动重新下载）。"""
+    from src.utils.utils import get_app_data_path
+    cache_dir = os.path.join(get_app_data_path(), 'decoder_cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def get_cached_installer_path():
+    """返回已缓存的安装包路径（大小 > 1MB 且文件名匹配当前版本），不存在返回空串。"""
+    cache_dir = get_decoder_cache_path()
+    cached = os.path.join(cache_dir, GITHUB_ASSET)
+    if os.path.exists(cached) and os.path.getsize(cached) > 1024 * 1024:
+        return cached
+    # 兼容旧命名（不带 -Installer 后缀），找到任意大于 1MB 的 exe 也认
+    try:
+        for name in os.listdir(cache_dir):
+            if name.lower().endswith('.exe'):
+                p = os.path.join(cache_dir, name)
+                if os.path.getsize(p) > 1024 * 1024:
+                    return p
+    except OSError:
+        pass
+    return ''
+
+
 def download_and_install(on_progress=None):
     """纯下载+安装逻辑（无 GUI 弹窗），供后台线程调用。
 
+    策略：
+    1. 优先复用已缓存的安装包（上次下载成功但安装超时/失败时，下次直接安装）
+    2. 无缓存时下载到持久化缓存目录
+    3. 安装成功后删除缓存文件；安装失败则保留缓存供下次重试
+
     :param on_progress: 下载进度回调 fn(downloaded, total, speed_bps, source_url)
-    :return: (success, message)
+    :return: (success, message, used_cache)  used_cache=True 表示直接复用了已下载的安装包
     """
-    tmp_dir = tempfile.mkdtemp(prefix='lavfilters_')
-    downloaded = download_lavfilters(tmp_dir, on_progress=on_progress)
+    cache_dir = get_decoder_cache_path()
+
+    # 1) 复用已缓存的安装包
+    installer = get_cached_installer_path()
+    if installer:
+        logger.info(f'复用已缓存的安装包: {installer}')
+        ok, msg = install_lavfilters(installer, silent=True)
+        if ok and is_lavfilters_installed():
+            try:
+                os.remove(installer)  # 安装成功后清理缓存
+            except OSError:
+                pass
+            return True, 'LAV Filters 安装成功', True
+        return False, msg or '安装后检测仍未通过', True
+
+    # 2) 无缓存，下载到缓存目录
+    downloaded = download_lavfilters(cache_dir, on_progress=on_progress)
     if not downloaded:
-        return False, '所有下载源均失败，可能是网络受限'
+        return False, '所有下载源均失败，可能是网络受限', False
+
+    # 3) 安装（失败时安装包保留在缓存目录，下次启动直接重试）
     ok, msg = install_lavfilters(downloaded, silent=True)
     if ok and is_lavfilters_installed():
-        return True, 'LAV Filters 安装成功'
-    return False, msg or '安装后检测仍未通过'
+        try:
+            os.remove(downloaded)  # 安装成功后清理缓存
+        except OSError:
+            pass
+        return True, 'LAV Filters 安装成功', False
+    return False, msg or '安装后检测仍未通过', False
 
 
 def ensure_decoder(parent=None, on_progress=None):
@@ -279,7 +330,7 @@ def ensure_decoder(parent=None, on_progress=None):
             f'下载地址：{GITHUB_RELEASES_URL}')
         return False
 
-    ok, msg = download_and_install(on_progress=on_progress)
+    ok, msg, used_cache = download_and_install(on_progress=on_progress)
     if ok:
         show_info(parent, '解码器安装', 'LAV Filters 安装成功，现在可以正常播放视频了。')
         return True

@@ -28,12 +28,16 @@ class DecoderInstallThread(QThread):
 
     def run(self):
         try:
-            self.status.emit('正在下载 LAV Filters 安装包…')
+            from src.utils.decoder_manager import get_cached_installer_path
+            if get_cached_installer_path():
+                self.status.emit('复用已下载的安装包，正在安装 LAV Filters…')
+            else:
+                self.status.emit('正在下载 LAV Filters 安装包…')
 
             def on_progress(downloaded, total, speed_bps, source_url):
                 self.progress.emit(downloaded, total or 0, speed_bps, source_url)
 
-            ok, msg = download_and_install(on_progress=on_progress)
+            ok, msg, used_cache = download_and_install(on_progress=on_progress)
             if ok:
                 self.status.emit('LAV Filters 安装成功')
             else:
