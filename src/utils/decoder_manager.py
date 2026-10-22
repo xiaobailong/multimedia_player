@@ -229,8 +229,27 @@ def install_lavfilters(installer_path, silent=True):
 # 综合：检测 + 下载 + 安装
 # ---------------------------------------------------------------------------
 
+def download_and_install(on_progress=None):
+    """纯下载+安装逻辑（无 GUI 弹窗），供后台线程调用。
+
+    :param on_progress: 下载进度回调 fn(downloaded, total, speed_bps, source_url)
+    :return: (success, message)
+    """
+    tmp_dir = tempfile.mkdtemp(prefix='lavfilters_')
+    downloaded = download_lavfilters(tmp_dir, on_progress=on_progress)
+    if not downloaded:
+        return False, '所有下载源均失败，可能是网络受限'
+    ok, msg = install_lavfilters(downloaded, silent=True)
+    if ok and is_lavfilters_installed():
+        return True, 'LAV Filters 安装成功'
+    return False, msg or '安装后检测仍未通过'
+
+
 def ensure_decoder(parent=None, on_progress=None):
     """确保系统有可用解码器；没有则尝试自动下载安装。
+
+    注意：本函数在调用线程同步执行下载+安装，**会阻塞调用线程**。
+    GUI 中应使用 ``DecoderInstallThread`` 走后台线程，避免界面卡死。
 
     :param parent: 用于弹框的父窗口
     :param on_progress: 进度回调，签名 fn(downloaded, total, speed_bps, source_url)，可选
@@ -260,20 +279,15 @@ def ensure_decoder(parent=None, on_progress=None):
             f'下载地址：{GITHUB_RELEASES_URL}')
         return False
 
-    # 尝试下载并安装
-    tmp_dir = tempfile.mkdtemp(prefix='lavfilters_')
-    downloaded = download_lavfilters(tmp_dir, on_progress=on_progress)
-    if downloaded:
-        ok, msg = install_lavfilters(downloaded, silent=True)
-        if ok and is_lavfilters_installed():
-            show_info(parent, '解码器安装', 'LAV Filters 安装成功，现在可以正常播放视频了。')
-            return True
-        logger.warning(f'下载版安装失败: {msg}')
+    ok, msg = download_and_install(on_progress=on_progress)
+    if ok:
+        show_info(parent, '解码器安装', 'LAV Filters 安装成功，现在可以正常播放视频了。')
+        return True
 
     # 全部失败，提示手动安装
     show_warning(
         parent, '解码器安装失败',
-        '自动下载 / 安装 LAV Filters 失败。\n'
+        f'自动下载 / 安装 LAV Filters 失败：{msg}\n'
         '可能是网络受限或权限不足。\n\n'
         f'请手动下载安装：\n{GITHUB_RELEASES_URL}')
     return False

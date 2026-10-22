@@ -29,9 +29,10 @@ from src.collect.collect_service import matches_kind
 from src.private_mode.private_batch_thread import PrivateBatchThread
 from src.private_mode.private_service import PrivateService
 from src.utils.utils import get_log_path, get_app_data_path
-from src.utils.decoder_manager import (ensure_decoder, is_lavfilters_installed,
+from src.utils.decoder_manager import (is_lavfilters_installed,
                                         LAV_VERSION, GITHUB_RELEASES_URL,
                                         _format_size, _format_speed)
+from src.utils.decoder_install_thread import DecoderInstallThread
 
 import warnings
 
@@ -209,6 +210,8 @@ class MainWindow(QMainWindow):
         self.private_batch_thread = None
         # 归集后台线程（扫描 / 拷贝）
         self.collect_thread = None
+        # 解码器安装后台线程（下载 / 安装）
+        self.decoder_thread = None
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
         self.private_mode = False
@@ -562,31 +565,65 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(800, self._check_decoder)
 
     def _check_decoder(self):
-        """检测系统解码器，未安装 LAV Filters 时引导安装，状态栏实时显示进度。"""
+        """检测系统解码器，未安装 LAV Filters 时引导安装，下载/安装放后台线程避免卡死 UI。"""
         try:
-            # 初始状态
             if is_lavfilters_installed():
-                self.statusLabel.setText(f'解码器：LAV Filters 已就绪')
+                self.statusLabel.setText('解码器：LAV Filters 已就绪')
                 return
 
-            self.statusLabel.setText('解码器：未安装 LAV Filters，准备下载安装…')
+            # 询问用户是否自动安装（弹窗在主线程，不会卡死）
+            want_install = ask_yes_no(
+                self, '解码器检测',
+                '检测到系统未安装 LAV Filters 解码器，\n'
+                '部分视频格式可能无法正常播放。\n\n'
+                '是否现在自动下载并安装 LAV Filters？\n'
+                '（安装需要管理员权限，可能弹出 UAC 确认）')
+            if not want_install:
+                self.statusLabel.setText('解码器：已跳过安装')
+                show_warning(
+                    self, '解码器未安装',
+                    '已跳过解码器安装。\n\n'
+                    '如后续视频无法播放，请手动安装 LAV Filters：\n'
+                    f'下载地址：{GITHUB_RELEASES_URL}')
+                return
 
-            # 下载进度回调（可能在子线程，用 invokeMethod 切回主线程更新状态栏）
-            def on_progress(downloaded, total, speed_bps, source_url):
-                msg = (f'解码器下载中：{_format_size(downloaded)}/'
-                       f'{_format_size(total)}  速度 {_format_speed(speed_bps)}')
-                QMetaObject.invokeMethod(self.statusLabel, 'setText',
-                                         Qt.QueuedConnection, Q_ARG(str, msg))
-
-            self.statusLabel.setText('解码器：正在下载 LAV Filters…')
-            ok = ensure_decoder(parent=self, on_progress=on_progress)
-            if ok:
-                self.statusLabel.setText('解码器：LAV Filters 安装成功')
-            else:
-                self.statusLabel.setText('解码器：安装失败，请手动安装')
+            # 启动后台线程执行下载 + 安装
+            self.decoder_thread = DecoderInstallThread(self)
+            self.decoder_thread.status.connect(self._on_decoder_status)
+            self.decoder_thread.progress.connect(self._on_decoder_progress)
+            self.decoder_thread.completed.connect(self._on_decoder_completed)
+            self.decoder_thread.failed.connect(self._on_decoder_failed)
+            self.decoder_thread.start()
         except Exception as e:
             logger.exception(f'解码器检测异常: {e}')
             self.statusLabel.setText('解码器：检测异常')
+
+    def _on_decoder_status(self, text):
+        self.statusLabel.setText(f'解码器：{text}')
+
+    def _on_decoder_progress(self, downloaded, total, speed_bps, source_url):
+        msg = (f'解码器下载中：{_format_size(downloaded)}/'
+               f'{_format_size(total) if total else "?"}  '
+               f'速度 {_format_speed(speed_bps)}')
+        self.statusLabel.setText(msg)
+
+    def _on_decoder_completed(self, success, message):
+        if success:
+            self.statusLabel.setText('解码器：LAV Filters 安装成功')
+            show_info(self, '解码器安装', 'LAV Filters 安装成功，现在可以正常播放视频了。')
+        else:
+            self.statusLabel.setText('解码器：安装失败，请手动安装')
+            show_warning(
+                self, '解码器安装失败',
+                f'自动下载 / 安装 LAV Filters 失败：{message}\n'
+                '可能是网络受限或权限不足。\n\n'
+                f'请手动下载安装：\n{GITHUB_RELEASES_URL}')
+        self.decoder_thread = None
+
+    def _on_decoder_failed(self, message):
+        self.statusLabel.setText('解码器：安装异常')
+        show_error(self, '解码器安装异常', f'安装过程发生错误：{message}')
+        self.decoder_thread = None
 
     def expand_path(self, path):
         original_path = path  # 保存原始目标路径，用于后续滚动定位
