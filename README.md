@@ -2,7 +2,7 @@
 
 基于 PyQt5 的桌面多媒体播放器，支持视频/音频播放、图片浏览、视频裁剪截图、媒体评分、文件归集，以及与「密册」兼容的私密媒体加密功能。可跨平台（Windows / macOS）运行。
 
-![版本](https://img.shields.io/badge/version-1.0.9-blue)
+![版本](https://img.shields.io/badge/version-1.0.10-blue)
 ![Python](https://img.shields.io/badge/python-3.14%2B-green)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.15.10-green)
 

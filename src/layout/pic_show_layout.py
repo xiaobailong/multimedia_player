@@ -13,7 +13,7 @@ from src.layout.square_close_button import SquareCloseButton
 
 
 class PicShowLayout(QVBoxLayout):
-    # 悬浮控制面板显隐变化，供菜单「控制 → 显示控制器」同步勾选状态
+    # 悬浮控制面板显隐变化，供菜单「视图 → 显示控制器」同步勾选状态
     controlPanelVisibilityChanged = pyqtSignal(bool)
     # 悬浮控制面板距图片区底部的间距（像素）
     CONTROL_PANEL_BOTTOM_MARGIN = 24
@@ -145,7 +145,7 @@ class PicShowLayout(QVBoxLayout):
         panel.raise_()
 
     def show_control_panel(self):
-        """显示悬浮控制面板（菜单「控制 → 显示控制器」）。"""
+        """显示悬浮控制面板（菜单「视图 → 显示控制器」）。"""
         self.control_panel_visible = True
         self.control_panel.show()
         self.control_panel.raise_()

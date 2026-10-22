@@ -1277,14 +1277,12 @@ class MainWindow(QMainWindow):
         self.toggle_tree_action.triggered.connect(self.toggle_tree)
         view_menu.addAction(self.toggle_tree_action)
 
-        # ---- 控制菜单（图片悬浮控制栏的显隐）----
-        control_menu = self.menu_bar.addMenu("控制(&C)")
-
+        # ---- 视图菜单：显示控制器（图片悬浮控制栏的显隐）----
         self.show_control_action = QAction("显示控制器", self)
         self.show_control_action.setCheckable(True)
         self.show_control_action.setChecked(True)
         self.show_control_action.triggered.connect(self._toggle_pic_control_panel)
-        control_menu.addAction(self.show_control_action)
+        view_menu.addAction(self.show_control_action)
 
         # 点击面板 ✕ 隐藏后，回写菜单勾选状态
         self.pic_show_layout.controlPanelVisibilityChanged.connect(
@@ -1933,7 +1931,7 @@ class MainWindow(QMainWindow):
         self.notice("幻灯片时间间隔已设置为 %d 秒" % seconds)
 
     def _toggle_pic_control_panel(self, checked):
-        """菜单「控制 → 显示控制器」：勾选显示、取消隐藏。"""
+        """菜单「视图 → 显示控制器」：勾选显示、取消隐藏。"""
         if checked:
             self.pic_show_layout.show_control_panel()
         else:

@@ -224,7 +224,7 @@
      （主窗口与 viewport 都监听）和 `setVisible()` 里重新定位，
      窗口缩放 / 全屏切换后都保持底部居中。
   5. 显隐用 `controlPanelVisibilityChanged = pyqtSignal(bool)` 广播：
-     `MainWindow._setup_menu_bar` 新增「控制(&C)」→ 可勾选「显示控制器」，
+     `MainWindow._setup_menu_bar` 在「视图(&V)」菜单下加可勾选「显示控制器」，
      勾选调 `show_control_panel()`、取消调 `hide_control_panel()`；
      点 ✕ 时信号把菜单勾选同步为未勾选。
   6. 全屏不再隐藏控制栏（删掉原 `setVisible` 里的 `inputQWidget.setVisible(visible)`）；
@@ -253,10 +253,12 @@
 - 变更（2026-10-21，第四次复核）: 全屏时连同**菜单栏**一起隐藏
   （`full_screen_custom()` → `menu_bar.setVisible(False)`，`screen_normal()` 恢复），
   标题栏/状态栏原有做法不变，控制栏仍保留（见决策第 6 条）。
-  注意：全屏中若用 ✕ 关掉控制栏，需先 Esc / F 退出全屏，再用「控制 → 显示控制器」恢复。
+  注意：全屏中若用 ✕ 关掉控制栏，需先 Esc / F 退出全屏，再用「视图 → 显示控制器」恢复。
 - 变更（2026-10-21，第五次复核）: 按用户意见把 `✕` 改回**与操作按钮同一行**（排在「全屏」右侧），
   恢复单行面板结构：`inputQWidget` 直接承载 `PicInputLayout`，尺寸约 278×36；
   两行/右上角徽标的方案作废。
+- 变更（2026-10-22）: 「显示控制器」从「控制(&C)」菜单迁移到「视图(&V)」菜单，
+  独立的「控制」菜单随之移除；入口位置变化，显隐逻辑与信号联动不变。
 
 ## ADR-012 图片目录扫描放后台线程（QThread + token + 延迟播放意图）
 - 日期: 2026-10-21 | 状态: 已采纳
@@ -545,5 +547,3 @@
   `src/layout/collect_dialog.py`、`Player.py`、`src/data_manager/rating_manager.py`、`src/layout/__init__.py`
 - 相关条目: `ADR-018`（评分表）、`ADR-012`（后台扫描）、`ADR-016`（弹框风格）
 - 首次记录: 2026-10-22
-
-

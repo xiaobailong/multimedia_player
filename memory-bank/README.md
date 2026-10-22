@@ -63,7 +63,7 @@
 | 幻灯片间隔要持久化 / 播放区路径与刷新间隔输入框已移除 | `ADR-010`（设置菜单 → 幻灯片弹框） |
 | `run_commands` 内联 PowerShell 的 `$` 变量消失、`foreach` 报语法错 | `PIT-009`（改用 `tmp\` 下的脚本文件） |
 | `read_files` 对同一文件的行段读取返回 `[outdated - see the latest file content]` | `PIT-010`（先导出到 `tmp\` 再读） |
-| 图片控制栏要悬浮在底部居中 / 玻璃效果 / 关闭与恢复显示 | `ADR-011`（控制菜单 → 显示控制器） |
+| 图片控制栏要悬浮在底部居中 / 玻璃效果 / 关闭与恢复显示 | `ADR-011`（视图菜单 → 显示控制器） |
 | offscreen 抓图里按钮文字全空白 | `PIT-011`（offscreen 无字体，改用 windows 平台抓图） |
 | 点击左侧树目录后程序无响应/被关闭（像是崩溃） | `ISSUE-007`（GUI 线程同步 `os.walk`）、`ADR-012`（后台扫描线程） |
 | 报“崩溃”但日志无 traceback，怎么判断是卡死还是崩溃 | `PIT-012`（事件查看器 AppHang≠Application Error + faulthandler） |
