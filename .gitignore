@@ -18,6 +18,7 @@ log/
 private_keys.db
 private_cache/
 data/theme/
+data/decoder_cache/
 
 # 临时文件目录（Cline 工作产物）
 /tmp/
