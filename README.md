@@ -105,6 +105,12 @@ multimedia_player/
 │   ├── collect/               # 归集功能（按评分/关键字/路径批量拷贝）
 │   ├── private_mode/          # 密册模式（密钥包、加解密、批量任务）
 │   └── utils/                 # 工具函数
+│       ├── decoder_manager.py        # LAV Filters 检测 / 下载 / 安装
+│       ├── decoder_install_thread.py # 解码器安装后台线程
+│       ├── ffmpeg_manager.py         # ffmpeg.exe 检测 / 下载 / 解压
+│       ├── ffmpeg_download_thread.py # ffmpeg 下载后台线程
+│       ├── multipart_downloader.py   # 通用多线程并行下载器
+│       └── utils.py                  # 路径 / 指纹等通用工具
 ├── scripts/
 │   ├── build.bat              # Windows 一键构建 + 打包
 │   ├── build_mac.sh           # macOS 构建脚本
@@ -177,6 +183,20 @@ scripts\build.bat clean
 ## 解码器说明
 
 Windows 下播放部分视频格式依赖 LAV Filters 解码器。本程序会在启动时自动检测，若未安装则引导自动下载并静默安装；自动安装失败时会提示手动下载，地址：https://github.com/Nevcairiel/LAVFilters/releases
+
+- **自动检测**：通过注册表卸载项、安装目录 `.ax` 文件、COM CLSID 三重检测
+- **多源下载**：依次尝试国内 GitHub 镜像（ghproxy 系列）和官方直连，规避网络限制
+- **多线程并行下载**：支持 HTTP Range 分块并行下载（默认 8 线程），服务器不支持时自动降级单线程
+- **缓存复用**：安装包持久化缓存到 `data/decoder_cache/`，安装失败时保留缓存，下次启动直接复用安装，避免重复下载；安装成功后自动清理缓存
+- **后台线程**：下载 + 安装在后台 QThread 中执行，不阻塞 UI
+
+## ffmpeg 说明
+
+视频截图 / 裁剪功能依赖 `ffmpeg.exe`。本程序会在开发环境运行时及构建脚本中自动检测，若 `libs/ffmpeg/ffmpeg.exe` 不存在则自动从网络下载并解压就位。
+
+- **下载源**：BtbN/FFmpeg-Builds latest release，多源 fallback（国内镜像 → GitHub 直连）
+- **多线程下载**：与解码器共用通用多线程下载器
+- **仅开发环境检测**：打包后的 app 已通过 `--add-data` 内置 ffmpeg.exe，运行时不再检测下载
 
 ## 许可证
 
