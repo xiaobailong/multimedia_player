@@ -11,6 +11,7 @@
 """
 import os
 import sys
+import time
 import subprocess
 
 from loguru import logger
@@ -68,8 +69,8 @@ def is_lavfilters_installed():
     """检测本机是否已安装 LAV Filters。
 
     判定依据（满足任一即可）：
-    1. 注册表中存在 LAV Filters 安装项（HKLM / HKCU，含 WOW6432Node）
-    2. 常见安装目录下存在 LAVVideo.ax / LAVAudio.ax / LAVSplitter.ax
+    1. 注册表卸载项存在（HKLM\\SOFTWARE\\WOW6432Node\\...\\Uninstall\\lavfilters_is1）
+    2. 常见安装目录的 x64/x86 子目录下存在 LAVVideo.ax / LAVAudio.ax / LAVSplitter.ax
     3. LAV 相关的 COM CLSID 已在注册表注册
     """
     if sys.platform != 'win32':
@@ -81,38 +82,39 @@ def is_lavfilters_installed():
     except ImportError:
         return False
 
-    # 1) 注册表安装项
-    reg_roots = [
-        (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\LAV Filters'),
-        (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\LAV Filters'),
-        (winreg.HKEY_CURRENT_USER, r'SOFTWARE\LAV Filters'),
+    # 1) 卸载注册表项（Apps & Features 同款判定，最可靠）
+    uninstall_keys = [
+        (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\lavfilters_is1'),
+        (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\lavfilters_is1'),
+        (winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\lavfilters_is1'),
     ]
-    for root, subkey in reg_roots:
+    for root, subkey in uninstall_keys:
         try:
             with winreg.OpenKey(root, subkey):
-                logger.info(f'检测到 LAV Filters 注册表项: {subkey}')
+                logger.info(f'检测到 LAV Filters 卸载注册表项: {subkey}')
                 return True
         except OSError:
             continue
 
-    # 2) 常见安装目录
+    # 2) 常见安装目录（x64/x86 子目录下的 .ax 文件）
     install_dirs = [
         os.path.join(os.environ.get('ProgramFiles', r'C:\Program Files'), 'LAV Filters'),
         os.path.join(os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)'), 'LAV Filters'),
     ]
     ax_files = ('LAVVideo.ax', 'LAVAudio.ax', 'LAVSplitter.ax')
     for d in install_dirs:
-        if os.path.isdir(d):
+        for sub in ('x64', 'x86', ''):
+            check_dir = os.path.join(d, sub) if sub else d
             for ax in ax_files:
-                if os.path.exists(os.path.join(d, ax)):
-                    logger.info(f'检测到 LAV Filters 安装目录: {d}')
+                if os.path.exists(os.path.join(check_dir, ax)):
+                    logger.info(f'检测到 LAV Filters 安装文件: {os.path.join(check_dir, ax)}')
                     return True
 
-    # 3) COM CLSID 注册（LAVVideo 的 CLSID）
+    # 3) COM CLSID 注册（正确的 LAV CLSID）
     lav_clsids = [
-        '{EE30215D-164F-4A92-A4EB-1A8CB80B5C0F}',  # LAV Video Decoder
-        '{E8E73B6B-4CB3-44A4-BE99-4F7BC4711D79}',  # LAV Audio Decoder
-        '{171252A0-8820-4AFE-9DF8-51B12A3A0C10}',  # LAV Splitter
+        '{EE30215D-164F-4A92-A4EB-9D4C13390F9F}',  # LAV Video Decoder
+        '{E8E73B6B-4CB3-44A4-BE99-4F7BCB96E491}',  # LAV Audio Decoder
+        '{171252A0-8820-4AFE-9DF8-5C92B2D66B04}',  # LAV Splitter
     ]
     for clsid in lav_clsids:
         try:
@@ -175,6 +177,28 @@ def install_lavfilters(installer_path, silent=True):
         return False, f'执行安装包失败: {e}'
 
 
+def _wait_for_install(timeout=40, interval=2):
+    """安装进程返回后，轮询检测 LAV Filters 是否真正安装完成。
+
+    NSIS 安装包在非管理员权限下运行时会请求 UAC 提权，
+    subprocess.run 可能在提权子进程完成前就返回，
+    因此需要轮询 is_lavfilters_installed() 确认安装真正生效。
+
+    :param timeout: 最长等待秒数
+    :param interval: 轮询间隔秒数
+    :return: True 表示检测到安装完成
+    """
+    elapsed = 0
+    while elapsed < timeout:
+        if is_lavfilters_installed():
+            logger.info(f'安装完成检测通过（耗时 {elapsed}s）')
+            return True
+        time.sleep(interval)
+        elapsed += interval
+    logger.warning(f'等待安装完成超时（{timeout}s），检测仍未通过')
+    return False
+
+
 # ---------------------------------------------------------------------------
 # 综合：检测 + 下载 + 安装
 # ---------------------------------------------------------------------------
@@ -223,12 +247,14 @@ def download_and_install(on_progress=None):
     if installer:
         logger.info(f'复用已缓存的安装包: {installer}')
         ok, msg = install_lavfilters(installer, silent=True)
-        if ok and is_lavfilters_installed():
-            try:
-                os.remove(installer)  # 安装成功后清理缓存
-            except OSError:
-                pass
-            return True, 'LAV Filters 安装成功', True
+        if ok:
+            # UAC 提权可能导致安装异步完成，轮询确认
+            if _wait_for_install():
+                try:
+                    os.remove(installer)  # 安装成功后清理缓存
+                except OSError:
+                    pass
+                return True, 'LAV Filters 安装成功', True
         return False, msg or '安装后检测仍未通过', True
 
     # 2) 无缓存，下载到缓存目录
@@ -238,12 +264,14 @@ def download_and_install(on_progress=None):
 
     # 3) 安装（失败时安装包保留在缓存目录，下次启动直接重试）
     ok, msg = install_lavfilters(downloaded, silent=True)
-    if ok and is_lavfilters_installed():
-        try:
-            os.remove(downloaded)  # 安装成功后清理缓存
-        except OSError:
-            pass
-        return True, 'LAV Filters 安装成功', False
+    if ok:
+        # UAC 提权可能导致安装异步完成，轮询确认
+        if _wait_for_install():
+            try:
+                os.remove(downloaded)  # 安装成功后清理缓存
+            except OSError:
+                pass
+            return True, 'LAV Filters 安装成功', False
     return False, msg or '安装后检测仍未通过', False
 
 
