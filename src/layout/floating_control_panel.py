@@ -3,6 +3,8 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
+from src.layout.square_close_button import SquareCloseButton
+
 
 class FloatingControlPanel(QWidget):
     """全屏模式下悬浮显示的视频控制面板，支持拖拽调整位置"""
@@ -40,36 +42,18 @@ class FloatingControlPanel(QWidget):
             }
         """)
         self._container_layout = QVBoxLayout(self._container)
-        self._container_layout.setContentsMargins(4, 2, 4, 4)
+        # 右侧多留 26px 给右上角的方形关闭按钮（按钮 18px + 上下/右各 6px 空隙），
+        # 避免控制行内容钻到按钮底下
+        self._container_layout.setContentsMargins(6, 6, 26, 6)
         self._container_layout.setSpacing(2)
 
-        # 顶部：隐藏按钮
-        self._top_bar = QHBoxLayout()
-        self._top_bar.setContentsMargins(0, 0, 0, 0)
-        self._top_bar.addStretch()
-
-        self._hide_btn = QPushButton("✕")
-        self._hide_btn.setFixedSize(20, 20)
-        self._hide_btn.setStyleSheet("""
-            QPushButton {
-                background-color: rgba(255, 255, 255, 30);
-                color: rgba(255, 255, 255, 180);
-                border: none;
-                border-radius: 10px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: rgba(255, 80, 80, 150);
-                color: white;
-            }
-        """)
-        self._hide_btn.clicked.connect(self.hide_panel)
-        self._top_bar.addWidget(self._hide_btn)
-
-        self._container_layout.addLayout(self._top_bar)
-
         self._main_layout.addWidget(self._container)
+
+        # 关闭按钮：直接放在容器右上角，脱离布局，置于最顶层（方形自绘样式，与图片控制面板共用）
+        self._hide_btn = SquareCloseButton(
+            self._container, tooltip="隐藏控制面板（Esc 退出全屏）")
+        self._hide_btn.clicked.connect(self.hide_panel)
+        self._hide_btn.raise_()
 
         # 等待被添加的控件槽位
         self._control_widgets = []
@@ -93,6 +77,20 @@ class FloatingControlPanel(QWidget):
         # 显示后启动自动隐藏定时器
         self._is_visible = True
         self._auto_hide_timer.start()
+        self._position_close_btn()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_close_btn()
+
+    def _position_close_btn(self):
+        """将关闭按钮定位到容器右上角（保持正方形，不被布局拉伸）"""
+        if self._container and self._hide_btn:
+            size = self._hide_btn.width()
+            margin = 6
+            self._hide_btn.setGeometry(
+                self._container.width() - size - margin, margin, size, size)
+            self._hide_btn.raise_()
 
     def hideEvent(self, event):
         super().hideEvent(event)
@@ -131,9 +129,8 @@ class FloatingControlPanel(QWidget):
             # 限制在父窗口范围内
             if self.parent():
                 parent_rect = self.parent().geometry()
-                # 留出边距，确保不超出屏幕
-                new_x = max(0, min(new_pos.x(), parent_rect.width() - self.width()))
-                new_y = max(0, min(new_pos.y(), parent_rect.height() - self.height()))
+                new_x = max(parent_rect.left(), min(new_pos.x(), parent_rect.right() - self.width()))
+                new_y = max(parent_rect.top(), min(new_pos.y(), parent_rect.bottom() - self.height()))
                 self.move(new_x, new_y)
             else:
                 self.move(new_pos)
@@ -202,6 +199,8 @@ class FloatingControlPanel(QWidget):
         """将面板定位到底部居中"""
         if self.parent():
             parent_rect = self.parent().geometry()
-            new_x = (parent_rect.width() - self.width()) // 2
-            new_y = parent_rect.height() - self.height() - 20
-            self.move(max(0, new_x), max(0, new_y))
+            new_x = parent_rect.left() + (parent_rect.width() - self.width()) // 2
+            new_y = parent_rect.bottom() - self.height() - 20
+            new_x = max(parent_rect.left(), min(new_x, parent_rect.right() - self.width()))
+            new_y = max(parent_rect.top(), min(new_y, parent_rect.bottom() - self.height()))
+            self.move(new_x, new_y)

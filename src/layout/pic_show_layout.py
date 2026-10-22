@@ -9,6 +9,7 @@ from PyQt5.QtGui import (QPixmap, QImage, QColor)
 from loguru import logger
 
 from src.layout.pic_input_layout import PicInputLayout
+from src.layout.square_close_button import SquareCloseButton
 
 
 class PicShowLayout(QVBoxLayout):
@@ -43,19 +44,6 @@ class PicShowLayout(QVBoxLayout):
         }
         #picControlPanel QPushButton:pressed {
             background-color: rgba(137, 180, 250, 120);
-        }
-        #picControlClose {
-            background-color: rgba(255, 255, 255, 30);
-            color: rgba(205, 214, 244, 220);
-            border: none;
-            border-radius: 12px;
-            padding: 0px;
-            font-size: 13px;
-            font-weight: bold;
-        }
-        #picControlClose:hover {
-            background-color: rgba(243, 139, 168, 190);
-            color: #1e1e2e;
         }
     """
 
@@ -118,15 +106,12 @@ class PicShowLayout(QVBoxLayout):
         self.control_panel.setAttribute(Qt.WA_StyledBackground, True)
         self.control_panel.setStyleSheet(self.CONTROL_PANEL_QSS)
 
-        # 关闭按钮与操作按钮同一行、排在最右侧
+        # 关闭按钮与操作按钮同一行、排在最右侧（方形自绘样式，与视频全屏悬浮面板共用）
         self.inputAndExeLayout.setContentsMargins(12, 6, 8, 6)
         self.inputAndExeLayout.setSpacing(8)
 
-        self.close_control_btn = QPushButton("✕")
-        self.close_control_btn.setObjectName("picControlClose")
-        self.close_control_btn.setFixedSize(24, 24)
-        self.close_control_btn.setToolTip("隐藏控制栏（菜单「控制 → 显示控制器」可恢复）")
-        self.close_control_btn.setCursor(Qt.PointingHandCursor)
+        self.close_control_btn = SquareCloseButton(
+            size=24, tooltip="隐藏控制栏（菜单「控制 → 显示控制器」可恢复）")
         self.close_control_btn.clicked.connect(self.hide_control_panel)
         self.inputAndExeLayout.addWidget(self.close_control_btn)
 

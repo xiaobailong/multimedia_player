@@ -15,10 +15,17 @@ from PyQt5.QtWidgets import QApplication
 from loguru import logger
 
 from src import ConfigManager
+from src import RatingManager
 from src import PicInputLayout
 from src import PicShowLayout
 from src import VideoShowLayout
 from src import CustomTitleBar
+from src.layout.styled_dialogs import (StyledDialog, ProgressDialog, show_info, show_warning,
+                                       show_error, ask_yes_no, show_about,
+                                       pick_directory, pick_open_file)
+from src.layout.collect_dialog import CollectDialog
+from src.collect.collect_thread import CollectThread
+from src.collect.collect_service import matches_kind
 from src.private_mode.private_batch_thread import PrivateBatchThread
 from src.private_mode.private_service import PrivateService
 from src.utils.utils import get_log_path, get_app_data_path
@@ -191,10 +198,14 @@ class MainWindow(QMainWindow):
         self.left = 1
         self.right = 6
         self.config_manager = ConfigManager()
-        # -- 私密模式密钥服务（与 privi 完全兼容的密钥包 / 加解密）--
+        # -- 媒体评分（按内容指纹存库，文件移动 / 改名后仍能识别）--
+        self.rating_manager = RatingManager()
+        # -- 私密模式密钥服务（与密册完全兼容的密钥包 / 加解密）--
         self.private_service = PrivateService()
         self.private_service.clear_cache()   # 上次运行残留的解密明文一律清掉
         self.private_batch_thread = None
+        # 归集后台线程（扫描 / 拷贝）
+        self.collect_thread = None
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
         self.private_mode = False
@@ -238,6 +249,26 @@ class MainWindow(QMainWindow):
             }
             QPushButton:pressed {
                 background-color: #585b70;
+            }
+            QPushButton:checked {
+                background-color: #89b4fa;
+                color: #1e1e2e;
+                border-color: #89b4fa;
+            }
+            QPushButton:checked:hover {
+                background-color: #b4d0fb;
+            }
+            QPushButton#video_primary_btn {
+                background-color: #89b4fa;
+                color: #1e1e2e;
+                border: 1px solid #89b4fa;
+                font-weight: bold;
+            }
+            QPushButton#video_primary_btn:hover {
+                background-color: #b4d0fb;
+            }
+            QPushButton#video_primary_btn:pressed {
+                background-color: #74c7ec;
             }
             QLineEdit {
                 background-color: #313244;
@@ -329,6 +360,11 @@ class MainWindow(QMainWindow):
             }
             QStatusBar::item {
                 border: none;
+            }
+            QLabel#ratingLabel {
+                color: #89b4fa;
+                font-size: 13px;
+                padding-right: 6px;
             }
             QScrollArea {
                 border: none;
@@ -476,10 +512,11 @@ class MainWindow(QMainWindow):
         self.statusLabel.setText("就绪")
         self.statusbar.addPermanentWidget(self.statusLabel, stretch=1)
 
-        self.toggle_tree_btn = QPushButton("◀ 隐藏列表")
-        self.toggle_tree_btn.setFixedSize(90, 22)
-        self.toggle_tree_btn.clicked.connect(self.toggle_tree)
-        self.statusbar.addPermanentWidget(self.toggle_tree_btn)
+        # 右侧常驻显示当前媒体的评分（数字键 1~5 评分后立刻更新）
+        self.ratingLabel = QLabel("评分：—")
+        self.ratingLabel.setObjectName("ratingLabel")
+        self.ratingLabel.setToolTip("按数字键 1~5 为当前图片 / 视频评分（按内容指纹保存，移动或改名后仍保留）")
+        self.statusbar.addPermanentWidget(self.ratingLabel)
 
         self.tree_visible = True
         # 记录展开时的窗口比例，用于恢复
@@ -575,7 +612,7 @@ class MainWindow(QMainWindow):
             self.config_manager.add_or_update(MainWindow.expand_path_config_key,self.path_right_click)
 
     def copy(self):
-        selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
+        selected_path = pick_directory(self, "选择复制目标文件夹")  # 返回选中的文件夹路径
         if os.path.isdir(selected_path):
             (path, filename) = os.path.split(self.path_right_click)
             dst = os.path.join(selected_path, filename)
@@ -586,7 +623,7 @@ class MainWindow(QMainWindow):
 
     def move(self):
         try:
-            selected_path = QFileDialog.getExistingDirectory()  # 返回选中的文件夹路径
+            selected_path = pick_directory(self, "选择移动目标文件夹")  # 返回选中的文件夹路径
             if os.path.isdir(selected_path):
                 (path, filename) = os.path.split(self.path_right_click)
                 dst = os.path.join(selected_path, filename)
@@ -728,15 +765,25 @@ class MainWindow(QMainWindow):
             self.full_screen_state = MainWindow.normal
             self.screen_normal()
         if (event.key() == Qt.Key_Left):
-            if self.video_show_qwidget.isVisible():
-                self.video_show_layout.down_time()
+            # ← 上一个：图片 / 视频都支持
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.down()
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.previous()
         if (event.key() == Qt.Key_Right):
+            # → 下一个：图片 / 视频都支持
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.up()
             if self.video_show_qwidget.isVisible():
+                self.video_show_layout.next()
+        if (event.key() == Qt.Key_Up):
+            # ↑ 快进：仅视频
+            if self.video_show_qwidget.isVisible():
                 self.video_show_layout.up_time()
+        if (event.key() == Qt.Key_Down):
+            # ↓ 快退：仅视频
+            if self.video_show_qwidget.isVisible():
+                self.video_show_layout.down_time()
         if (event.key() == Qt.Key_Space):
             if self.pic_show_qwidget.isVisible():
                 self.pic_show_layout.pause()
@@ -782,6 +829,12 @@ class MainWindow(QMainWindow):
             self.video_show_layout.video_cut()
         if (event.key() == Qt.Key_B) and QApplication.keyboardModifiers() == Qt.ControlModifier:
             self.toggle_tree()
+        # 数字键 1~5：给当前图片 / 视频评分（小键盘数字是 Key_1~5 + KeypadModifier，同样命中）
+        if Qt.Key_0 <= event.key() <= Qt.Key_9:
+            digit = event.key() - Qt.Key_0
+            modifiers = QApplication.keyboardModifiers()
+            if 1 <= digit <= 5 and not (modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)):
+                self._apply_rating(digit)
         if (event.key() == Qt.Key_O) and QApplication.keyboardModifiers() == Qt.ShiftModifier:
             self.notice("快捷键：Shift + O")
 
@@ -833,12 +886,18 @@ class MainWindow(QMainWindow):
         if show_type == MainWindow.show_type_video:
             self.video_show_qwidget.setVisible(True)
             self.pic_show_qwidget.setVisible(False)
+        # 切换显示后，状态栏右侧跟着显示对应媒体的评分
+        self.refresh_rating_status()
 
     def closeEvent(self, event):
         """关闭窗口时清理视频播放器资源，防止 macOS AVFoundation 崩溃"""
         # 停止后台目录扫描线程，避免退出时 QThread 仍在运行
         if hasattr(self, 'inputAndExeLayout'):
             self.inputAndExeLayout.cancel_scan(wait_ms=1500)
+        # 停止后台归集线程（扫描 / 拷贝）
+        if getattr(self, 'collect_thread', None) is not None and self.collect_thread.isRunning():
+            self.collect_thread.cancel()
+            self.collect_thread.wait(3000)
         if hasattr(self, 'video_show_layout'):
             # 关闭前先保存当前播放位置（无论是否处于暂停状态）
             if self.video_show_layout.path and os.path.exists(self.video_show_layout.path):
@@ -870,17 +929,15 @@ class MainWindow(QMainWindow):
         if self.private_mode:
             return
         if self.tree_visible:
-            # 隐藏前保存当前比例
             self.tree_sizes = self.mainQWidget.sizes()
             self.treeView.setVisible(False)
-            self.toggle_tree_btn.setText("▶ 展开列表")
             self.tree_visible = False
         else:
             self.treeView.setVisible(True)
-            self.toggle_tree_btn.setText("◀ 隐藏列表")
             self.tree_visible = True
-            # 恢复展开时的比例
             self.mainQWidget.setSizes(self.tree_sizes)
+        if hasattr(self, 'toggle_tree_action'):
+            self.toggle_tree_action.setChecked(self.tree_visible)
 
     def eventFilter(self, obj, event):
         """全局事件过滤器：全屏模式下始终能捕获键盘快捷键，不受焦点控件影响"""
@@ -915,6 +972,65 @@ class MainWindow(QMainWindow):
 
     def notice(self, content):
         self.statusLabel.setText(content)
+
+    # ============================================
+    #  媒体评分（数字键 1~5）
+    # ============================================
+    @staticmethod
+    def _rating_stars(rating):
+        """把 1~5 分渲染成 ★★★☆☆；未评分返回「—」。"""
+        if not rating:
+            return '—'
+        rating = max(1, min(5, int(rating)))
+        return '★' * rating + '☆' * (5 - rating)
+
+    def current_media(self):
+        """返回当前正在显示 / 播放的媒体 (路径, 类型)；没有则返回 ('', '')。"""
+        if self.video_show_qwidget.isVisible():
+            path = getattr(self.video_show_layout, 'path', '') or ''
+            if path:
+                return path, 'video'
+        if self.pic_show_qwidget.isVisible():
+            path = getattr(self.pic_show_layout, 'path', '') or ''
+            if path:
+                return path, 'image'
+        return '', ''
+
+    def refresh_rating_status(self, path=None):
+        """刷新状态栏右侧的评分显示（切换图片 / 视频、评分后调用）。"""
+        label = getattr(self, 'ratingLabel', None)
+        if label is None:
+            return
+        if path is None:
+            path = self.current_media()[0]
+        rating = self.rating_manager.get_rating(path) if path else None
+        if rating:
+            label.setText('评分：%s（%d 星）' % (self._rating_stars(rating), rating))
+            label.setToolTip('当前文件已评分 %d 星（按内容指纹保存，移动 / 改名后仍保留）' % rating)
+        else:
+            label.setText('评分：—')
+            label.setToolTip('按数字键 1~5 为当前图片 / 视频评分'
+                             '（按内容指纹保存，移动 / 改名后仍保留）')
+
+    def _apply_rating(self, stars):
+        """数字键 1~5：给当前图片 / 视频打分并写入数据库。"""
+        path, media_type = self.current_media()
+        if not path:
+            self.notice('当前没有可评分的图片或视频')
+            return
+        if not os.path.isfile(path):
+            self.notice('文件不存在，无法评分：' + path)
+            return
+
+        rating = self.rating_manager.set_rating(path, stars, media_type)
+        if rating is None:
+            self.notice('评分保存失败：无法读取文件内容')
+            return
+
+        self.refresh_rating_status(path)
+        kind = '图片' if media_type == 'image' else '视频'
+        self.notice('已为%s评分：%s（%d 星）— %s'
+                    % (kind, self._rating_stars(rating), rating, os.path.basename(path)))
 
     # ============================================
     #  菜单栏
@@ -963,7 +1079,7 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # ---- 密钥菜单（privi 兼容的密钥包导入 / 导出）----
+        # ---- 密钥菜单（密册兼容的密钥包导入 / 导出）----
         key_menu = self.menu_bar.addMenu("密钥(&K)")
 
         self.import_key_action = QAction("导入密钥...", self)
@@ -1000,6 +1116,15 @@ class MainWindow(QMainWindow):
         mode_group.addAction(self.private_mode_action)
         view_menu.addAction(self.private_mode_action)
 
+        view_menu.addSeparator()
+
+        self.toggle_tree_action = QAction("文件列表面板", self)
+        self.toggle_tree_action.setCheckable(True)
+        self.toggle_tree_action.setChecked(True)
+        self.toggle_tree_action.setShortcut("Ctrl+B")
+        self.toggle_tree_action.triggered.connect(self.toggle_tree)
+        view_menu.addAction(self.toggle_tree_action)
+
         # ---- 控制菜单（图片悬浮控制栏的显隐）----
         control_menu = self.menu_bar.addMenu("控制(&C)")
 
@@ -1013,6 +1138,24 @@ class MainWindow(QMainWindow):
         self.pic_show_layout.controlPanelVisibilityChanged.connect(
             self._on_pic_control_panel_visibility_changed)
 
+        # ---- 归集菜单（按评分 / 关键字 / 路径批量拷贝到指定目录）----
+        collect_menu = self.menu_bar.addMenu("归集(&G)")
+
+        self.collect_rating_action = QAction("按评分归集...", self)
+        self.collect_rating_action.triggered.connect(
+            lambda: self._open_collect_dialog('rating'))
+        collect_menu.addAction(self.collect_rating_action)
+
+        self.collect_keyword_action = QAction("按关键字归集...", self)
+        self.collect_keyword_action.triggered.connect(
+            lambda: self._open_collect_dialog('keyword'))
+        collect_menu.addAction(self.collect_keyword_action)
+
+        self.collect_path_action = QAction("按路径归集...", self)
+        self.collect_path_action.triggered.connect(
+            lambda: self._open_collect_dialog('path'))
+        collect_menu.addAction(self.collect_path_action)
+
         # ---- 设置菜单 ----
         settings_menu = self.menu_bar.addMenu("设置(&S)")
 
@@ -1025,6 +1168,126 @@ class MainWindow(QMainWindow):
         about_action = QAction("关于(&A)...", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
+
+    # ============================================
+    #  归集（按评分 / 关键字 / 路径批量拷贝）
+    # ============================================
+    def _collect_default_root(self):
+        """归集弹框「搜索目录」的默认值：当前选中的目录 / 当前媒体所在目录。"""
+        candidates = []
+        if self.path:
+            candidates.append(self.path if os.path.isdir(self.path) else os.path.dirname(self.path))
+        for media_path in (getattr(self.pic_show_layout, 'path', ''),
+                           getattr(self.video_show_layout, 'path', '')):
+            if media_path:
+                candidates.append(os.path.dirname(media_path))
+        candidates.append(os.path.expanduser('~'))
+        for item in candidates:
+            if item and os.path.isdir(item):
+                return item
+        return ''
+
+    def _open_collect_dialog(self, mode):
+        """打开归集参数弹框 → 选保存目录 → 启动后台归集线程。"""
+        dialog = CollectDialog(self, mode=mode, default_root=self._collect_default_root())
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        params = dialog.params()
+
+        dest_dir = pick_directory(self, '选择归集保存目录')
+        if not dest_dir:
+            return
+
+        if mode == 'rating':
+            paths, skipped = self._collect_rating_paths(
+                params.get('min_rating', 1), params.get('kind', 'all'))
+            if not paths:
+                show_info(self, '归集', '没有符合条件的已评分媒体（文件可能已被移动或删除）。')
+                return
+            limit = int(params.get('limit') or 0)
+            if limit > 0 and len(paths) > limit:
+                skipped += len(paths) - limit
+                paths = paths[:limit]
+            params['paths'] = paths
+            params['skipped'] = skipped
+
+        self._run_collect(params, dest_dir)
+
+    def _collect_rating_paths(self, min_rating, kind):
+        """评分模式：查库 → 校验文件仍存在 → 类型过滤 → 去重，返回 (paths, skipped)。"""
+        paths = []
+        skipped = 0
+        seen = set()
+        for path, _rating in self.rating_manager.list_rated(min_rating):
+            if not path or not os.path.isfile(path):
+                skipped += 1
+                continue
+            if not matches_kind(path, kind):
+                skipped += 1
+                continue
+            key = os.path.normcase(os.path.abspath(path))
+            if key in seen:
+                skipped += 1
+                continue
+            seen.add(key)
+            paths.append(path)
+        return paths, skipped
+
+    def _run_collect(self, params, dest_dir):
+        """启动归集线程（扫描与拷贝都在后台，避免 GUI 卡死）。"""
+        if self.collect_thread is not None and self.collect_thread.isRunning():
+            show_info(self, '归集', '已有归集任务在运行，请等待完成。')
+            return
+
+        progress = ProgressDialog(self, '归集', '正在准备…', 1)
+        progress.show()
+
+        thread = CollectThread(params, dest_dir, parent=self)
+        thread.progress.connect(
+            lambda done, total, text: self._on_collect_progress(progress, done, total, text))
+        thread.completed.connect(lambda stats: self._on_collect_completed(stats, progress))
+        thread.failed.connect(lambda message: self._on_collect_failed(message, progress))
+        progress.canceled.connect(thread.cancel)
+
+        self.collect_thread = thread
+        self.notice('归集中：' + dest_dir)
+        thread.start()
+
+    @staticmethod
+    def _on_collect_progress(progress, done, total, text):
+        if total and total > 0:
+            progress.setMaximum(total)
+            progress.setValue(min(done, total))
+        if text:
+            progress.setLabelText(text)
+
+    def _on_collect_completed(self, stats, progress):
+        progress.setValue(progress.maximum())
+        progress.close()
+        self.collect_thread = None
+
+        copied = stats.get('copied', 0)
+        lines = ['归集完成：拷贝 %d 个文件到' % copied, stats.get('dest', '')]
+        if stats.get('skipped'):
+            lines.append('跳过 %d 个（类型不符 / 文件已不存在 / 重复 / 超出数量）' % stats['skipped'])
+        if stats.get('failed'):
+            lines.append('失败 %d 个' % stats['failed'])
+        if stats.get('cancelled'):
+            lines.append('任务已被取消（已拷贝的文件保留）')
+        errors = stats.get('errors') or []
+        if errors:
+            lines.append('')
+            lines.append('前几个错误：')
+            lines.extend(errors[:5])
+        show_info(self, '归集', '\n'.join(lines))
+        self.notice('归集完成：%d 个文件 → %s' % (copied, stats.get('dest', '')))
+
+    def _on_collect_failed(self, message, progress):
+        progress.close()
+        self.collect_thread = None
+        logger.error('归集失败: ' + message)
+        show_error(self, '归集', '归集失败：\n' + message)
+        self.notice('归集失败：' + message)
 
     def _toggle_private_mode(self, enable):
         if enable == self.private_mode:
@@ -1040,7 +1303,7 @@ class MainWindow(QMainWindow):
 
             # 隐藏普通树
             self.treeView.setVisible(False)
-            self.toggle_tree_btn.setEnabled(False)
+            self.toggle_tree_action.setEnabled(False)
 
             # 隐藏普通模式的视频/图片
             self.video_show_qwidget.setVisible(False)
@@ -1068,7 +1331,7 @@ class MainWindow(QMainWindow):
 
             # 恢复普通模式状态
             self._restore_normal_state()
-            self.toggle_tree_btn.setEnabled(True)
+            self.toggle_tree_action.setEnabled(True)
 
             self.statusLabel.setText("普通模式")
 
@@ -1084,14 +1347,11 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_saved_tree_visible'):
             self.tree_visible = self._saved_tree_visible
             self.treeView.setVisible(self._saved_tree_visible)
-            if self._saved_tree_visible:
-                self.toggle_tree_btn.setText("◀ 隐藏列表")
-            else:
-                self.toggle_tree_btn.setText("▶ 展开列表")
         else:
             self.treeView.setVisible(True)
-            self.toggle_tree_btn.setText("◀ 隐藏列表")
             self.tree_visible = True
+        if hasattr(self, 'toggle_tree_action'):
+            self.toggle_tree_action.setChecked(self.tree_visible)
 
         if hasattr(self, '_saved_video_visible') and self._saved_video_visible:
             self.video_show_qwidget.setVisible(True)
@@ -1112,7 +1372,7 @@ class MainWindow(QMainWindow):
 
     def _open_private_library(self):
         """打开私密库文件夹选择对话框"""
-        selected_path = QFileDialog.getExistingDirectory(self, "选择私密库文件夹")
+        selected_path = pick_directory(self, "选择私密库文件夹")
         if not selected_path or not os.path.isdir(selected_path):
             return
 
@@ -1156,7 +1416,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f'私密文件解密失败 {file_path}: {e}')
             self.notice('解密失败：' + str(e))
-            QMessageBox.warning(self, '私密文件', str(e))
+            show_warning(self, '私密文件', str(e))
             return
 
         # 根据文件类型切换显示（复用普通模式的播放 / 看图功能）
@@ -1201,15 +1461,14 @@ class MainWindow(QMainWindow):
             self.notice('该目录下没有可展示的图片')
             return
 
-        progress = QProgressDialog('正在解密图片...', '取消', 0, len(images), self)
-        progress.setWindowTitle('私密模式')
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(0)
+        progress = ProgressDialog(self, '私密模式', '正在解密图片...', len(images))
+        progress.show()
+        QApplication.processEvents()
 
         playable = []
         display_names = []
         for index, path in enumerate(images):
-            if progress.wasCanceled():
+            if progress.is_canceled():
                 break
             progress.setValue(index)
             progress.setLabelText('解密：' + os.path.basename(path))
@@ -1283,26 +1542,22 @@ class MainWindow(QMainWindow):
             self.notice('扫描失败：' + str(e))
             return
         if not files:
-            QMessageBox.information(self, '加密', '该路径下没有需要加密的图片/视频文件。')
+            show_info(self, '加密', '该路径下没有需要加密的图片/视频文件。')
             return
 
         if not self.private_service.has_key():
-            answer = QMessageBox.question(
-                self, '尚未导入密钥',
-                '当前还没有密钥。\n继续将自动生成一把新的随机密钥'
-                '（可通过「密钥 → 导出密钥」备份）。\n\n继续？',
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-            if answer != QMessageBox.Yes:
+            if not ask_yes_no(
+                    self, '尚未导入密钥',
+                    '当前还没有密钥。\n继续将自动生成一把新的随机密钥'
+                    '（可通过「密钥 → 导出密钥」备份）。\n\n继续？'):
                 return
 
-        answer = QMessageBox.question(
-            self, '加密确认',
-            '即将加密 %d 个图片/视频文件：\n%s\n\n'
-            '将同时加密文件内容与文件名，加密后源文件会被删除，只保留加密文件。\n'
-            '另有 %d 个非媒体 / 已加密文件会被跳过。\n\n继续？'
-            % (len(files), target, skipped),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if answer != QMessageBox.Yes:
+        if not ask_yes_no(
+                self, '加密确认',
+                '即将加密 %d 个图片/视频文件：\n%s\n\n'
+                '将同时加密文件内容与文件名，加密后源文件会被删除，只保留加密文件。\n'
+                '另有 %d 个非媒体 / 已加密文件会被跳过。\n\n继续？'
+                % (len(files), target, skipped), default_yes=False):
             return
         self._run_private_batch('encrypt', target, len(files))
 
@@ -1317,33 +1572,28 @@ class MainWindow(QMainWindow):
             message = '该路径下没有可解密的文件。'
             if missing_key:
                 message += '\n另有 %d 个密文没有配套密钥记录（请先导入密钥）。' % missing_key
-            QMessageBox.information(self, '解密', message)
+            show_info(self, '解密', message)
             return
 
         detail = ''
         if missing_key:
             detail = '\n另有 %d 个密文没有配套密钥记录，会被跳过。' % missing_key
-        answer = QMessageBox.question(
-            self, '解密确认',
-            '即将解密 %d 个文件：\n%s\n\n'
-            '解密后恢复原文件名并删除密文。%s\n\n继续？'
-            % (len(files), target, detail),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if answer != QMessageBox.Yes:
+        if not ask_yes_no(
+                self, '解密确认',
+                '即将解密 %d 个文件：\n%s\n\n'
+                '解密后恢复原文件名并删除密文。%s\n\n继续？'
+                % (len(files), target, detail), default_yes=False):
             return
         self._run_private_batch('decrypt', target, len(files))
 
     def _run_private_batch(self, mode, target, total):
         if self.private_batch_thread is not None and self.private_batch_thread.isRunning():
-            QMessageBox.information(self, '私密模式', '已有加解密任务在运行，请等待完成。')
+            show_info(self, '私密模式', '已有加解密任务在运行，请等待完成。')
             return
 
         title = '正在加密' if mode == 'encrypt' else '正在解密'
-        progress = QProgressDialog(title, '取消', 0, max(total, 1), self)
-        progress.setWindowTitle('私密模式')
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(0)
-        progress.setValue(0)
+        progress = ProgressDialog(self, '私密模式', '%s：%s' % (title, target), max(total, 1))
+        progress.show()
 
         thread = PrivateBatchThread(mode, target, parent=self)
         thread.progress.connect(
@@ -1393,24 +1643,24 @@ class MainWindow(QMainWindow):
         if errors:
             message += '\n\n前几个错误：\n' + '\n'.join(errors[:5])
 
-        QMessageBox.information(self, '私密模式', message)
+        show_info(self, '私密模式', message)
         self.notice(message.replace('\n', ' '))
 
     def _on_private_batch_failed(self, message, progress):
         progress.close()
         self.private_batch_thread = None
         logger.error('私密批量操作失败: ' + message)
-        QMessageBox.critical(self, '私密模式', '操作失败：\n' + message)
+        show_error(self, '私密模式', '操作失败：\n' + message)
         self.notice('私密操作失败：' + message)
 
     # ============================================
     #  密钥管理（导入 / 导出 / 状态）
     # ============================================
     def _import_key_package(self):
-        """导入 privi 导出的密钥数据库（v2 SQLite，兼容 v1 JSON）。"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, '导入 privi 密钥数据库', '',
-            '密钥数据库 (*.db *.json);;所有文件 (*.*)')
+        """导入密册导出的密钥数据库（v2 SQLite，兼容 v1 JSON）。"""
+        file_path = pick_open_file(
+            self, '导入密册密钥数据库',
+            filters=['密钥数据库 (*.db *.json)', '所有文件 (*.*)'])
         if not file_path:
             return
 
@@ -1420,10 +1670,10 @@ class MainWindow(QMainWindow):
             logger.error(f'检查密钥包失败: {e}')
             summary = None
         if summary is None:
-            QMessageBox.warning(
+            show_warning(
                 self, '导入密钥',
-                '该文件不是 privi 导出的密钥包。\n'
-                '（需要 privi「设置 → 导出密钥」生成的 .db，或旧版 v1 JSON）')
+                '该文件不是密册导出的密钥包。\n'
+                '（需要密册「设置 → 导出密钥」生成的 .db，或旧版 v1 JSON）')
             return
 
         detail = ('密钥包版本：%s\n创建时间：%s\n文件记录：%d 条（其中 %d 条带加密密钥）\n包含盐值：%s' % (
@@ -1432,44 +1682,40 @@ class MainWindow(QMainWindow):
             summary.get('file_count', 0),
             summary.get('encrypted_file_count', 0),
             '是' if summary.get('has_salt') else '否'))
-        answer = QMessageBox.question(
-            self, '导入密钥',
-            detail + '\n\n导入后将使用该密钥包解开本机的私密文件，继续？',
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if answer != QMessageBox.Yes:
+        if not ask_yes_no(
+                self, '导入密钥',
+                detail + '\n\n导入后将使用该密钥包解开本机的私密文件，继续？'):
             return
 
         result = self.private_service.import_key_package(file_path)
         if not result.get('ok') and result.get('reason') == 'key_conflict':
-            answer = QMessageBox.question(
-                self, '密钥冲突',
-                result.get('message', '') + '\n\n仍要覆盖本机密钥吗？',
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if answer != QMessageBox.Yes:
+            if not ask_yes_no(
+                    self, '密钥冲突',
+                    result.get('message', '') + '\n\n仍要覆盖本机密钥吗？', default_yes=False):
                 self.notice('已取消导入密钥')
                 return
             result = self.private_service.import_key_package(file_path, overwrite_key=True)
 
         if not result.get('ok'):
-            QMessageBox.warning(self, '导入密钥', result.get('message') or '导入失败')
+            show_warning(self, '导入密钥', result.get('message') or '导入失败')
             return
 
         message = ('密钥导入成功。\n新增文件记录 %d 条，更新 %d 条，跳过 %d 条。' % (
             result.get('imported', 0), result.get('updated', 0), result.get('skipped', 0)))
-        QMessageBox.information(self, '导入密钥', message)
+        show_info(self, '导入密钥', message)
         self.notice(message.replace('\n', ' '))
         self.private_tree_model.refresh()
 
     def _export_key_package(self):
-        """导出与 privi 完全一致的密钥数据库文件（SQLite，*.db）。"""
+        """导出与密册完全一致的密钥数据库文件（SQLite，*.db）。"""
         if not self.private_service.has_key():
-            QMessageBox.warning(
+            show_warning(
                 self, '导出密钥',
                 '当前还没有可导出的密钥。\n'
                 '请先导入 privi 导出的密钥包，或先对文件执行一次加密（会自动生成密钥）。')
             return
 
-        directory = QFileDialog.getExistingDirectory(self, '选择密钥导出目录')
+        directory = pick_directory(self, '选择密钥导出目录')
         if not directory:
             return
 
@@ -1477,12 +1723,12 @@ class MainWindow(QMainWindow):
             path = self.private_service.export_key_package(directory)
         except Exception as e:
             logger.error(f'导出密钥失败: {e}')
-            QMessageBox.critical(self, '导出密钥', '导出失败：\n' + str(e))
+            show_error(self, '导出密钥', '导出失败：\n' + str(e))
             return
 
-        QMessageBox.information(
+        show_info(
             self, '导出密钥',
-            '已导出与 privi 完全兼容的密钥数据库：\n%s\n\n'
+            '已导出与密册完全兼容的密钥数据库：\n%s\n\n'
             '⚠ 密钥包等同于明文密钥，配合私密目录可解密全部文件；'
             '请离线保存或放进加密网盘，不要外传。' % path)
         self.notice('已导出密钥：' + path)
@@ -1490,13 +1736,13 @@ class MainWindow(QMainWindow):
     def _show_key_status(self):
         info = self.private_service.key_info()
         if info is None:
-            QMessageBox.information(
+            show_info(
                 self, '密钥状态',
                 '尚未导入密钥。\n\n'
-                '可通过「密钥 → 导入密钥」选择 privi 导出的 .db 密钥包；\n'
+                '可通过「密钥 → 导入密钥」选择密册导出的 .db 密钥包；\n'
                 '也可以直接对私密目录执行加密（会自动生成新密钥）。')
             return
-        QMessageBox.information(
+        show_info(
             self, '密钥状态',
             '密钥来源：%s\n创建时间：%s\n已记录加密文件：%d 个\n盐值：%s' % (
                 info.get('source') or '-',
@@ -1508,10 +1754,7 @@ class MainWindow(QMainWindow):
         """「设置 → 幻灯片」：调整幻灯片自动播放的时间间隔（秒），确认后立即生效并持久化。"""
         layout = self.inputAndExeLayout
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle("幻灯片设置")
-        dialog.setModal(True)
-        dialog.setMinimumWidth(360)
+        dialog = StyledDialog(self, "幻灯片设置", width=400)
 
         spin = QSpinBox()
         spin.setRange(PicInputLayout.min_interval_seconds, PicInputLayout.max_interval_seconds)
@@ -1519,21 +1762,17 @@ class MainWindow(QMainWindow):
         spin.setValue(layout.get_interval_seconds())
 
         form = QFormLayout()
-        form.setContentsMargins(20, 16, 20, 8)
+        form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(10)
         form.addRow("幻灯片播放时间间隔:", spin)
 
         tip = QLabel("设置后立即生效，下次启动沿用该间隔。")
+        tip.setObjectName("dialogText")
         tip.setWordWrap(True)
-        form.addRow(tip)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-
-        root = QVBoxLayout(dialog)
-        root.addLayout(form)
-        root.addWidget(buttons)
+        dialog.body_layout.addLayout(form)
+        dialog.body_layout.addWidget(tip)
+        dialog.body_layout.addLayout(dialog.make_button_row())
 
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -1585,7 +1824,7 @@ class MainWindow(QMainWindow):
             f"支持视频/音频播放、裁剪、截图、幻灯片等功能。</p>"
         )
 
-        QMessageBox.about(self, "关于 多媒体播放器", about_text)
+        show_about(self, "关于 多媒体播放器", about_text)
 
 
 if __name__ == '__main__':

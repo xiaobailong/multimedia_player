@@ -1,4 +1,5 @@
 import os, glob
+import math
 import time
 import subprocess
 
@@ -7,6 +8,7 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
+from PyQt5.QtGui import QFontDatabase, QPainter, QPixmap, QColor, QPolygonF, QIcon, QPen
 
 from loguru import logger
 
@@ -14,9 +16,209 @@ from src.data_manager.config_manager import ConfigManager
 from src.data_manager.position_manager import PositionManager
 from src.layout.floating_control_panel import FloatingControlPanel
 from src.layout.video_cut_thread import VideoCutThread
-from src.layout.custom_slider import CustomSlider
-from src.layout.range_slider import QRangeSlider
+from src.layout.seek_cut_slider import SeekCutSlider
 from src.utils.utils import get_ffmpeg_path as utils_get_ffmpeg_path
+
+
+def _create_media_icon(paint_func, size=22, color='#cdd6f4'):
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    paint_func(painter, size, color)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def _paint_play(p, s, c):
+    p.setBrush(QColor(c))
+    p.setPen(Qt.NoPen)
+    m = s * 0.22
+    pts = QPolygonF([QPointF(m, m), QPointF(s - m, s / 2), QPointF(m, s - m)])
+    p.drawPolygon(pts)
+
+
+def _paint_pause(p, s, c):
+    p.setBrush(QColor(c))
+    p.setPen(Qt.NoPen)
+    w = s * 0.22
+    gap = s * 0.14
+    left = (s - 2 * w - gap) / 2
+    p.drawRect(QRectF(left, s * 0.2, w, s * 0.6))
+    p.drawRect(QRectF(left + w + gap, s * 0.2, w, s * 0.6))
+
+
+def _paint_triangle_right(p, s, c):
+    p.setBrush(QColor(c))
+    p.setPen(Qt.NoPen)
+    m = s * 0.18
+    h = s - 2 * m
+    w = h * 0.55
+    gap = s * 0.08
+    total_w = 2 * w + gap
+    start_x = (s - total_w) / 2
+    for i in range(2):
+        x = start_x + i * (w + gap)
+        pts = QPolygonF([QPointF(x, m), QPointF(x + w, s / 2), QPointF(x, s - m)])
+        p.drawPolygon(pts)
+
+
+def _paint_triangle_left(p, s, c):
+    p.setBrush(QColor(c))
+    p.setPen(Qt.NoPen)
+    m = s * 0.18
+    h = s - 2 * m
+    w = h * 0.55
+    gap = s * 0.08
+    total_w = 2 * w + gap
+    start_x = (s - total_w) / 2
+    for i in range(2):
+        x = start_x + i * (w + gap)
+        pts = QPolygonF([QPointF(x + w, m), QPointF(x, s / 2), QPointF(x + w, s - m)])
+        p.drawPolygon(pts)
+
+
+def _paint_previous(p, s, c):
+    p.setBrush(QColor(c))
+    p.setPen(Qt.NoPen)
+    m = s * 0.18
+    h = s - 2 * m
+    w = h * 0.5
+    gap = s * 0.06
+    bar_w = s * 0.1
+    total_w = 2 * w + gap + bar_w
+    start_x = (s - total_w) / 2
+    x0 = start_x
+    x1 = x0 + w + gap
+    x_bar = x1 + w + gap
+    pts0 = QPolygonF([QPointF(x0 + w, m), QPointF(x0, s / 2), QPointF(x0 + w, s - m)])
+    pts1 = QPolygonF([QPointF(x1 + w, m), QPointF(x1, s / 2), QPointF(x1 + w, s - m)])
+    p.drawPolygon(pts0)
+    p.drawPolygon(pts1)
+    p.drawRect(QRectF(x_bar, m, bar_w, s - 2 * m))
+
+
+def _paint_next(p, s, c):
+    p.setBrush(QColor(c))
+    p.setPen(Qt.NoPen)
+    m = s * 0.18
+    h = s - 2 * m
+    w = h * 0.5
+    gap = s * 0.06
+    bar_w = s * 0.1
+    total_w = 2 * w + gap + bar_w
+    start_x = (s - total_w) / 2
+    x_bar = start_x
+    x0 = x_bar + bar_w + gap
+    x1 = x0 + w + gap
+    p.drawRect(QRectF(x_bar, m, bar_w, s - 2 * m))
+    pts0 = QPolygonF([QPointF(x0, m), QPointF(x0 + w, s / 2), QPointF(x0, s - m)])
+    pts1 = QPolygonF([QPointF(x1, m), QPointF(x1 + w, s / 2), QPointF(x1, s - m)])
+    p.drawPolygon(pts0)
+    p.drawPolygon(pts1)
+
+
+def _paint_list(p, s, c):
+    p.setPen(QPen(QColor(c), s * 0.12, Qt.SolidLine, Qt.RoundCap))
+    bar_w = s * 0.7
+    gap = s * 0.16
+    total_h = 3 * (s * 0.12) + 2 * gap
+    y0 = (s - total_h) / 2 + s * 0.06
+    x0 = (s - bar_w) / 2
+    for i in range(3):
+        y = y0 + i * (s * 0.12 + gap)
+        p.drawLine(QPointF(x0, y), QPointF(x0 + bar_w, y))
+
+
+def _paint_loop(p, s, c):
+    p.setPen(QPen(QColor(c), s * 0.12, Qt.SolidLine, Qt.RoundCap))
+    p.setBrush(Qt.NoBrush)
+    cx, cy = s / 2, s / 2
+    r = s * 0.28
+    start_angle = 45 * 16
+    span_angle = 270 * 16
+    p.drawArc(QRectF(cx - r, cy - r, 2 * r, 2 * r), start_angle, span_angle)
+    arrow_size = s * 0.16
+    angle_rad = math.radians(45)
+    tip_x = cx + r * math.cos(angle_rad)
+    tip_y = cy - r * math.sin(angle_rad)
+    p.setBrush(QColor(c))
+    p.setPen(Qt.NoPen)
+    pts = QPolygonF([
+        QPointF(tip_x, tip_y),
+        QPointF(tip_x - arrow_size * 0.7, tip_y - arrow_size),
+        QPointF(tip_x + arrow_size * 0.7, tip_y - arrow_size),
+    ])
+    p.drawPolygon(pts)
+
+
+def _paint_fullscreen(p, s, c):
+    m = s * 0.15
+    arm = s * 0.26
+    lw = s * 0.11
+    p.setPen(QPen(QColor(c), lw, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.setBrush(Qt.NoBrush)
+    corners = [
+        (m, m, 1, 1),
+        (s - m, m, -1, 1),
+        (m, s - m, 1, -1),
+        (s - m, s - m, -1, -1),
+    ]
+    for cx, cy, dx, dy in corners:
+        p.drawLine(QPointF(cx, cy), QPointF(cx + dx * arm, cy))
+        p.drawLine(QPointF(cx, cy), QPointF(cx, cy + dy * arm))
+
+
+def _paint_cut(p, s, c):
+    m = s * 0.15
+    r = s * 0.12
+    cx, cy = s * 0.32, s * 0.3
+    p.setPen(QPen(QColor(c), s * 0.1, Qt.SolidLine, Qt.RoundCap))
+    p.setBrush(Qt.NoBrush)
+    p.drawArc(QRectF(cx - r, cy - r, 2 * r, 2 * r), 0 * 16, 270 * 16)
+    p.drawArc(QRectF(s - cx - r, cy - r, 2 * r, 2 * r), 180 * 16, 270 * 16)
+    p.setPen(QPen(QColor(c), s * 0.09, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(QPointF(cx - r, cy), QPointF(s * 0.42, s - m))
+    p.drawLine(QPointF(s - cx + r, cy), QPointF(s * 0.58, s - m))
+    p.drawLine(QPointF(cx - r * 1.3, cy), QPointF(s * 0.35, s - m))
+    p.drawLine(QPointF(s - cx + r * 1.3, cy), QPointF(s * 0.65, s - m))
+
+
+def _paint_delete(p, s, c):
+    m = s * 0.13
+    bw = s * 0.6
+    bx = (s - bw) / 2
+    p.setPen(QPen(QColor(c), s * 0.1, Qt.SolidLine, Qt.RoundCap))
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(bx - s * 0.08, m + s * 0.06), QPointF(bx + bw + s * 0.08, m + s * 0.06))
+    handle_x = s / 2
+    p.drawLine(QPointF(handle_x - s * 0.06, m), QPointF(handle_x + s * 0.06, m))
+    p.drawLine(QPointF(handle_x - s * 0.06, m), QPointF(handle_x - s * 0.06, m + s * 0.06))
+    p.drawLine(QPointF(handle_x + s * 0.06, m), QPointF(handle_x + s * 0.06, m + s * 0.06))
+    top = m + s * 0.1
+    bot = s - m
+    p.drawLine(QPointF(bx, top), QPointF(bx, bot))
+    p.drawLine(QPointF(bx + bw, top), QPointF(bx + bw, bot))
+    p.drawLine(QPointF(bx - s * 0.04, bot - s * 0.02), QPointF(bx + bw + s * 0.04, bot - s * 0.02))
+    p.drawLine(QPointF(bx + s * 0.13, top), QPointF(bx + s * 0.13, bot - s * 0.02))
+    p.drawLine(QPointF(bx + s * 0.27, top), QPointF(bx + s * 0.27, bot - s * 0.02))
+    p.drawLine(QPointF(bx + s * 0.40, top), QPointF(bx + s * 0.40, bot - s * 0.02))
+
+
+def _paint_screenshot(p, s, c):
+    m = s * 0.14
+    bw, bh = s * 0.68, s * 0.52
+    bx, by = (s - bw) / 2, s * 0.28
+    p.setPen(QPen(QColor(c), s * 0.1, Qt.SolidLine, Qt.RoundCap))
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(bx, by, bw, bh), s * 0.06, s * 0.06)
+    r = s * 0.12
+    p.drawEllipse(QPointF(s / 2, by + bh / 2 + s * 0.01), r, r)
+    flash_left = bx + bw * 0.68
+    flash_top = by + bh * 0.05
+    flash_w = bw * 0.22
+    flash_h = bh * 0.22
+    p.drawRoundedRect(QRectF(flash_left, flash_top, flash_w, flash_h), s * 0.03, s * 0.03)
 
 
 class VideoShowLayout(QVBoxLayout):
@@ -36,12 +238,12 @@ class VideoShowLayout(QVBoxLayout):
         self.path = ''
         self.cut_start = 0
         self.cut_end = 1000
-        self.bar_slider_maxvalue = 1000
         self.play_state = False
         self.config_manager = ConfigManager()
         self.play_list = []
         self.play_list_index = 0
         self.play_mode = VideoShowLayout.play_mode_one
+        self._list_reset_mode = False  # 列表播放完毕后的"重播列表"状态
 
         # 播放位置记忆（使用 PositionManager 统一管理）
         self._position_save_count = 0  # 每 5 秒保存一次
@@ -79,106 +281,149 @@ class VideoShowLayout(QVBoxLayout):
         self.qscrollarea.setWidgetResizable(True)
         self.qscrollarea.setWidget(self.video_widget)
 
+        # ---- 时间轴行：左「已播放」 + 合并滑条 + 右「总时长」 ----
         self.bar_hbox = QHBoxLayout()
         self.bar_hbox.setObjectName("bar_hbox")
+        self.bar_hbox.setContentsMargins(2, 4, 2, 2)
+        self.bar_hbox.setSpacing(8)
 
-        self.bar_slider = CustomSlider(Qt.Horizontal)
-        self.bar_slider.valueChanged.connect(self.slider_progress_moved)
-        self.bar_slider.setObjectName("bar_slider")
-        self.bar_slider.setMaximum(self.bar_slider_maxvalue)
-        self.bar_slider.setMinimum(0)
+        # 左右时间用等宽字体 + 固定宽度，数字跳动时布局不抖
+        time_font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        time_font.setPointSize(10)
 
-        self.bar_label = QLabel()
-        self.bar_label.setText("已播放:00:00:00")
-        self.bar_label_all = QLabel()
-        self.bar_label_all.setText("总时长:00:00:00")
+        # 左侧只显示已播放时间、右侧只显示总时长（不带「已播放/总时长」文字）
+        self.bar_label = QLabel("00:00:00")
+        self.bar_label.setObjectName("bar_time_current")
+        self.bar_label_all = QLabel("00:00:00")
+        self.bar_label_all.setObjectName("bar_time_total")
+        for label, tip in ((self.bar_label, '已播放时间'), (self.bar_label_all, '视频总时长')):
+            label.setFont(time_font)
+            label.setFixedWidth(78)
+            label.setAlignment(Qt.AlignCenter)
+            label.setToolTip(tip)
 
-        self.bar_hbox.addWidget(self.bar_slider)
+        self.seek_slider = SeekCutSlider()
+        self.seek_slider.setObjectName("seek_cut_slider")
+        self.seek_slider.seekRequested.connect(self.on_seek_requested)
+        self.seek_slider.cutRangeChanged.connect(self.on_cut_range_changed)
+
         self.bar_hbox.addWidget(self.bar_label)
+        self.bar_hbox.addWidget(self.seek_slider, 1)
         self.bar_hbox.addWidget(self.bar_label_all)
 
+        # ---- 预生成图标 ----
+        self._play_icon = _create_media_icon(_paint_play)
+        self._pause_icon = _create_media_icon(_paint_pause)
+        _rewind_icon = _create_media_icon(_paint_triangle_left)
+        _forward_icon = _create_media_icon(_paint_triangle_right)
+        _previous_icon = _create_media_icon(_paint_previous)
+        _next_icon = _create_media_icon(_paint_next)
+        _list_icon = _create_media_icon(_paint_list)
+        _loop_icon = _create_media_icon(_paint_loop)
+        _fullscreen_icon = _create_media_icon(_paint_fullscreen)
+        _cut_icon = _create_media_icon(_paint_cut)
+        _delete_icon = _create_media_icon(_paint_delete)
+        _screenshot_icon = _create_media_icon(_paint_screenshot)
+
+        def _icon_btn(icon, tooltip='', min_w=36, obj_name='', checkable=False):
+            btn = QPushButton()
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(20, 20))
+            btn.setToolTip(tooltip)
+            btn.setMinimumWidth(min_w)
+            btn.setFixedHeight(30)
+            if obj_name:
+                btn.setObjectName(obj_name)
+            if checkable:
+                btn.setCheckable(True)
+            return btn
+
+        # ---- 单行控制栏：播放控制 + 剪切编辑 + 工具按钮 ----
         self.controal_hbox = QHBoxLayout()
         self.controal_hbox.setObjectName("controal_hbox")
+        self.controal_hbox.setContentsMargins(2, 2, 2, 2)
+        self.controal_hbox.setSpacing(4)
 
-        self.down_btn = QPushButton()
-        self.down_btn.setText("快退")
+        # -- 左：播放控制按钮组 --
+        self.previous_btn = _icon_btn(_previous_icon, '上一个视频（W）')
+        self.previous_btn.clicked.connect(self.previous)
+        self.controal_hbox.addWidget(self.previous_btn)
+
+        self.down_btn = _icon_btn(_rewind_icon, '后退（←）')
         self.down_btn.clicked.connect(self.down_time)
         self.controal_hbox.addWidget(self.down_btn)
-        self.stop_btn = QPushButton()
-        self.stop_btn.setText("播放")
+
+        self.stop_btn = _icon_btn(self._play_icon, '播放 / 暂停（空格）', min_w=44, obj_name='video_primary_btn')
         self.stop_btn.clicked.connect(self.run_or_stop)
         self.controal_hbox.addWidget(self.stop_btn)
-        self.up_btn = QPushButton()
-        self.up_btn.setText("快进")
+
+        self.up_btn = _icon_btn(_forward_icon, '前进（→）')
         self.up_btn.clicked.connect(self.up_time)
         self.controal_hbox.addWidget(self.up_btn)
 
-        self.previous_btn = QPushButton()
-        self.previous_btn.setText("上一个")
-        self.previous_btn.clicked.connect(self.previous)
-        self.controal_hbox.addWidget(self.previous_btn)
-        self.list_btn = QPushButton()
-        self.list_btn.setText("播放列表")
-        self.list_btn.clicked.connect(self.run_list)
-        self.controal_hbox.addWidget(self.list_btn)
-        self.loop_btn = QPushButton()
-        self.loop_btn.setText("🔂 单曲循环")
-        self.loop_btn.setCheckable(True)
-        self.loop_btn.toggled.connect(self._toggle_loop)
-        self.controal_hbox.addWidget(self.loop_btn)
-        self.next_btn = QPushButton()
-        self.next_btn.setText("下一个")
+        self.next_btn = _icon_btn(_next_icon, '下一个视频（E）')
         self.next_btn.clicked.connect(self.next)
         self.controal_hbox.addWidget(self.next_btn)
 
-        self.delete_btn = QPushButton()
-        self.delete_btn.setText("删除")
+        self.list_btn = _icon_btn(_list_icon, '加载 / 重播当前目录的视频列表', min_w=40)
+        self.list_btn.clicked.connect(self.run_list)
+        self.controal_hbox.addWidget(self.list_btn)
+
+        self.loop_btn = _icon_btn(_loop_icon, '循环播放当前视频（按钮按下=开启）', min_w=40, checkable=True)
+        self.loop_btn.toggled.connect(self._toggle_loop)
+        self.controal_hbox.addWidget(self.loop_btn)
+
+        self.controal_hbox.addStretch(1)
+
+        # -- 中：剪切编辑区 --
+        self.cut_bar_label_start = QPushButton("开始:")
+        self.cut_bar_label_start.setToolTip('把剪切起点设为当前播放位置')
+        self.cut_bar_label_start.clicked.connect(self.get_video_start)
+        self.cut_bar_label_start.setFixedHeight(30)
+        self.controal_hbox.addWidget(self.cut_bar_label_start)
+
+        self.cut_bar_edit_start = QLineEdit()
+        self.cut_bar_edit_start.setFixedSize(QSize(100, 30))
+        self.cut_bar_edit_start.setObjectName("cut_bar_label_start")
+        self.cut_bar_edit_start.setText("00:00:00")
+        self.cut_bar_edit_start.setCursorPosition(0)
+        self.cut_bar_edit_start.setAlignment(Qt.AlignCenter)
+        self.cut_bar_edit_start.setToolTip('剪切起点')
+        self.controal_hbox.addWidget(self.cut_bar_edit_start)
+
+        self.cut_bar_label_end = QPushButton("结束:")
+        self.cut_bar_label_end.setToolTip('把剪切终点设为当前播放位置')
+        self.cut_bar_label_end.clicked.connect(self.get_video_end)
+        self.cut_bar_label_end.setFixedHeight(30)
+        self.controal_hbox.addWidget(self.cut_bar_label_end)
+
+        self.cut_bar_edit_end = QLineEdit()
+        self.cut_bar_edit_end.setFixedSize(QSize(100, 30))
+        self.cut_bar_edit_end.setObjectName("cut_bar_label_end")
+        self.cut_bar_edit_end.setText("00:00:00")
+        self.cut_bar_edit_end.setCursorPosition(0)
+        self.cut_bar_edit_end.setAlignment(Qt.AlignCenter)
+        self.cut_bar_edit_end.setToolTip('剪切终点')
+        self.controal_hbox.addWidget(self.cut_bar_edit_end)
+
+        self.cut_btn = _icon_btn(_cut_icon, '按当前起止时间裁剪视频', min_w=40)
+        self.cut_btn.clicked.connect(self.video_cut)
+        self.controal_hbox.addWidget(self.cut_btn)
+
+        self.controal_hbox.addStretch(1)
+
+        # -- 右：工具按钮组 --
+        self.delete_btn = _icon_btn(_delete_icon, '删除当前视频（Delete）', min_w=40)
         self.delete_btn.clicked.connect(self.delete)
         self.controal_hbox.addWidget(self.delete_btn)
 
-        self.screenshot_button = QPushButton('截图')
+        self.screenshot_button = _icon_btn(_screenshot_icon, '截取当前画面（S）', min_w=40)
         self.screenshot_button.clicked.connect(self.screenshot)
         self.controal_hbox.addWidget(self.screenshot_button)
 
-        self.fullScreenBtn = QPushButton("全屏")
+        self.fullScreenBtn = _icon_btn(_fullscreen_icon, '全屏 / 退出全屏（F）', min_w=40)
         self.controal_hbox.addWidget(self.fullScreenBtn)
         self.fullScreenBtn.pressed.connect(main_window.full_screen_custom)
-
-        self.cut_bar_hbox = QHBoxLayout()
-        self.cut_bar_hbox.setObjectName("cut_bar_hbox")
-
-        self.cut_bar_label_start = QPushButton()
-        self.cut_bar_label_start.setText("开始:")
-        self.cut_bar_label_start.clicked.connect(self.get_video_start)
-        self.cut_bar_edit_start = QLineEdit()
-        self.cut_bar_edit_start.setMaximumSize(QSize(70, 30))
-        self.cut_bar_edit_start.setObjectName("cut_bar_label_start")
-        self.cut_bar_edit_start.setText("00:00:00")
-        self.cut_bar_label_end = QPushButton()
-        self.cut_bar_label_end.clicked.connect(self.get_video_end)
-        self.cut_bar_label_end.setText("结束:")
-        self.cut_bar_edit_end = QLineEdit()
-        self.cut_bar_edit_end.setMaximumSize(QSize(70, 30))
-        self.cut_bar_edit_end.setObjectName("cut_bar_label_end")
-        self.cut_bar_edit_end.setText("00:00:00")
-
-        self.cut_bar_slider = QRangeSlider()
-        self.cut_bar_slider.startValueChanged.connect(self.slider_start)
-        self.cut_bar_slider.endValueChanged.connect(self.slider_end)
-        self.cut_bar_slider.setMax(self.bar_slider_maxvalue)
-        self.cut_bar_slider.setMin(0)
-        self.cut_bar_slider.setRange(0, self.bar_slider_maxvalue)
-
-        self.cut_bar_hbox.addWidget(self.cut_bar_slider)
-        self.cut_bar_hbox.addWidget(self.cut_bar_label_start)
-        self.cut_bar_hbox.addWidget(self.cut_bar_edit_start)
-        self.cut_bar_hbox.addWidget(self.cut_bar_label_end)
-        self.cut_bar_hbox.addWidget(self.cut_bar_edit_end)
-
-        self.cut_btn = QPushButton()
-        self.cut_btn.setText("剪切")
-        self.cut_btn.clicked.connect(self.video_cut)
-        self.cut_bar_hbox.addWidget(self.cut_btn)
 
         self.bar_hbox_qwidget = QWidget()
         self.bar_hbox_qwidget.setLayout(self.bar_hbox)
@@ -186,15 +431,10 @@ class VideoShowLayout(QVBoxLayout):
         self.controal_hbox_qwidget = QWidget()
         self.controal_hbox_qwidget.setLayout(self.controal_hbox)
 
-        self.cut_bar_hbox_qwidget = QWidget()
-        self.cut_bar_hbox_qwidget.setLayout(self.cut_bar_hbox)
-
         self.addWidget(self.qscrollarea)
-        # 记录控制控件的插入位置（在 qscrollarea 之后）
         self._control_widget_start_index = self.count()
         self.addWidget(self.bar_hbox_qwidget)
         self.addWidget(self.controal_hbox_qwidget)
-        self.addWidget(self.cut_bar_hbox_qwidget)
 
         # 全屏悬浮控制面板（初始不添加控件）
         self.floating_panel = FloatingControlPanel(main_window)
@@ -235,31 +475,23 @@ class VideoShowLayout(QVBoxLayout):
         self.titleQLabel.setVisible(True)
         self.bar_hbox_qwidget.setVisible(True)
         self.controal_hbox_qwidget.setVisible(True)
-        self.cut_bar_hbox_qwidget.setVisible(True)
 
     def _move_controls_to_panel(self):
         """将控制控件从主布局移动到悬浮面板"""
-        # 从主布局移除
-        for w in [self.bar_hbox_qwidget, self.controal_hbox_qwidget, self.cut_bar_hbox_qwidget]:
+        for w in [self.bar_hbox_qwidget, self.controal_hbox_qwidget]:
             self.removeWidget(w)
             w.setParent(None)
 
-        # 添加到悬浮面板（确保它们可见，因为之前可能被 setVisible(False) 隐藏了）
         self.floating_panel.addControlWidget(self.bar_hbox_qwidget)
         self.floating_panel.addControlWidget(self.controal_hbox_qwidget)
-        self.floating_panel.addControlWidget(self.cut_bar_hbox_qwidget)
         self.bar_hbox_qwidget.setVisible(True)
         self.controal_hbox_qwidget.setVisible(True)
-        self.cut_bar_hbox_qwidget.setVisible(True)
 
     def _restore_controls_from_panel(self):
         """将控制控件从悬浮面板恢复到主布局"""
-        # 控件已在 clearControlWidgets 中被移出 panel，只需插入回主布局
-        # 按原有顺序插入到 qscrollarea 之后
         index = self._control_widget_start_index
         self.insertWidget(index, self.bar_hbox_qwidget)
         self.insertWidget(index + 1, self.controal_hbox_qwidget)
-        self.insertWidget(index + 2, self.cut_bar_hbox_qwidget)
 
     def _show_floating_panel(self):
         """延迟显示悬浮面板（等待全屏切换完成）"""
@@ -291,28 +523,28 @@ class VideoShowLayout(QVBoxLayout):
         self.play(self.play_list[self.play_list_index])
 
     def run_list(self):
-        # 如果按钮文本是"重播列表"，表示用户想重新播放整个列表
-        if self.list_btn.text() == "重播列表":
+        if self._list_reset_mode:
             self.play_list_index = 0
-            self.list_btn.setText("播放列表")
+            self._list_reset_mode = False
+            self.list_btn.setToolTip('加载 / 重播当前目录的视频列表')
             self.play_state = True
-            self.stop_btn.setText('暂停')
+            self.stop_btn.setIcon(self._pause_icon)
             self.play_mode = VideoShowLayout.play_mode_list
             if len(self.play_list) > 0:
                 self.play(self.play_list[0])
             return
 
         if len(self.play_list) == 0 or self.play_list_index >= len(self.play_list):
-            # 列表播放完毕，切换按钮为"重播列表"
-            self.list_btn.setText("重播列表")
+            self._list_reset_mode = True
+            self.list_btn.setToolTip('列表已全部播放完毕，点击重播列表')
             self.main_window.notice('列表已全部播放完毕，点击"重播列表"重新播放')
             self.play_mode = VideoShowLayout.play_mode_one
             self.play_state = False
-            self.stop_btn.setText('播放')
+            self.stop_btn.setIcon(self._play_icon)
             return
 
         self.play_state = True
-        self.stop_btn.setText('暂停')
+        self.stop_btn.setIcon(self._pause_icon)
         self.play_mode = VideoShowLayout.play_mode_list
         self.play(self.play_list[self.play_list_index])
 
@@ -328,37 +560,42 @@ class VideoShowLayout(QVBoxLayout):
 
     def pause(self):
         if self.play_state:
-            self._save_position()  # 暂停时保存位置
+            self._save_position()
             self.player.pause()
             self.play_state = False
-            self.stop_btn.setText("播放")
+            self.stop_btn.setIcon(self._play_icon)
         else:
             self.player.play()
             self.play_state = True
-            self.stop_btn.setText("暂停")
+            self.stop_btn.setIcon(self._pause_icon)
 
     def run_or_stop(self):
         if self.play_state:
-            self._save_position()  # 停止时保存位置
+            self._save_position()
             self.player.pause()
             self.timer.stop()
             self.play_state = False
-            self.stop_btn.setText("播放")
+            self.stop_btn.setIcon(self._play_icon)
         else:
             if self.player.position() < self.player.duration():
                 self.player.play()
                 self.timer.start()
                 self.play_state = True
-                self.stop_btn.setText("暂停")
+                self.stop_btn.setIcon(self._pause_icon)
             else:
                 self.timer.start()
-                self.bar_slider.setValue(0)
+                self.seek_slider.setPosition(0)
                 self.player.setPosition(0)
                 self.player.play()
 
     def play(self, filePath):
         self.titleQLabel.setText(filePath)
         self.path = filePath
+
+        # 换视频：清空合并滑条（播放位置 0 / 剪切范围等时长确定后再重置为整段）
+        self.seek_slider.reset()
+        self.bar_label.setText("00:00:00")
+        self.bar_label_all.setText("00:00:00")
 
         # 更新标题栏：显示文件名和播放进度
         self._update_title_bar(filePath)
@@ -373,7 +610,7 @@ class VideoShowLayout(QVBoxLayout):
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(r'' + filePath)))
         self.player.play()
         self.play_state = True
-        self.stop_btn.setText("暂停")
+        self.stop_btn.setIcon(self._pause_icon)
 
         self.timer.start()
 
@@ -430,8 +667,49 @@ class VideoShowLayout(QVBoxLayout):
         durationChanged 作为 _on_media_status_changed 的后备。
         如果 _pending_seek_position 还未被消费，在此处触发延迟跳转。
         """
+        # 时长确定后同步合并滑条与右侧总时长（剪切范围自动重置为整段）
+        self.seek_slider.setDuration(duration)
+        if duration > 0:
+            self.bar_label_all.setText(self._format_time(duration))
+
         if self._pending_seek_position > 0 and duration > 0:
             QTimer.singleShot(200, lambda: self._try_pending_seek())
+
+    @staticmethod
+    def _format_time(milliseconds):
+        """毫秒 → HH:MM:SS"""
+        m, s = divmod(int(milliseconds) / 1000, 60)
+        h, m = divmod(m, 60)
+        return "%02d:%02d:%02d" % (h, m, s)
+
+    @staticmethod
+    def _set_time_edit(edit, text):
+        """写入时间文本。
+
+        QLineEdit.setText() 会把光标放到末尾，窄输入框会因此横向滚动，
+        看起来像"首字符被裁掉"；写入后把光标移回开头即可固定显示完整时间。
+        """
+        if edit.text() == text:
+            return
+        edit.setText(text)
+        edit.setCursorPosition(0)
+
+    def on_seek_requested(self, position):
+        """合并滑条：用户点击/拖动播放头 → 跳转（不改变播放/暂停状态）"""
+        duration = self.player.duration()
+        if duration <= 0:
+            return
+        position = max(0, min(int(position), duration))
+        self.player.setPosition(position)
+        self.seek_slider.setPosition(position)
+        self.bar_label.setText(self._format_time(position))
+
+    def on_cut_range_changed(self, start, end):
+        """合并滑条：剪切范围变化 → 同步 cut_start/cut_end 与两个时间输入框"""
+        self.cut_start = int(start // 1000)
+        self.cut_end = int(end // 1000)
+        self._set_time_edit(self.cut_bar_edit_start, self._format_time(start))
+        self._set_time_edit(self.cut_bar_edit_end, self._format_time(end))
 
     def _try_pending_seek(self):
         """
@@ -460,53 +738,20 @@ class VideoShowLayout(QVBoxLayout):
         if success:
             logger.info(f"已恢复上次播放位置: {saved_pos}")
 
-    def slider_start(self, value):
-        tangent = value / self.bar_slider_maxvalue * self.player.duration()
-        m, s = divmod(tangent / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.cut_bar_edit_start.setText(text)
-        self.cut_start = int(tangent / 1000)
-
-    def slider_end(self, value):
-        tangent = value / self.bar_slider_maxvalue * self.player.duration()
-        if tangent == 0:
-            return
-        m, s = divmod(tangent / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.cut_bar_edit_end.setText(text)
-        self.cut_end = int(tangent / 1000)
-
-    def slider_progress_moved(self):
-        if self.bar_slider.move_type != 'time':
-            self.player.setPosition(round(self.bar_slider.value() * self.player.duration() / self.bar_slider.maximum()))
-
-        m, s = divmod(self.player.position() / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.bar_label.setText('已播放:' + text)
-
     def onTimerOut(self):
         position = self.player.position()
         duration = self.player.duration()
-        self.cut_bar_slider.duration = self.player.duration() / 1000
 
         if duration == 0:
             return
 
-        value = round(position * self.bar_slider.maximum() / duration)
-        self.bar_slider.setValue(value)
-        self.bar_slider.move_type = 'time'
-
-        m, s = divmod(self.player.position() / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.bar_label.setText('已播放:' + text)
-        m, s = divmod(self.player.duration() / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.bar_label_all.setText('总时长:' + text)
+        # 合并滑条：定时器同步播放位置（用户正在拖动播放头时不抢），并刷新左右时间标签
+        if self.seek_slider.duration() != duration:
+            self.seek_slider.setDuration(duration)
+        if not self.seek_slider.is_dragging():
+            self.seek_slider.setPosition(position)
+        self.bar_label.setText(self._format_time(position))
+        self.bar_label_all.setText(self._format_time(duration))
 
         # 每 5 秒保存一次播放位置
         self._position_save_count += 1
@@ -520,13 +765,12 @@ class VideoShowLayout(QVBoxLayout):
                 self.run_list()
                 return
             elif self.play_mode == VideoShowLayout.play_mode_one_loop:
-                # 单视频循环：从头重新播放
                 self.player.setPosition(0)
                 self.player.play()
                 self.play_state = True
-                self.stop_btn.setText("暂停")
+                self.stop_btn.setIcon(self._pause_icon)
                 return
-            self.stop_btn.setText("播放")
+            self.stop_btn.setIcon(self._play_icon)
             self.play_state = False
             self.timer.stop()
 
@@ -547,7 +791,6 @@ class VideoShowLayout(QVBoxLayout):
         self.video_widget.setStyleSheet("border:none;")
         self.bar_hbox_qwidget.setVisible(visible)
         self.controal_hbox_qwidget.setVisible(visible)
-        self.cut_bar_hbox_qwidget.setVisible(visible)
 
     def screenshot(self):
         try:
@@ -588,16 +831,14 @@ class VideoShowLayout(QVBoxLayout):
             self.main_window.notice(f"截图失败: {e}")
 
     def get_video_start(self):
-        m, s = divmod(self.player.position() / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.cut_bar_edit_start.setText(text)
+        # 「开始:」= 把剪切起点设为当前播放位置（合并滑条的左端手柄）
+        _, end = self.seek_slider.cutRange()
+        self.seek_slider.setCutRange(self.player.position(), end)
 
     def get_video_end(self):
-        m, s = divmod(self.player.position() / 1000, 60)
-        h, m = divmod(m, 60)
-        text = "%02d:%02d:%02d" % (h, m, s)
-        self.cut_bar_edit_end.setText(text)
+        # 「结束:」= 把剪切终点设为当前播放位置（合并滑条的右端手柄）
+        start, _ = self.seek_slider.cutRange()
+        self.seek_slider.setCutRange(start, self.player.position())
 
     def video_cut(self):
         (path, filename) = os.path.split(self.path)
@@ -670,8 +911,8 @@ class VideoShowLayout(QVBoxLayout):
             self.play_list.clear()
             self.play_list_index = 0
 
-        # 重新加载列表时恢复按钮文本为"播放列表"
-        self.list_btn.setText("播放列表")
+        self._list_reset_mode = False
+        self.list_btn.setToolTip('加载 / 重播当前目录的视频列表')
 
         files = filter(os.path.isfile, glob.glob(os.path.join(path, "*.mp4")))
 

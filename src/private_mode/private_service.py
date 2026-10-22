@@ -101,7 +101,7 @@ class PrivateService:
         material = self.store.key_material()
         if material is None:
             raise PrivateServiceError(
-                '尚未导入密钥：请先通过「密钥 → 导入密钥」选择 privi 导出的 .db 密钥包')
+                '尚未导入密钥：请先通过「密钥 → 导入密钥」选择密册导出的 .db 密钥包')
         return material['kek']
 
     def inspect_key_package(self, file_path):
@@ -500,4 +500,3 @@ class PrivateService:
             if not os.path.exists(candidate):
                 return candidate
         return os.path.join(directory, '%s-%s%s' % (base, uuid.uuid4().hex[:8], ext))
-
