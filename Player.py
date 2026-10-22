@@ -186,6 +186,7 @@ class FileDisplayDelegate(QStyledItemDelegate):
 
 class MainWindow(QMainWindow):
     expand_path_config_key = 'default.expand.path'
+    open_path_config_key = 'default.open.path'
     private_library_path_key = 'private.library.path'
     show_type_video = 'video'
     show_type_pic = 'pic'
@@ -561,7 +562,13 @@ class MainWindow(QMainWindow):
 
         self.show()
 
-        if self.config_manager.exist(MainWindow.expand_path_config_key):
+        # 优先恢复上次「打开」的目录作为树的根；没有或失效时才走系统默认根 + 展开逻辑
+        open_path = ''
+        if self.config_manager.exist(MainWindow.open_path_config_key):
+            open_path = self.config_manager.get(MainWindow.open_path_config_key)
+        if open_path and os.path.isdir(open_path):
+            self._set_tree_root(open_path)
+        elif self.config_manager.exist(MainWindow.expand_path_config_key):
             expand_path_config = self.config_manager.get(MainWindow.expand_path_config_key)
             self.expand_path(expand_path_config)
 
@@ -727,6 +734,27 @@ class MainWindow(QMainWindow):
     def set_expand_path(self, path):
         if os.path.isdir(self.path_right_click):
             self.config_manager.add_or_update(MainWindow.expand_path_config_key,self.path_right_click)
+
+    def open_directory(self):
+        """文件菜单 → 打开：选择目录并作为左侧树的根，同时记住该路径供下次启动恢复。"""
+        start_dir = ''
+        if self.config_manager.exist(MainWindow.open_path_config_key):
+            start_dir = self.config_manager.get(MainWindow.open_path_config_key)
+            if not os.path.isdir(start_dir):
+                start_dir = ''
+        selected_path = pick_directory(self, "选择文件夹", start_dir=start_dir)
+        if not selected_path or not os.path.isdir(selected_path):
+            return
+        self.config_manager.add_or_update(MainWindow.open_path_config_key, selected_path)
+        self._set_tree_root(selected_path)
+
+    def _set_tree_root(self, path):
+        """将普通模式左侧树的根设置为指定目录，并展开该根节点。"""
+        self.model.refresh()
+        root_index = self.model.index(path)
+        self.treeView.setRootIndex(root_index)
+        self.treeView.setExpanded(root_index, True)
+        self.path = path
 
     def copy(self):
         selected_path = pick_directory(self, "选择复制目标文件夹")  # 返回选中的文件夹路径
@@ -1191,6 +1219,13 @@ class MainWindow(QMainWindow):
 
         # ---- 文件菜单 ----
         file_menu = self.menu_bar.addMenu("文件(&F)")
+        open_action = QAction("打开...(&O)", self)
+        open_action.setShortcut(QKeySequence("Ctrl+O"))
+        open_action.triggered.connect(self.open_directory)
+        file_menu.addAction(open_action)
+
+        file_menu.addSeparator()
+
         exit_action = QAction("退出(&Q)", self)
         exit_action.setShortcut(QKeySequence("Ctrl+Q"))
         exit_action.triggered.connect(self.close)

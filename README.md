@@ -2,7 +2,7 @@
 
 基于 PyQt5 的桌面多媒体播放器，支持视频/音频播放、图片浏览、视频裁剪截图、媒体评分、文件归集，以及与「密册」兼容的私密媒体加密功能。可跨平台（Windows / macOS）运行。
 
-![版本](https://img.shields.io/badge/version-1.0.6-blue)
+![版本](https://img.shields.io/badge/version-1.0.9-blue)
 ![Python](https://img.shields.io/badge/python-3.14%2B-green)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.15.10-green)
 
@@ -24,6 +24,7 @@
 
 ### 📁 文件管理
 - 左侧目录树浏览，文件名截断 + 悬浮显示全名和大小
+- 打开目录（Ctrl+O）：选择目录作为左侧树的根，启动时优先恢复上次打开的目录
 - 右键菜单：复制到、移动、删除（移至回收站）、刷新
 - 加载为幻灯片列表 / 视频列表
 - 设置为截图路径 / 剪切路径
@@ -76,6 +77,7 @@
 | `1` ~ `5` | 评分 1~5 星 | 图片、视频 |
 | `Delete` / `Ctrl+D` | 删除当前文件 | 图片、视频 |
 | `Ctrl+B` | 切换文件列表面板 | 全局 |
+| `Ctrl+O` | 打开目录作为树的根 | 全局 |
 | `Ctrl+Q` | 退出 | 全局 |
 
 ## 技术栈
