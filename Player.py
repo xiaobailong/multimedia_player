@@ -33,6 +33,8 @@ from src.utils.decoder_manager import (is_lavfilters_installed,
                                         LAV_VERSION, GITHUB_RELEASES_URL,
                                         _format_size, _format_speed)
 from src.utils.decoder_install_thread import DecoderInstallThread
+from src.utils.ffmpeg_manager import is_ffmpeg_available
+from src.utils.ffmpeg_download_thread import FfmpegDownloadThread
 
 import warnings
 
@@ -212,6 +214,8 @@ class MainWindow(QMainWindow):
         self.collect_thread = None
         # 解码器安装后台线程（下载 / 安装）
         self.decoder_thread = None
+        # ffmpeg 下载后台线程（开发环境缺失时自动下载）
+        self.ffmpeg_thread = None
         self.style_sheet = self.styleSheet()
         self.full_screen_state = MainWindow.normal
         self.private_mode = False
@@ -563,6 +567,8 @@ class MainWindow(QMainWindow):
 
         # 启动后延迟检测解码器（避免阻塞窗口显示），未安装则引导自动 / 手动安装
         QTimer.singleShot(800, self._check_decoder)
+        # 启动后延迟检测 ffmpeg.exe（开发环境缺失则自动下载）
+        QTimer.singleShot(1500, self._check_ffmpeg)
 
     def _check_decoder(self):
         """检测系统解码器，未安装 LAV Filters 时引导安装，下载/安装放后台线程避免卡死 UI。"""
@@ -624,6 +630,47 @@ class MainWindow(QMainWindow):
         self.statusLabel.setText('解码器：安装异常')
         show_error(self, '解码器安装异常', f'安装过程发生错误：{message}')
         self.decoder_thread = None
+
+    def _check_ffmpeg(self):
+        """检测本地 ffmpeg.exe，缺失则后台下载（仅开发环境，打包后已内置）。"""
+        try:
+            if is_ffmpeg_available():
+                return
+            # 启动后台线程下载，避免阻塞 UI
+            self.ffmpeg_thread = FfmpegDownloadThread(self)
+            self.ffmpeg_thread.status.connect(self._on_ffmpeg_status)
+            self.ffmpeg_thread.progress.connect(self._on_ffmpeg_progress)
+            self.ffmpeg_thread.completed.connect(self._on_ffmpeg_completed)
+            self.ffmpeg_thread.failed.connect(self._on_ffmpeg_failed)
+            self.ffmpeg_thread.start()
+        except Exception as e:
+            logger.exception(f'ffmpeg 检测异常: {e}')
+
+    def _on_ffmpeg_status(self, text):
+        self.statusLabel.setText(f'ffmpeg：{text}')
+
+    def _on_ffmpeg_progress(self, downloaded, total, speed_bps, source_url):
+        msg = (f'ffmpeg 下载中：{_format_size(downloaded)}/'
+               f'{_format_size(total) if total else "?"}  '
+               f'速度 {_format_speed(speed_bps)}')
+        self.statusLabel.setText(msg)
+
+    def _on_ffmpeg_completed(self, success, message):
+        if success:
+            self.statusLabel.setText('ffmpeg.exe 已就绪')
+        else:
+            self.statusLabel.setText('ffmpeg：下载失败，部分功能不可用')
+            show_warning(
+                self, 'ffmpeg 下载失败',
+                f'自动下载 ffmpeg.exe 失败：{message}\n\n'
+                '视频裁剪 / 截图等功能可能不可用。\n'
+                '请手动下载 ffmpeg.exe 放到 libs/ffmpeg/ 目录下。')
+        self.ffmpeg_thread = None
+
+    def _on_ffmpeg_failed(self, message):
+        self.statusLabel.setText('ffmpeg：下载异常')
+        show_error(self, 'ffmpeg 下载异常', f'下载过程发生错误：{message}')
+        self.ffmpeg_thread = None
 
     def expand_path(self, path):
         original_path = path  # 保存原始目标路径，用于后续滚动定位

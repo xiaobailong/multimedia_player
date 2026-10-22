@@ -11,10 +11,7 @@
 """
 import os
 import sys
-import time
 import subprocess
-import urllib.request
-import urllib.error
 
 from loguru import logger
 
@@ -129,69 +126,23 @@ def is_lavfilters_installed():
 
 
 # ---------------------------------------------------------------------------
-# 下载
+# 下载（多线程并行，复用通用下载器）
 # ---------------------------------------------------------------------------
-
-def _download_to(url, dest_path, on_progress=None, timeout=120):
-    """从 url 下载到 dest_path，返回 True 表示成功。
-
-    on_progress 回调签名：fn(downloaded_bytes, total_bytes, speed_bps, source_url)
-    """
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) multimedia_player'})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            total = int(resp.headers.get('Content-Length', 0) or 0) or None
-            downloaded = 0
-            start_time = time.time()
-            last_log_time = start_time
-            with open(dest_path, 'wb') as fh:
-                while True:
-                    chunk = resp.read(64 * 1024)
-                    if not chunk:
-                        break
-                    fh.write(chunk)
-                    downloaded += len(chunk)
-                    now = time.time()
-                    elapsed = now - start_time
-                    speed = downloaded / elapsed if elapsed > 0 else 0
-                    if on_progress:
-                        on_progress(downloaded, total, speed, url)
-                    # 日志每 3 秒最多打印一条，避免刷屏
-                    if now - last_log_time >= 3:
-                        logger.info(
-                            f'解码器下载中: {_format_size(downloaded)}/'
-                            f'{_format_size(total)} 速度 {_format_speed(speed)}')
-                        last_log_time = now
-        if total is None:
-            logger.info(f'解码器下载完成: {_format_size(downloaded)} (总大小未知)')
-        else:
-            logger.info(f'解码器下载完成: {_format_size(downloaded)}/{_format_size(total)}')
-        # 简单校验：安装包至少 1MB
-        return downloaded > 1024 * 1024
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError) as e:
-        logger.warning(f'下载失败 {url}: {e}')
-        try:
-            if os.path.exists(dest_path):
-                os.remove(dest_path)
-        except OSError:
-            pass
-        return False
-
 
 def download_lavfilters(dest_dir, on_progress=None):
     """依次尝试多个下载源，把安装包下载到 dest_dir，返回文件路径或空串。
 
+    采用多线程并行下载（HTTP Range 分块），服务器不支持时自动降级单线程。
+
     on_progress 回调签名：fn(downloaded_bytes, total_bytes, speed_bps, source_url)
     """
+    from src.utils.multipart_downloader import download_from_sources
+
     os.makedirs(dest_dir, exist_ok=True)
-    for url in DOWNLOAD_SOURCES:
-        logger.info(f'尝试下载 LAV Filters: {url}')
-        dest = os.path.join(dest_dir, GITHUB_ASSET)
-        if _download_to(url, dest, on_progress=on_progress):
-            logger.info(f'下载成功: {dest}')
-            return dest
+    dest = os.path.join(dest_dir, GITHUB_ASSET)
+    if download_from_sources(DOWNLOAD_SOURCES, dest, on_progress=on_progress,
+                             num_threads=8, log_name='LAVFilters下载'):
+        return dest
     return ''
 
 

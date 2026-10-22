@@ -204,28 +204,23 @@ goto :eof
 
 REM ============================================
 REM  确保 ffmpeg.exe 就位（构建必须依赖）
+REM  优先使用本地缓存；缺失则调用 Python 自动下载（多线程 + 多源 fallback）
 REM ============================================
 :ensure_ffmpeg
 set "FFMPEG_TARGET=libs\ffmpeg\ffmpeg.exe"
-set "FFMPEG_SOURCE=D:\Tools\DevTools\base\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe"
 
-if exist "%FFMPEG_TARGET%" goto :eof
-
-if not exist "%FFMPEG_SOURCE%" (
-    echo [警告] 未找到 %FFMPEG_TARGET%，也未找到本机 ffmpeg
-    echo        %FFMPEG_SOURCE%
-    echo        构建可能缺少 ffmpeg 依赖
+if exist "%FFMPEG_TARGET%" (
+    echo [ffmpeg] 已存在: %FFMPEG_TARGET%
     goto :eof
 )
 
-echo [ffmpeg] 未找到 %FFMPEG_TARGET%，从本机拷贝...
-if not exist "libs\ffmpeg" mkdir "libs\ffmpeg" 2>nul
-copy /y "%FFMPEG_SOURCE%" "%FFMPEG_TARGET%" >nul 2>&1
+echo [ffmpeg] 未找到 %FFMPEG_TARGET%，开始自动下载...
+python -c "from src.utils.ffmpeg_manager import download_ffmpeg; ok, msg = download_ffmpeg(); print('[ffmpeg]', msg); import sys; sys.exit(0 if ok else 1)"
 if !ERRORLEVEL! neq 0 (
-    echo [错误] ffmpeg 拷贝失败
+    echo [错误] ffmpeg 自动下载失败
     exit /b 1
 )
-echo [ffmpeg] 拷贝完成: %FFMPEG_TARGET%
+echo [ffmpeg] 下载完成: %FFMPEG_TARGET%
 goto :eof
 
 REM ============================================
