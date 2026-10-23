@@ -8,7 +8,7 @@ import send2trash
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtCore import QTranslator, QLibraryInfo
-from PyQt5.QtGui import QFontMetrics, QKeySequence, QPixmap, QPainter, QPen, QColor, QPolygon
+from PyQt5.QtGui import QFontMetrics, QKeySequence, QPixmap, QPainter, QPen, QColor, QPolygon, QDesktopServices
 from PyQt5.QtMultimedia import QMediaContent
 from PyQt5.QtWidgets import QApplication
 
@@ -1315,6 +1315,13 @@ class MainWindow(QMainWindow):
 
         # ---- 帮助菜单 ----
         help_menu = self.menu_bar.addMenu("帮助(&H)")
+
+        self.decoder_info_action = QAction("解码器(&D)...", self)
+        self.decoder_info_action.triggered.connect(self._show_decoder_info)
+        help_menu.addAction(self.decoder_info_action)
+
+        help_menu.addSeparator()
+
         about_action = QAction("关于(&A)...", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
@@ -1942,6 +1949,115 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'show_control_action'):
             self.show_control_action.setChecked(visible)
 
+    def _show_decoder_info(self):
+        """显示解码器信息对话框，支持自动安装与手动下载引导。"""
+        installed = is_lavfilters_installed()
+        dialog = StyledDialog(self, "解码器信息", width=440)
+
+        if installed:
+            status_html = '<span style="color:#a6e3a1; font-size:14px;">✓ 已安装 LAV Filters</span>'
+            hint_html = (
+                f'<p style="color:#bac2de;">视频解码器已就绪，可正常播放各种视频格式。</p>'
+            )
+        else:
+            status_html = '<span style="color:#f38ba8; font-size:14px;">✗ 未安装 LAV Filters</span>'
+            hint_html = (
+                f'<p style="color:#bac2de;">未检测到 LAV Filters 解码器，部分视频格式可能无法正常播放。</p>'
+                f'<p style="color:#bac2de;">目标版本：LAV Filters {LAV_VERSION}</p>'
+            )
+
+        status_label = QLabel(status_html)
+        status_label.setOpenExternalLinks(False)
+        dialog.body_layout.addWidget(status_label)
+
+        hint_label = QLabel(hint_html)
+        hint_label.setWordWrap(True)
+        hint_label.setStyleSheet("margin-top: 4px;")
+        dialog.body_layout.addWidget(hint_label)
+
+        if not installed:
+            link_label = QLabel(
+                f'<a href="{GITHUB_RELEASES_URL}" style="color:#89b4fa;">手动下载页面：{GITHUB_RELEASES_URL}</a>'
+            )
+            link_label.setOpenExternalLinks(True)
+            link_label.setWordWrap(True)
+            link_label.setStyleSheet("margin-top: 4px;")
+            dialog.body_layout.addWidget(link_label)
+
+        dialog.body_layout.addStretch(1)
+
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.setSpacing(8)
+        button_row.addStretch(1)
+
+        if not installed:
+            auto_btn = QPushButton("自动安装")
+            auto_btn.setObjectName("dialogPrimaryBtn")
+            auto_btn.setMinimumWidth(88)
+            auto_btn.setFixedHeight(30)
+            auto_btn.setDefault(True)
+
+            manual_btn = QPushButton("手动下载")
+            manual_btn.setMinimumWidth(88)
+            manual_btn.setFixedHeight(30)
+
+            def _auto_install():
+                dialog.accept()
+                self._ensure_decoder_auto()
+
+            def _manual_download():
+                QDesktopServices.openUrl(QUrl(GITHUB_RELEASES_URL))
+                dialog.accept()
+
+            auto_btn.clicked.connect(_auto_install)
+            manual_btn.clicked.connect(_manual_download)
+            button_row.addWidget(auto_btn)
+            button_row.addWidget(manual_btn)
+
+        close_btn = QPushButton("关闭")
+        close_btn.setMinimumWidth(76)
+        close_btn.setFixedHeight(30)
+        close_btn.clicked.connect(dialog.reject)
+        button_row.addWidget(close_btn)
+
+        dialog.body_layout.addLayout(button_row)
+        dialog.exec_()
+
+    def _ensure_decoder_auto(self):
+        """启动后台线程自动下载并安装 LAV Filters。"""
+        thread = DecoderInstallThread(self)
+        progress = ProgressDialog(self, "安装解码器", f"正在下载并安装 LAV Filters {LAV_VERSION}...")
+
+        def _on_progress(downloaded, total, speed_bps, source_url):
+            if total and total > 0:
+                progress.setMaximum(total)
+                progress.setValue(downloaded)
+            speed_text = _format_speed(speed_bps)
+            progress.setLabelText(
+                f"正在下载 LAV Filters {LAV_VERSION}...  "
+                f"{_format_size(downloaded)} / {_format_size(total)}  ({speed_text})"
+            )
+
+        thread.progress.connect(_on_progress)
+        thread.status.connect(progress.setLabelText)
+        thread.finished.connect(progress.close)
+
+        def _on_done(success, msg):
+            if success:
+                show_info(self, "解码器安装", "LAV Filters 安装成功，现在可以正常播放视频了。")
+            else:
+                show_warning(
+                    self, "解码器安装失败",
+                    f"自动下载 / 安装 LAV Filters 失败：{msg}\n"
+                    "可能是网络受限或权限不足。\n\n"
+                    f"请手动下载安装：\n{GITHUB_RELEASES_URL}")
+
+        thread.completed.connect(_on_done)
+        thread.failed.connect(lambda msg: _on_done(False, msg))
+        thread.start()
+        progress.exec_()
+
     def _show_about_dialog(self):
         """显示关于对话框"""
         version = "未知"
@@ -1961,17 +2077,6 @@ class MainWindow(QMainWindow):
         except ImportError:
             pyqt_version = "5.15.10"
 
-        # 解码器安装状态
-        if is_lavfilters_installed():
-            decoder_status = '<span style="color:#a6e3a1;">已安装 LAV Filters</span>'
-            decoder_hint = ''
-        else:
-            decoder_status = '<span style="color:#f38ba8;">未安装</span>'
-            decoder_hint = (
-                f'<p style="color:#bac2de;">建议手动安装 LAV Filters {LAV_VERSION}：<br>'
-                f'<a href="{GITHUB_RELEASES_URL}">{GITHUB_RELEASES_URL}</a></p>'
-            )
-
         about_text = (
             f"<h2>多媒体播放器</h2>"
             f"<p><b>版本：</b>{version}</p>"
@@ -1981,8 +2086,6 @@ class MainWindow(QMainWindow):
             f"<li>Qt（PyQt5）版本：{pyqt_version}</li>"
             f"<li>操作系统：{platform.system()} {platform.release()}</li>"
             f"</ul>"
-            f"<p><b>视频解码器：</b>{decoder_status}</p>"
-            f"{decoder_hint}"
             f"<p>基于 PyQt5 与 OpenCV 的桌面多媒体播放器，<br>"
             f"支持视频/音频播放、裁剪、截图、幻灯片等功能。</p>"
         )
