@@ -268,3 +268,16 @@
 - 反例: 看到 `database is locked` 就去怀疑 `ConfigManager` / `RatingManager` 的 SQL 或加锁逻辑
   —— 产品本身是单实例（`QLockFile`），不会出现两个进程同时写库
 - 首次记录: 2026-10-23
+
+## PIT-019 `tmp\` 里塞了几万个文件后 `Remove-Item` / `rd /s /q` 会超时，改用 robocopy 空目录镜像秒删
+- 触发条件: 扫描/拷贝的基准测试在 `tmp\` 下建了几百个目录、上万个文件（本次 600+ 目录 / 3000+ 文件），
+  收尾用 `Remove-Item -Recurse -Force tmp` 或 `cmd /c rd /s /q tmp`
+- 错误现象: 命令超过工具 30s 超时，目录只删了一半，收尾反复失败；`git status` 里 `tmp/` 是忽略的，
+  但磁盘上还占着几万个文件
+- 正确做法: 先用空目录把目标"镜像"成空的（robocopy 多线程删除），再删空壳：
+  ```
+  mkdir C:\Windows\Temp\__empty & robocopy C:\Windows\Temp\__empty tmp /mir /njh /njs /ndl /nc /ns >nul & rd /s /q tmp
+  ```
+  更省事的做法：基准/压力测试的目录直接建在 `%TEMP%` 下，不往 `tmp\` 里塞大量文件
+- 反例: 反复重试 `Remove-Item`（越删越慢，还可能卡在被占用的文件上）；把基准数据留在 `tmp\` 里忘删
+- 首次记录: 2026-10-23

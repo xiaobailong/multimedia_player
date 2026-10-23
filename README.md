@@ -4,7 +4,7 @@
 
 基于 PyQt5 的桌面多媒体播放器，支持视频/音频播放、图片浏览、视频裁剪截图、媒体评分、文件归集，以及与「密册」兼容的私密媒体加密功能。可跨平台（Windows / macOS）运行。
 
-![版本](https://img.shields.io/badge/version-1.0.10-blue)
+![版本](https://img.shields.io/badge/version-1.0.12-blue)
 ![Python](https://img.shields.io/badge/python-3.14%2B-green)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.15.10-green)
 
@@ -13,7 +13,7 @@
 ### 🎬 视频播放
 - 支持 20+ 种视频容器格式（mp4 / mkv / mov / avi / flv / webm / ts / rmvb / ogv 等）及音频格式
 - 播放 / 暂停、上一个 / 下一个、快进 / 快退
-- 列表播放：加载当前目录（含子目录）所有视频依次播放，后台线程扫描不阻塞界面
+- 列表播放：加载当前目录（含子目录）所有视频依次播放，后台多线程扫描不阻塞界面
 - 单视频循环播放（按钮切换）
 - 全屏播放 + 悬浮控制面板（Esc 退出）
 - 视频截图（保存为 jpg，可自定义输出目录）
@@ -21,7 +21,7 @@
 - 播放进度记忆（关闭时自动保存，下次打开续播）
 
 ### 🖼️ 图片浏览
-- 支持 25+ 种图片格式（bmp / png / jpg / webp / gif / tiff / ico / tga / svg / avif 等），Qt5 原生不支持的格式（.dib / .pcx / .avif 等）由 Pillow 兜底解码
+- 支持 25+ 种图片格式（bmp / png / jpg / webp / gif / tiff / ico / tga / svg / avif 等），Qt5 原生不支持的格式（.dib / .pcx / .avif / .apng 等）由 Pillow 兜底解码；已知 Qt 无法识别的格式直接走 Pillow，避免 QImage 嗅探插件时崩溃
 - 幻灯片自动播放（通过「设置 → 幻灯片」自定义播放间隔，立即生效并持久化）
 - 上一张 / 下一张、暂停
 - 悬浮玻璃风格控制面板（可通过「视图 → 显示控制器」切换显隐）
@@ -54,7 +54,8 @@
 - 按关键字归集（文件名匹配）
 - 按路径归集（指定源目录）
 - 支持图片 / 视频 / 全部类型过滤（与播放器、列表扫描共用同一份媒体扩展名清单，口径一致）
-- 后台线程执行，不卡界面
+- 后台线程执行，不卡界面；目录扫描与文件拷贝均支持多线程并行，大目录归集更快
+- 同名文件自动追加序号（多线程拷贝时通过锁 + 预约集合避免互相覆盖）
 
 ### 🎨 界面与交互
 - 全局暗色主题（Catppuccin Mocha 风格）
@@ -135,6 +136,7 @@ multimedia_player/
 │       ├── ffmpeg_download_thread.py # ffmpeg 下载后台线程
 │       ├── multipart_downloader.py   # 通用多线程并行下载器
 │       ├── media_types.py            # 图片 / 视频扩展名清单（扫描、播放判定、归集共用）
+│       ├── media_scan.py             # 目录递归扫描（多线程，图片/视频列表与归集共用）
 │       └── utils.py                  # 路径 / 指纹等通用工具
 ├── scripts/
 │   ├── build.bat              # Windows 一键构建 + 打包

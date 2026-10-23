@@ -238,6 +238,8 @@
   `src/layout/pic_show_layout.py`、`Player.py`（全局 QSS）
 - 变更（2026-10-23）: 全局 QSS 现位于 `src/window/theme.py::_MAIN_WINDOW_STYLE`（内容未变），
   见 `ADR-020`
+- 相关条目: `PIT-014`、`ADR-015`
+- 首次记录: 2026-10-22 ／ 最近复核: 2026-10-23
 
 ## ISSUE-010 幻灯片播放中切到视频模式后，幻灯片仍在后台翻页（标题栏 / 状态栏评分被图片覆盖）
 - 状态: 已修复
@@ -285,6 +287,41 @@
     「多媒体播放器」且进度清空；有视频时切视频 → `movie (1/72)`；切回图片 → `flapper_0 (1/6)`；
     视频进度越界只显示文件名；路径为空 → 默认标题。
 - 首次记录: 2026-10-23
-- 相关条目: `PIT-014`、`ADR-015`
-- 首次记录: 2026-10-22 ／ 最近复核: 2026-10-22
+
+## ISSUE-011 打开某些图片格式（.dib / .pcx / .pnm / .apng）程序直接闪退：`QImage` 插件嗅探在 C++ 层访问冲突
+- 状态: 已规避
+- 症状 / 现场: 图片列表里出现 `.dib/.pcx/.pnm/.apng` 等文件时，点开（或幻灯片播到）程序直接退出：
+  退出码 `-1073741819`（0xC0000005 访问冲突），日志里**没有** traceback；
+  而把同一个文件单独丢给脚本 `QImage(path)` 却完全正常 → 极易判成"偶发崩溃/驱动问题"
+- 复发判据: 把一个正常 PNG 改名成 `.apng`（或任意 Qt 不认识的后缀），在真实 `MainWindow` 里
+  `win.pic_show_layout.play(path)`；崩溃栈会落在 `src/layout/pic_show_layout.py::_play_static` 的
+  `QImage(...)` 那一行。或 `findstr /n "PILLOW_ONLY_SUFFIXES" src\utils\media_types.py`（无输出=未规避）
+- 根因: `QImage(path)` 在扩展名没有对应 Qt 图片插件时会**逐个插件嗅探文件头**；
+  主窗口起来后 `QIcon` 已经加载了 ico / icns / cur 等图片插件，
+  拿"Qt 不认识的数据"喂给这些插件会在其 C++ 代码里越界访问 → 进程崩溃。
+  崩溃点会随播放顺序漂移（本次依次在 `.apng` → `.pnm` → `.pcx` 上崩），说明是嗅探机制本身，
+  不是某个固定文件坏了。
+- 证据:
+  1. `probe_seq.py`（真实窗口顺序播放 25 种格式）：
+     `a.png` OK → `b.apng` 崩，faulthandler 栈 = `pic_show_layout.py line 209 in _play_static`；
+  2. 隔离进程（无窗口）`QImage('b.apng')` 返回 40×30 正常 ⇒ 与插件加载状态强相关；
+  3. 把 `.jpe/.jfif/.dib/.pnm/.pcx/.avif/.apng` 改为 Pillow 解码后，同一序列 25 种全部 OK、退出码 0；
+  4. 崩溃先后出现在 `.apng`、`.pnm`、`.pcx` 三个不同扩展名上（每次都在改完上一个之后）。
+- 修法:
+  1. `src/utils/media_types.py` 新增 `PILLOW_ONLY_SUFFIXES`
+     = `('.jpe', '.jfif', '.dib', '.pnm', '.pcx', '.avif', '.apng')`
+     —— 判据是这些名字不在 `QImageReader.supportedImageFormats()` 里；
+  2. `PicShowLayout._play_static()`：命中 `PILLOW_ONLY_SUFFIXES` 时**直接**走 Pillow，不碰 QImage；
+     其余扩展名仍先试 QImage，失败再回退 Pillow；
+  3. `PicShowLayout._load_image_with_pillow()`：Pillow 解码 → RGBA bytes → `QImage(...).copy()`
+     （必须 `.copy()`：QImage 不接管传入的 bytes 缓冲）。
+- 反例 / 易误判:
+  - 干净脚本里 `QImage(path)` 不崩 ⇒ 误判"格式没问题"（真实窗口里才崩）；
+  - 以为是 Pillow / 内存 / 显卡驱动问题，去查 `QPixmap.fromImage`、`pictureQLabel.setPixmap`；
+  - 以为 `isNull()` 兜底就够了（崩溃发生在返回 null **之前**，Python 侧根本接不到异常）；
+  - 只把问题扩展名从白名单删掉：不会崩了，但用户也看不到这些图（本修法是"改走 Pillow"而非"不支持"）。
+- 相关文件: `src/utils/media_types.py`、`src/layout/pic_show_layout.py`
+- 相关条目: `ADR-021`（媒体扩展名单点）、`PIT-017`（重写虚函数 / C++ 层静默崩溃的排查手法）、
+  `PIT-012`（区分卡死与崩溃）
+- 首次记录: 2026-10-23
 

@@ -292,6 +292,9 @@
 - 变更（2026-10-23）: 扫描实现上移成 `src/layout/media_scan_thread.py`（`MediaScanThread` +
   `collect_media_files`），`PicScanThread` 变成它的薄子类；视频列表也改走同一套（见 `ADR-021`）。
   递归 / token / 取消 / `mtime` 升序的约定都保持不变。
+- 变更（2026-10-23，之后）：扫描实现再迁到 **不依赖 Qt** 的 `src/utils/media_scan.py`，
+  并改为「按目录层级 BFS + `ThreadPoolExecutor`」的**多线程**扫描（见 `ADR-022`）；
+  `MediaScanThread` / `PicScanThread` 只保留 Qt 信号封装，接口与 token 语义不变。
 - 首次记录: 2026-10-21
 
 ## ADR-013 目录树展开/收起箭头：运行时生成 PNG + QSS `image:`（不用 QProxyStyle / 仓库内图片资产）
@@ -678,4 +681,91 @@
   - 验证: offscreen 用例 13/13 通过 —— 24 种清单、扫描递归命中 22+3 个样本（含大写 `.MKV` / `.mts`）、
     非视频文件不混入、`mtime` 升序、`recursive=False` 只扫当前层、归集口径同步、
     真实窗口 `loadData()` 把 25 个样本全部载入、`is_video()` 认新格式。
+- 补充（2026-10-23，图片格式同步扩展）:
+  - 变更:
+    1. `IMAGE_SUFFIXES` 12 → **25** 种：JPEG 家族（`.jpg .jpeg .jpe .jfif`）、
+       `.png .apng`、`.bmp .dib`、`.gif .webp`、`.tif .tiff`、`.ico`、`.tga`、
+       Netpbm（`.pbm .pgm .ppm .pnm`）、X11（`.xpm .xbm`）、`.wbmp`、
+       矢量（`.svg .svgz`）、`.pcx .avif`；
+    2. `PicShowLayout._play_static()` 增加 Pillow 兜底解码（QImage 读不了的格式），
+       并新增 `PILLOW_ONLY_SUFFIXES`：Qt 插件名里没有的扩展名**直接**走 Pillow，
+       绕开 `QImage()` 的插件嗅探导致的 C++ 访问冲突（详见 `ISSUE-011`）；
+    3. 归集 `ALL_SUFFIXES = IMAGE + VIDEO` 自动跟随，`matches_kind()` 对新图片格式判为 `image`。
+  - 影响 / 约束:
+    - `.svg/.svgz` 依赖 **QtSvg 插件**（开发环境实测可读）；若打包后打不开，
+      在构建脚本补 `--hidden-import=PyQt5.QtSvg`（mac 脚本已有，Windows 脚本未加）；
+    - 动画 GIF 仍走原 GIF 分支；`.apng` 经 Pillow 解码只显示首帧（不做逐帧动画）；
+    - **HEIC / HEIF / PSD / HDR 未纳入**：Qt5 无插件，Pillow 侧需要额外依赖或未实测，
+      放入白名单只会让用户看到"无法加载图片"；
+    - 以后再加图片格式：改 `IMAGE_SUFFIXES` 一处；若 Qt 插件不支持，同时加进 `PILLOW_ONLY_SUFFIXES`。
+  - 验证: offscreen 用例 8/8 通过 —— 25 种格式样本（含大写扩展名 / 子目录）递归扫描 25/25、
+    非图片文件不混入、`mtime` 升序、在真实窗口里逐个 `play()` 全部解码成功（含 Pillow 兜底的
+    `.dib/.pcx/.pnm/.avif/.apng`）、`is_pic()` 大小写不敏感、`PILLOW_ONLY_SUFFIXES ⊆ IMAGE_SUFFIXES`、
+    归集口径同步、整段序列退出码 0（无访问冲突）。
 - 最近复核: 2026-10-23
+
+## ADR-022 扫描与归集多线程化（分层 BFS 扫描 + 并行拷贝）
+- 日期: 2026-10-23 | 状态: 已采纳
+- 背景: 用户反馈"文件较多时单个线程较慢"，要求扫描与归集都支持多线程。
+  现状：
+  1. 扫描（图片 / 视频列表、归集筛选）都是**单个线程**串行 `os.scandir`；
+     在 900+ 目录、上千文件的树上实测 0.36s，目录再大就会明显变慢（网络盘更甚）；
+  2. 归集拷贝是 `for src in files: shutil.copy2(...)`，纯串行，几百个文件就要 1 秒以上，
+     大文件（视频）场景更明显；
+  3. 归集"扫描 + 拷贝"都在同一个后台 `QThread` 里，无法并行。
+- 决策:
+  1. **扫描实现迁到 `src/utils/media_scan.py`（不依赖 Qt）**：`collect_media_files(root, suffixes,
+     is_cancelled, recursive, max_workers, on_progress)`；
+     并发模型是「按目录层级 BFS」——每层的目录并行 `scandir`（`ThreadPoolExecutor`），
+     扫完一层再下发下一层；结果最后统一按 `st_mtime` 升序（与并发度无关，顺序稳定）；
+     取消返回 `None`；`on_progress(found_count)` 每层回调一次；
+     默认 `DEFAULT_SCAN_WORKERS = 8`（可传 `max_workers` 覆盖，上限 64）；
+     `recursive=False`（删除后"找下一个视频"这种单目录小扫描）仍然单线程、不开池；
+  2. `MediaScanThread`（`src/layout/media_scan_thread.py`）退化成 Qt 封装：
+     只持有 token / path / suffixes / `max_workers` 并 `emit scanned(...)`；
+     `PicScanThread` 继续作为它的薄子类，`PicInputLayout` 一行不用改；
+  3. **归集扫描**改用同一个 `collect_media_files`（`collect_service.suffixes_for_kind(kind)`
+     把 kind 映射成扩展名），并在扫描完成后做关键字过滤、按路径排序、再按 limit / random 截断；
+  4. **归集拷贝并行**：`ThreadPoolExecutor(max_workers=copy_workers)`，每个文件一个任务，
+     默认 `DEFAULT_COPY_WORKERS = 4`（可传 `params['copy_workers']`，上限 32）；
+     重名保护 = 「`unique_destination(..., reserved)` 在锁内取号 + 把结果登记进 `reserved` 集合」，
+     避免两个线程同时选中"还没落盘的同名目标"而互相覆盖；
+     进度信号按"完成数"在锁内自增、限频 0.1s 发出（线程里 `emit` 由 Qt 自动排队）；
+     取消时排队中的任务在入口直接 return，已完成的文件保留；
+  5. 扫描线程数也可由 `params['scan_workers']` 覆盖（默认 8），方便测试与调优。
+- 理由:
+  - 扫描与拷贝都是 **IO 密集**（`scandir` / `stat` / `read+write`），`ThreadPoolExecutor` 足够，
+    不需要进程池；GIL 在系统调用期间释放，实测有 1.7~2.3 倍加速；
+  - 分层 BFS 天然无死锁：一层内的任务互不依赖，下一层只在本层全部返回后才下发；
+  - 扫描函数放在 Qt-free 模块里，归集（纯逻辑层）不用为了扫目录去 import PyQt5；
+  - 顺序仍由最后统一排序保证，多线程不会打乱"最旧优先 / 路径序"的既有语义。
+- 备选与为何不选:
+  - **进程池**（`ProcessPoolExecutor`）：路径列表要跨进程序列化，收益抵不过开销，且 Windows 下 fork 语义麻烦；
+  - **`asyncio` + `aiofiles`**：Qt 事件循环里再跑一个 asyncio loop 会引入两套事件模型，调试成本高；
+  - **一次把整棵树的目录先收集完再并行**：仍要先串行遍历一遍，等于没省；
+  - **固定"每层一个任务"用 `QThreadPool`**：Qt 线程池接口不如 `ThreadPoolExecutor` 直接（取消 / 结果收集都得自己写）。
+- 影响 / 约束:
+  - **并行度取决于同一层目录数**：`a/b/c/d` 这种深链（每层只有一个子目录）没有加速；
+    宽树（大量兄弟目录）收益最大；
+  - 8 / 4 是经验值：机械盘 / 网络盘上盲目加线程会让寻道互相打断，需要通过
+    `max_workers` / `params['scan_workers'|'copy_workers']` 按场景调；
+  - **扫描阶段不再逐目录回报**：`iter_media_files(on_dir=...)` 只在开始时回调一次 root，
+    进度文字改为"正在扫描：已找到 N 个文件"（每层一次，调用方限频 0.2s）；
+  - **"顺序 + 数量限制"的语义微调**：原来是"扫到 N 个就提前停"，现在是"全量扫描 → 排序 → 取前 N"。
+    结果更稳定（路径序前 N），代价是大目录即使只要 10 个也会扫完（换来的是并行扫描更快）；
+  - 归集重名规则不变（追加 " (n)"），并行下由 `reserved` 集合保证 150 个同名文件拷成 150 个不覆盖的文件；
+  - 归集 `stats['copied']` / `failed` 在锁内自增，`completed` 只在所有任务结束后发一次。
+- 验证（本机 offscreen，全部通过）:
+  1. 扫描：`max_workers=1` 与 `max_workers=8` 结果**完全一致（含顺序）**；
+     90 个视频 / 60 张图 / 6×5 层目录树全部命中；`on_progress` 按层递增；取消返回 `None`；
+  2. 列表：`MediaScanThread(max_workers=4)` 信号回传正确；`recursive=False` 只看当前层；
+  3. 归集：150 个文件（含 5 组同名）4 线程拷贝 → `copied=150 / failed=0`，
+     目标目录 150 个文件、145 个带 " (n)" 后缀（**没有互相覆盖**），进度单调递增；
+  4. 归集分支：`sequence + limit=7` → 7 个；关键字 `clip` → 30 个；评分模式传入 12 个 → 12 个；
+     中途取消 → `cancelled=True`、已拷贝 5 个保留、任务正常结束；
+  5. 基准（只记录，不作断言）：扫描 920 目录 / 1800 文件 0.361s → 0.157s（**2.31x**）；
+     拷贝 300 × 100KB 1.236s → 0.736s（**1.68x**）。
+- 相关文件: `src/utils/media_scan.py`（新增）、`src/layout/media_scan_thread.py`、
+  `src/collect/collect_service.py`、`src/collect/collect_thread.py`
+- 相关条目: `ADR-012`（后台扫描约定）、`ADR-021`（递归扫描 / 扩展名单点）、`ISSUE-007`（GUI 线程同步 IO 致假死）
+- 首次记录: 2026-10-23

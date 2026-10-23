@@ -8,7 +8,7 @@ from PyQt5.QtGui import (QPixmap, QImage, QColor)
 
 from loguru import logger
 
-from src.layout.media_scan_thread import IMAGE_SUFFIXES
+from src.utils.media_types import IMAGE_SUFFIXES, PILLOW_ONLY_SUFFIXES
 from src.layout.pic_input_layout import PicInputLayout
 from src.layout.square_close_button import SquareCloseButton
 
@@ -206,10 +206,14 @@ class PicShowLayout(QVBoxLayout):
     def _play_static(self, filePath):
         """播放静态图片文件"""
         try:
-            fckimage = QImage(filePath)
-            if fckimage.isNull():
-                # QImage 读不了的格式（.dib / .pcx / .avif 等）交给 Pillow 兜底
+            # 已知 QImage 读不了的格式直接走 Pillow：
+            # 用未知格式让 Qt 去嗅探插件，在窗口里（图标插件已加载）会直接崩（见 ISSUE-011）。
+            if os.path.splitext(filePath)[1].lower() in PILLOW_ONLY_SUFFIXES:
                 fckimage = self._load_image_with_pillow(filePath)
+            else:
+                fckimage = QImage(filePath)
+                if fckimage.isNull():
+                    fckimage = self._load_image_with_pillow(filePath)
             if fckimage.isNull():
                 logger.warning(f"无法加载图片: {filePath}")
                 self._advance_slideshow()

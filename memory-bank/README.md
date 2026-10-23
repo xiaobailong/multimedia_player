@@ -79,7 +79,11 @@
 | 归集菜单（按评分 / 关键字 / 路径批量拷贝）/ 拷贝重名 / 归集时界面卡死 | `ADR-019`（`CollectDialog` + `CollectThread`） |
 | 加载为图片 / 视频列表只扫当前目录、视频列表只有 `.mp4`、子目录视频不出现 | `ADR-021`（`MediaScanThread` 递归 + `VIDEO_SUFFIXES` 单点） |
 | 视频列表里没有 avi / mov / rmvb / vob 等常见格式 | `ADR-021` 补充（`VIDEO_SUFFIXES` 扩到 24 种，清单在 `src/utils/media_types.py`） |
+| 图片列表里没有 svg / avif / tga / ico / xbm 等格式 | `ADR-021` 补充（`IMAGE_SUFFIXES` 扩到 25 种 + Pillow 兜底解码） |
+| 打开某些图片（.dib/.pcx/.pnm/.apng）直接闪退、无 traceback、单独 QImage 又正常 | `ISSUE-011`（QImage 插件嗅探崩溃 → `PILLOW_ONLY_SUFFIXES` 走 Pillow） |
 | 并发跑两个窗口级测试报 `apsw.BusyError: database is locked` | `PIT-018`（测试串行执行，或各自临时数据目录） |
+| 大目录扫描慢 / 归集拷贝慢，想开多线程 | `ADR-022`（分层 BFS 扫描 8 线程 + 归集拷贝 4 线程；`src/utils/media_scan.py`） |
+| `tmp\` 里几万文件时 `Remove-Item` / `rd /s /q` 超时删不掉 | `PIT-019`（robocopy 空目录 `/mir` 秒删） |
 | `Player.py` 太长 / 想拆 MainWindow / 新增窗口功能该放哪 | `ADR-020`（入口只做启动控制，窗口拆进 `src/window/`：mixin + theme/i18n/file_tree/menu_bar） |
 | 新加的 mixin 里 `keyPressEvent` / `closeEvent` 不生效 | `ADR-020`（mixin 必须排在 `QMainWindow` 之前，否则被基类遮蔽） |
 | 幻灯片切视频后仍在后台翻页 / 标题栏残留图片名与幻灯片进度 | `ISSUE-010`（`pause_slideshow` + `refresh_title_bar`） |
@@ -125,4 +129,4 @@
 
 ---
 
-最后更新: 2026-10-23（ADR-021：列表统一递归扫描 + 视频格式扩到 24 种；ISSUE-010：切视频后幻灯片仍在后台翻页 + 标题栏未跟着切模式；ADR-020：`Player.py` 拆分；PIT-004 / PIT-009 补复核）
+最后更新: 2026-10-23（ADR-022：扫描/归集多线程化（分层 BFS + 并行拷贝）；ADR-021：列表统一递归扫描 + 图片 25 种 / 视频 24 种格式；ISSUE-011：QImage 插件嗅探崩溃改走 Pillow；ISSUE-010：切视频后幻灯片仍在后台翻页 + 标题栏未跟着切模式；ADR-020：`Player.py` 拆分）
