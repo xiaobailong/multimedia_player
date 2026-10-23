@@ -644,6 +644,16 @@ class VideoShowLayout(QVBoxLayout):
         except Exception as e:
             logger.warning(f"更新标题栏失败: {e}")
 
+    def refresh_title_bar(self):
+        """按当前视频 / 列表位置刷新标题栏（切到视频模式时调用）。
+
+        没播放过视频时回到默认标题，不残留图片文件名的幻灯片进度。
+        """
+        if not self.path:
+            self.main_window.title_bar.setInfo('', '')
+            return
+        self._update_title_bar(self.path)
+
     def _seek_to_saved_position(self, saved_pos, duration=None):
         """
         跳转到保存的播放位置。

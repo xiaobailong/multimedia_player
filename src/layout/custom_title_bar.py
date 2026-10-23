@@ -11,6 +11,8 @@ class CustomTitleBar(QWidget):
     windowRestored = pyqtSignal()
     windowClosed = pyqtSignal()
 
+    DEFAULT_TITLE = "多媒体播放器"
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(34)
@@ -25,7 +27,7 @@ class CustomTitleBar(QWidget):
         self._icon_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._icon_label)
 
-        self._title_label = QLabel("多媒体播放器")
+        self._title_label = QLabel(self.DEFAULT_TITLE)
         self._title_label.setStyleSheet("color: #cdd6f4; font-size: 13px; font-weight: bold;")
         layout.addWidget(self._title_label)
 
@@ -131,10 +133,10 @@ class CustomTitleBar(QWidget):
 
     def setInfo(self, filename, progress=""):
         """设置标题栏显示信息
-        :param filename: 当前播放的文件名（绝对路径或简短名称）
+        :param filename: 当前播放的文件名（绝对路径或简短名称）；空串表示回到默认标题
         :param progress: 进度文字，如 "(3/10)"
         """
-        self._title_label.setText(filename)
+        self._title_label.setText(filename or self.DEFAULT_TITLE)
         self._progress_label.setText(progress)
 
     def updateMaximizeIcon(self):

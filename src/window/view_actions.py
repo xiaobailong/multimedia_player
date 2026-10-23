@@ -175,12 +175,16 @@ class ViewActionsMixin:
         if show_type == self.show_type_pic:
             self.pic_show_qwidget.setVisible(True)
             self.video_show_qwidget.setVisible(False)
+            # 标题栏跟着切回图片（否则还挂着视频的文件名 / 进度）
+            self.pic_show_layout.refresh_title_bar()
         if show_type == self.show_type_video:
             self.video_show_qwidget.setVisible(True)
             self.pic_show_qwidget.setVisible(False)
             # 图片区已经被隐藏：必须停掉幻灯片 / GIF 定时器，
             # 否则图片会在后台继续翻页（改写窗口标题、状态栏评分）
             self.pic_show_layout.pause_slideshow()
+            # 标题栏跟着切到视频（否则还挂着图片的文件名 / 幻灯片进度）
+            self.video_show_layout.refresh_title_bar()
         # 切换显示后，状态栏右侧跟着显示对应媒体的评分
         self.refresh_rating_status()
 

@@ -79,7 +79,7 @@
 | 归集菜单（按评分 / 关键字 / 路径批量拷贝）/ 拷贝重名 / 归集时界面卡死 | `ADR-019`（`CollectDialog` + `CollectThread`） |
 | `Player.py` 太长 / 想拆 MainWindow / 新增窗口功能该放哪 | `ADR-020`（入口只做启动控制，窗口拆进 `src/window/`：mixin + theme/i18n/file_tree/menu_bar） |
 | 新加的 mixin 里 `keyPressEvent` / `closeEvent` 不生效 | `ADR-020`（mixin 必须排在 `QMainWindow` 之前，否则被基类遮蔽） |
-| 幻灯片在切到视频模式后还在后台翻页 / 标题栏莫名变成图片名 | `ISSUE-010`（`pause_slideshow`） |
+| 幻灯片切视频后仍在后台翻页 / 标题栏残留图片名与幻灯片进度 | `ISSUE-010`（`pause_slideshow` + `refresh_title_bar`） |
 | `python -m py_compile src\window\*.py` 报 `[Errno 22] Invalid argument` | `PIT-004`（py_compile 不展开通配符） |
 | `cmd /c` 里嵌 `python -c "..."` 报 `"…"后面缺少表达式` / `意外的标记` | `PIT-009`（改写成 `tmp\` 下的脚本文件） |
 
@@ -122,4 +122,4 @@
 
 ---
 
-最后更新: 2026-10-23（ADR-020：`Player.py` 拆为「入口只做启动控制 + `src/window/` 主窗口 mixin 化」；ISSUE-010：切到视频模式后幻灯片仍在后台翻页；PIT-004 / PIT-009 补复核）
+最后更新: 2026-10-23（ADR-020：`Player.py` 拆为「入口只做启动控制 + `src/window/` 主窗口 mixin 化」；ISSUE-010：切视频后幻灯片仍在后台翻页 + 标题栏未跟着切模式；PIT-004 / PIT-009 补复核）

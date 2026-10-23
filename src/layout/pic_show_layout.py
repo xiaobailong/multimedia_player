@@ -192,6 +192,16 @@ class PicShowLayout(QVBoxLayout):
         except Exception as e:
             logger.warning(f"更新标题栏失败: {e}")
 
+    def refresh_title_bar(self):
+        """按当前图片刷新标题栏（切回图片模式时调用，避免还挂着视频的文件名）。
+
+        没播放过图片时回到默认标题，不残留上一个模式的文件名 / 进度。
+        """
+        if not self.path:
+            self.main_window.title_bar.setInfo('', '')
+            return
+        self._update_title_bar(self.path)
+
     def _play_static(self, filePath):
         """播放静态图片文件"""
         try:

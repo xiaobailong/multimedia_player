@@ -266,8 +266,22 @@
     且 GIF 分支（`_advance_gif_frame`）绕过了这个判断；
   - 用 `_stop_gif()` 停 GIF：它会把 `pictureQLabel` 的 pixmap 清空，
     切回图片模式时会短暂空白（所以 `pause_slideshow` 只停定时器、不清画面）。
-- 相关文件: `src/layout/pic_show_layout.py`、`src/window/view_actions.py`、`src/layout/pic_input_layout.py`
+- 相关文件: `src/layout/pic_show_layout.py`、`src/layout/video_show_layout.py`、
+  `src/layout/custom_title_bar.py`、`src/window/view_actions.py`、`src/layout/pic_input_layout.py`
 - 相关条目: `ADR-010`（幻灯片间隔持久化）、`ADR-020`（窗口拆分）、`ISSUE-007`（后台扫描）
+- 补充（2026-10-23，同一场景的后续反馈「标题栏没处理」）:
+  - 症状: 只停幻灯片还不够 —— 切到视频模式后标题栏仍挂着图片名与幻灯片进度
+    （用户截图 `flapper (1/72)`），看起来像"幻灯片还在放"。
+  - 根因: 标题栏由各模式的 `_update_title_bar()` 被动写入，`change_show()` 切换模式时**不刷新**标题栏，
+    于是停掉定时器后，上一次写入的图片信息就留在了视频模式里。
+  - 修法:
+    1. `PicShowLayout.refresh_title_bar()` / `VideoShowLayout.refresh_title_bar()`：
+       有当前媒体 → 按它自己的文件名 + 列表进度刷新；没有 → `setInfo('', '')`
+       （`CustomTitleBar.setInfo` 对空名字回落 `DEFAULT_TITLE = 多媒体播放器`）；
+    2. `change_show()` 切到哪个模式就调用哪个 `refresh_title_bar()`。
+  - 验证: offscreen 用例 10 项全过 —— 图片模式 `flapper_0 (1/6)`；幻灯片中切视频 → 标题回
+    「多媒体播放器」且进度清空；有视频时切视频 → `movie (1/72)`；切回图片 → `flapper_0 (1/6)`；
+    视频进度越界只显示文件名；路径为空 → 默认标题。
 - 首次记录: 2026-10-23
 - 相关条目: `PIT-014`、`ADR-015`
 - 首次记录: 2026-10-22 ／ 最近复核: 2026-10-22
