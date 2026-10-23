@@ -75,21 +75,24 @@ multimedia_player/
 - 代码注释可使用中文或英文
 
 ### 终端管理（强制）
-- **实际终端是 PowerShell，不是 cmd！**（工作区规则里写的"默认 cmd 终端"是旧信息，已过时）
-  - 命令分隔用 `;`，**不要用** `&&`
-  - 重定向用 `2>$null`，**不要用** `2>nul`
-  - 注释用 `#`，**不要用** `rem`
-  - 变量用 `$env:VAR` 或 `$VAR`，**不要用** `%VAR%`
+- **不要假设终端类型！** 实际可能是 PowerShell 也可能是 cmd，每次执行命令前**必须先探测**。
+  - 探测命令：`$PSVersionTable`
+    - 输出含版本信息（`Name`/`PSVersion` 等）→ **PowerShell**
+    - 报 `is not recognized` → **cmd**
+  - **PowerShell 语法**：分隔用 `;`、重定向 `2>$null`、注释 `#`、变量 `$env:VAR`、末尾 `; exit`
+  - **cmd 语法**：分隔用 `&`/`&&`、重定向 `2>nul`、注释 `rem`、变量 `%VAR%`、末尾 `& exit`
   - 禁止用 `cmd /c` 包裹命令
 - **终端内容标识（必须）**：每个新终端首条命令必须是标识头：
-  ```powershell
-  echo "=== task-N-用途 ==="
+  ```
+  PowerShell: echo "=== task-N-用途 ==="
+  cmd:        echo === task-N-用途 ===
   ```
   - `N` 为递增序号（从 1 开始，本次请求范围内唯一）
   - `用途` 为简短英文描述（如 build、git、test）
-- **终端自关闭（强制）**：每条命令末尾加 `; exit`：
-  ```powershell
-  echo "=== task-1-git ==="; cd "d:\..."; git status; exit
+- **终端自关闭（强制）**：每条命令末尾加自关闭语句：
+  ```
+  PowerShell: ...; exit
+  cmd:        ... & exit
   ```
 - **禁止主动杀进程**：`taskkill /f /im cmd.exe` 会误伤用户自己的 cmd。
 

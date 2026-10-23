@@ -13,28 +13,29 @@
   2. 任何基于 `RunCommand` 的终端清理方案（杀进程、自杀式关闭）都不可靠，因为清理命令本身也会开新终端。
 - **解决方案/规避**：
   - **接受现实**：无法在工具层面强制复用或清理终端。
-  - **唯一可靠方案 —— 命令末尾 `; exit` 自关闭**：
-    - 所有短命令（git、echo 等）末尾加 `; exit`，命令执行完终端自动关闭。
-    - **关键**：如果命令中包含 `.bat` 或 `.cmd` 文件，直接调用即可（PowerShell 会调用 cmd 执行，执行完自动返回，不需要 `call`）。
-    - 格式：`command args; exit`（PowerShell 语法，用 `;` 分隔）。
+  - **唯一可靠方案 —— 命令末尾自关闭**：
+    - 所有短命令（git、echo 等）末尾加自关闭语句，命令执行完终端自动关闭。
+    - **PowerShell**：`command args; exit`
+    - **cmd**：`command args & exit`
+    - **关键**：如果命令中包含 `.bat` 或 `.cmd` 文件，在 cmd 里必须用 `call` 调用（如 `call build.bat`），否则控制权转移后 `& exit` 不会执行；PowerShell 里直接调用即可。
   - **终端命名（必须）**：每个新终端首条命令必须是标识头：
-    ```powershell
-    echo "=== task-N-用途 ==="
-    ```
+    - PowerShell: `echo "=== task-N-用途 ==="`
+    - cmd: `echo === task-N-用途 ===`
   - **禁止使用 `taskkill /f /im cmd.exe`**，会误伤用户自己的 cmd。
   - `StopCommand` 只能停止正在运行的命令，不会关闭终端会话。
 
-### 2. 终端实际是 PowerShell，不是 cmd（重要）
-- **现象**：按 cmd 语法写 `&&`、`2>nul`、`%VAR%`、`rem` 等会报错，或被工具拒绝（`cmd /c` 被禁用）。
-- **原因**：RunCommand 实际启动的是 PowerShell 终端，不是 cmd；旧规则里写的"默认 cmd 终端"已过时。
+### 2. 不要假设终端类型，先探测再决定语法（重要）
+- **现象**：凭经验用 cmd 语法写 `&&`、`2>nul`、`%VAR%`，或用 PowerShell 语法写 `;`、`2>$null`、`$env:VAR`，结果在另一种终端里报错。
+- **原因**：RunCommand 实际启动的终端不固定，有时是 PowerShell，有时是 cmd，不能写死。
 - **解决方案/规避**：
-  - 所有命令一律用 **PowerShell 语法**。
-  - 命令分隔用 `;`，不用 `&&`。
-  - 重定向用 `2>$null`，不用 `2>nul`。
-  - 注释用 `#`，不用 `rem`。
-  - 变量用 `$env:VAR` / `$VAR`，不用 `%VAR%`。
+  - 每次执行命令前**先探测终端类型**。
+  - 探测命令：`$PSVersionTable`
+    - 输出含 `Name`/`PSVersion` 等版本信息 → **PowerShell**
+    - 报 `'$PSVersionTable' is not recognized` → **cmd**
+  - 探测后用对应语法：
+    - **PowerShell**：分隔 `;`、重定向 `2>$null`、注释 `#`、变量 `$env:VAR`、末尾 `; exit`
+    - **cmd**：分隔 `&`/`&&`、重定向 `2>nul`、注释 `rem`、变量 `%VAR%`、末尾 `& exit`
   - 禁止用 `cmd /c` 包裹命令。
-  - 命令末尾用 `; exit` 关闭终端。
 
 ### 3. `.bat` 文件编码必须是 UTF-8 无 BOM + CRLF；`chcp 65001` 位置有讲究
 - **现象**：
