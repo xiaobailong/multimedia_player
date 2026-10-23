@@ -5,16 +5,8 @@ UI 在 `src/layout/collect_dialog.py`，后台执行在 `src/collect/collect_thr
 """
 import os
 
-
-# 图片扩展名：与 `PicShowLayout.is_pic()` 保持一致
-IMAGE_SUFFIXES = (
-    '.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm',
-    '.ppm', '.tif', '.tiff', '.webp', '.gif')
-
-# 视频扩展名：比播放器支持的范围宽一些（归集只是拷贝文件，不要求能播）
-VIDEO_SUFFIXES = (
-    '.mp4', '.mkv', '.mov', '.avi', '.wmv', '.flv', '.webm', '.m4v',
-    '.mpg', '.mpeg', '.ts', '.mts', '.m2ts', '.3gp', '.rmvb', '.rm', '.ogv')
+# 扩展名清单与播放器 / 列表扫描共用一份（`src/utils/media_types.py`），避免口径分裂
+from src.utils.media_types import IMAGE_SUFFIXES, VIDEO_SUFFIXES
 
 ALL_SUFFIXES = IMAGE_SUFFIXES + VIDEO_SUFFIXES
 

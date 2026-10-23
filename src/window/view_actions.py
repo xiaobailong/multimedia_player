@@ -193,6 +193,8 @@ class ViewActionsMixin:
         # 停止后台目录扫描线程，避免退出时 QThread 仍在运行
         if hasattr(self, 'inputAndExeLayout'):
             self.inputAndExeLayout.cancel_scan(wait_ms=1500)
+        if hasattr(self, 'video_show_layout'):
+            self.video_show_layout.cancel_scan(wait_ms=1500)
         # 停止后台归集线程（扫描 / 拷贝）
         if getattr(self, 'collect_thread', None) is not None and self.collect_thread.isRunning():
             self.collect_thread.cancel()

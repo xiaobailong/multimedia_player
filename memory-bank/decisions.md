@@ -289,6 +289,9 @@
 - 相关文件: `src/layout/pic_scan_thread.py`、`src/layout/pic_input_layout.py`、
   `src/layout/pic_show_layout.py`、`Player.py`
 - 相关条目: `ISSUE-007`、`PIT-012`
+- 变更（2026-10-23）: 扫描实现上移成 `src/layout/media_scan_thread.py`（`MediaScanThread` +
+  `collect_media_files`），`PicScanThread` 变成它的薄子类；视频列表也改走同一套（见 `ADR-021`）。
+  递归 / token / 取消 / `mtime` 升序的约定都保持不变。
 - 首次记录: 2026-10-21
 
 ## ADR-013 目录树展开/收起箭头：运行时生成 PNG + QSS `image:`（不用 QProxyStyle / 仓库内图片资产）
@@ -600,3 +603,79 @@
 - 相关文件: `Player.py`、`src/window/*.py`、`README.md`（目录结构）
 - 相关条目: `ADR-005`（知识库制度）、`ISSUE-008`（目录树箭头图标，随 `theme.py` 迁移）
 - 首次记录: 2026-10-23
+
+## ADR-021 「加载为图片 / 视频列表」统一递归扫描（`MediaScanThread` + 扩展名单点）
+- 日期: 2026-10-23 | 状态: 已采纳
+- 背景: 用户要求"加载为图片或视频列表时需要支持递归搜索"。排查现状：
+  1. **图片列表本来就是递归的** —— `PicScanThread` 用 `os.scandir` + 待处理目录栈递归，
+     按 `st_mtime` 升序返回（`ADR-012` 时就已是这个形态）；
+  2. **视频列表不是递归的** —— `VideoShowLayout.loadData()` 用
+     `glob(os.path.join(path, "*.mp4"))`：只扫一层、只认 `.mp4`；而 `is_video()` 认 `.mp4/.mkv`
+     ⇒ 子目录里的视频、`.mkv` 文件都进不了列表（点单个文件却能播 `.mkv`，口径不一致）；
+  3. `loadData()` 在 GUI 线程同步 `glob` + 逐个 `getmtime`，大目录会卡（`ISSUE-007` / `ADR-012` 的老问题）。
+- 决策:
+  1. 抽出 `src/layout/media_scan_thread.py`：`IMAGE_SUFFIXES` / `VIDEO_SUFFIXES` +
+     `collect_media_files(root, suffixes, is_cancelled)`（递归 `scandir`、逐条目检查取消、
+     `mtime` 升序、取消返回 `None`）+ `MediaScanThread(token, path, suffixes)`（信号 `scanned(token, path, files)`）；
+  2. `PicScanThread` 变成 `MediaScanThread` 的薄子类（固定 `IMAGE_SUFFIXES`），
+     `PicInputLayout` 的接口与行为**完全不变**；
+  3. `VideoShowLayout.loadData()` 改为后台扫描：`_scan_token` / `_scan_threads` / `_on_list_scanned`
+     （只接受最新 token），新增 `cancel_scan(wait_ms)`，`MainWindow.closeEvent` 与图片扫描一起调用；
+  4. 视频扩展名口径统一：`is_video()` 与列表扫描共用 `VIDEO_SUFFIXES`
+     （初版 `.mp4/.mkv`；2026-10-23 已按要求扩展到 24 种常见格式，见下方"补充"）；
+  5. 扫描期间点「列表」按钮 → 提示"正在扫描视频列表（含子目录），请稍候…"，不再误报"列表未加载"。
+- 理由:
+  - 一套递归实现同时服务图片 / 视频两种列表：行为一致（递归 + mtime 升序 + 可取消），不会两套逻辑走样；
+  - 扩展名口径单点：以后要支持更多视频格式只改 `VIDEO_SUFFIXES` 一处，`is_video()` 自动跟随；
+  - 沿用 `ADR-012` 的后台线程 + token 约定，大目录不再卡 GUI。
+- 备选与为何不选:
+  - 用 `glob('**/*.mp4', recursive=True)` 就地递归：写法短，但仍在 GUI 线程、无取消、扩展名照样写死；
+  - 把 `PicScanThread` 复制一份改成视频版：~40 行几乎相同的递归代码，后续改一处漏一处；
+  - 视频扩展名直接扩展到归集用的 17 种：播放器 `is_video()` 只声明支持 mp4/mkv，
+    列表里塞进点开就报"文件格式错误"的文件反而更糟；要扩就改 `VIDEO_SUFFIXES` 一处。
+- 影响 / 约束:
+  - **列表加载变为异步**：`loadData()` 返回时 `play_list` 仍为空，稍后由 `_on_list_scanned` 填充；
+    目前唯一调用方 `load_for_video_lise()` 只切显示、不读列表，故不受影响；
+    将来若"loadData 之后立刻读 play_list"，必须等 `scanned` 信号或改用回调；
+  - 顺序仍是 `mtime` 升序（最旧优先，与原实现一致），递归后子目录文件混入同一序列；
+  - 删除最后一个视频后"找下一个"的兜底逻辑**未改**（仍是同目录 `*.mp4`、GUI 线程同步）：
+    改成递归会重新引入卡死风险，等确有需求再做后台版；
+  - 不跟随符号链接目录（`follow_symlinks=False`），避免目录循环；
+  - 扫描线程必须保活（`_scan_threads` 集合 + `finished` 里 discard + `deleteLater`），
+    窗口关闭前 `cancel_scan(wait_ms=1500)`。
+- 验证:
+  1. 纯函数：三层目录的图片 / 视频（含 `.MKV` 大写扩展名）全部递归命中、`.txt` 被排除、
+     `mtime` 升序、取消返回 `None`；
+  2. 线程：`MediaScanThread` 信号回传 token 与列表，与纯函数结果一致；
+  3. 真实窗口：`video.loadData(root)` 立即返回（`play_list` 为空 ⇒ 证明没在 GUI 线程同步扫），
+     完成后列表递归填充、线程集合清空；连续切换目录只保留最后一次结果；
+  4. 图片链路回归：`PicInputLayout.set_content_path()` → 列表递归包含子目录、不自动播幻灯片、线程清理正常；
+  5. 关闭窗口时仍有扫描在跑 → `cancel_scan` 不崩。
+- 相关文件: `src/layout/media_scan_thread.py`、`src/layout/pic_scan_thread.py`、
+  `src/layout/video_show_layout.py`、`src/layout/pic_show_layout.py`（`is_pic()` 也用 `IMAGE_SUFFIXES`）、
+  `src/window/view_actions.py`（`closeEvent`）、`src/layout/pic_input_layout.py`
+- 相关条目: `ADR-012`（后台扫描约定）、`ISSUE-007`（GUI 线程同步 os.walk 致假死）
+- 首次记录: 2026-10-23
+- 补充（2026-10-23，用户要求"扫描增加更多常见视频格式支持"）:
+  - 变更:
+    1. 扩展名清单上移到**不依赖 PyQt** 的 `src/utils/media_types.py`（`IMAGE_SUFFIXES` / `VIDEO_SUFFIXES`），
+       扫描、`is_video()`、`is_pic()`、归集（`collect_service`）全部引用同一份对象
+       （测试断言 `collect_service.VIDEO_SUFFIXES is media_types.VIDEO_SUFFIXES`）；
+       `media_scan_thread` 保留再导出，旧 import 不用改；
+    2. `VIDEO_SUFFIXES` 从 2 种扩到 **24 种**常见容器：
+       `.mp4 .m4v .mkv .mov .avi .wmv .flv .webm`（常见）、
+       `.mpg .mpeg .mpe .m2v .vob .ts .mts .m2ts`（MPEG 系）、
+       `.3gp .3g2 .rmvb .rm .ogv .asf .f4v .divx`（手机 / 其它）；
+       是原归集 17 种的超集，所以"归集能拷的"现在"列表也能列出来"；
+    3. `collect_media_files(..., recursive=True)` 新增 `recursive=False`：
+       删除最后一个视频后"找下一个"的兜底改为 `collect_media_files(path, VIDEO_SUFFIXES, recursive=False)`
+       （单层同步扫，既不再写死 `*.mp4`，也不会递归卡 GUI），`glob` 导入随之删除。
+  - 影响 / 约束:
+    - 列表 / 点击播放的判定都放开了，但**能否真正解码取决于系统解码器 / LAV Filters**：
+      `.rmvb/.rm/.vob` 这类在没装对应解码器时会走既有的"无法播放"提示，属预期；
+    - 以后再加格式只改 `src/utils/media_types.py` 一处，扫描 / 播放判定 / 归集自动跟随；
+    - `.ts` 与 TypeScript 同名后缀：在媒体播放器场景里按 MPEG-TS 处理（原归集清单已有）。
+  - 验证: offscreen 用例 13/13 通过 —— 24 种清单、扫描递归命中 22+3 个样本（含大写 `.MKV` / `.mts`）、
+    非视频文件不混入、`mtime` 升序、`recursive=False` 只扫当前层、归集口径同步、
+    真实窗口 `loadData()` 把 25 个样本全部载入、`is_video()` 认新格式。
+- 最近复核: 2026-10-23

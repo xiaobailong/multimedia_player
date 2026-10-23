@@ -257,3 +257,14 @@
 - 反例: 用 `Qt.Key_Keypad1`（不存在）；把静默退出当段错误 / Qt 崩溃去查 C++ 层；
   只靠 `python -m py_compile` 校验（这种错误编译期查不出来）
 - 首次记录: 2026-10-22
+
+## PIT-018 并发跑两个窗口级测试会撞 sqlite 锁：`apsw.BusyError: database is locked`
+- 触发条件: 在同一个 `run_commands` 调用里**并行**执行两个都会构造 `MainWindow` 的脚本
+  （两个进程同时打开 `data/player.db`）
+- 错误现象: 其中一方抛 `apsw.BusyError: database is locked`（栈底是 `cursor.c` 的 `resetcursor`），
+  另一个照常通过；单独跑任何一个都正常
+- 正确做法: 窗口级测试**串行**执行（同一命令里 `&&` 串联，或分两次工具调用）；
+  确实要并行时，让每个进程先把数据目录（`get_app_data_path()`）指到各自临时目录
+- 反例: 看到 `database is locked` 就去怀疑 `ConfigManager` / `RatingManager` 的 SQL 或加锁逻辑
+  —— 产品本身是单实例（`QLockFile`），不会出现两个进程同时写库
+- 首次记录: 2026-10-23

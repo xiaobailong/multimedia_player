@@ -1,4 +1,4 @@
-import os, glob
+import os
 import math
 import time
 import subprocess
@@ -15,6 +15,8 @@ from loguru import logger
 from src.data_manager.config_manager import ConfigManager
 from src.data_manager.position_manager import PositionManager
 from src.layout.floating_control_panel import FloatingControlPanel
+from src.layout.media_scan_thread import (VIDEO_SUFFIXES, MediaScanThread,
+                                          collect_media_files)
 from src.layout.video_cut_thread import VideoCutThread
 from src.layout.seek_cut_slider import SeekCutSlider
 from src.utils.utils import get_ffmpeg_path as utils_get_ffmpeg_path
@@ -244,6 +246,10 @@ class VideoShowLayout(QVBoxLayout):
         self.play_list_index = 0
         self.play_mode = VideoShowLayout.play_mode_one
         self._list_reset_mode = False  # 列表播放完毕后的"重播列表"状态
+
+        # 视频列表扫描（后台线程）：token 用于丢弃过期结果，_scan_threads 持有运行中的线程
+        self._scan_token = 0
+        self._scan_threads = set()
 
         # 播放位置记忆（使用 PositionManager 统一管理）
         self._position_save_count = 0  # 每 5 秒保存一次
@@ -534,6 +540,10 @@ class VideoShowLayout(QVBoxLayout):
         self.play(self.play_list[self.play_list_index])
 
     def run_list(self):
+        # 列表还在后台扫描时点「列表」按钮：别提示"未加载"，告诉用户稍等
+        if not self.play_list and any(t.isRunning() for t in self._scan_threads):
+            self.main_window.notice('正在扫描视频列表（含子目录），请稍候…')
+            return
         if self._list_reset_mode:
             self.play_list_index = 0
             self._list_reset_mode = False
@@ -807,7 +817,7 @@ class VideoShowLayout(QVBoxLayout):
             self.main_window.notice("已关闭单曲循环")
 
     def is_video(self, path):
-        return path.lower().endswith(('.mp4', '.mkv'))
+        return bool(path) and path.lower().endswith(VIDEO_SUFFIXES)
 
     def setVisible(self, visible):
         self.titleQLabel.setVisible(visible)
@@ -930,21 +940,67 @@ class VideoShowLayout(QVBoxLayout):
             count + -1
 
     def loadData(self, path):
+        """加载目录下的视频列表：递归包含子目录，后台扫描，按修改时间升序。
+
+        扫描放后台线程（`MediaScanThread`），避免大目录把 GUI 卡成"未响应"（`ISSUE-007`）；
+        连续切换目录时旧扫描会被中断，只接受最新一次请求的结果。
+        """
+        self._scan_token += 1
+        token = self._scan_token
+        self._interrupt_scans()
+
         if len(self.play_list) > 0:
             self.play_list.clear()
             self.play_list_index = 0
 
         self._list_reset_mode = False
-        self.list_btn.setToolTip('加载 / 重播当前目录的视频列表')
+        self.list_btn.setToolTip('加载 / 重播当前目录的视频列表（含子目录）')
 
-        files = filter(os.path.isfile, glob.glob(os.path.join(path, "*.mp4")))
+        if not path or not os.path.isdir(path):
+            logger.warning(f'视频列表目录无效: {path}')
+            return
 
-        file_date_tuple_list = [(x, os.path.getmtime(x)) for x in files]
-        file_date_tuple_list.sort(key=lambda x: x[1])
+        thread = MediaScanThread(token, path, VIDEO_SUFFIXES)
+        self._scan_threads.add(thread)
+        thread.scanned.connect(self._on_list_scanned)
+        thread.finished.connect(lambda t=thread: self._scan_threads.discard(t))
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+        logger.info(f'开始扫描视频目录: {path}')
+        if self.main_window is not None:
+            self.main_window.notice('正在扫描视频列表（含子目录）：' + path)
 
-        for file in file_date_tuple_list:
-            if self.is_video(file[0]):
-                self.play_list.append(file[0])
+    def _interrupt_scans(self):
+        """中断正在运行的扫描线程（不改变 token）。"""
+        for thread in list(self._scan_threads):
+            try:
+                thread.requestInterruption()
+            except RuntimeError:
+                continue
+
+    def cancel_scan(self, wait_ms=0):
+        """放弃正在进行的列表扫描（关闭窗口时调用，避免 QThread 未结束就被销毁）。"""
+        self._scan_token += 1
+        for thread in list(self._scan_threads):
+            try:
+                thread.requestInterruption()
+            except RuntimeError:
+                continue
+            if wait_ms:
+                thread.wait(wait_ms)
+
+    def _on_list_scanned(self, token, path, files):
+        """后台扫描完成：只接受最新一次请求的结果。"""
+        if token != self._scan_token:
+            logger.info(f'忽略过期的视频扫描结果: {path}')
+            return
+        self.play_list.clear()
+        self.play_list.extend(files)
+        self.play_list_index = 0
+        self._list_reset_mode = False
+        logger.info(f'视频扫描完成: {path} 共 {len(files)} 个')
+        if self.main_window is not None:
+            self.main_window.notice('视频列表已加载：%d 个（含子目录）' % len(files))
 
     def delete(self):
         if len(self.path) > 0 and self.is_video(self.path):
@@ -1012,10 +1068,9 @@ class VideoShowLayout(QVBoxLayout):
                 self.player.setVideoOutput(self.video_widget)
                 self.play(self.play_list[self.play_list_index])
             else:
-                # 播放列表为空，扫描目录找下一个视频
-                files = filter(os.path.isfile, glob.glob(os.path.join(path, "*.mp4")))
-                file_date_tuple_list = [(x, os.path.getmtime(x)) for x in files]
-                file_date_tuple_list.sort(key=lambda x: x[1])
+                # 播放列表为空：只看当前目录这一层（同步扫、很快），按修改时间找下一个视频
+                candidates = collect_media_files(path, VIDEO_SUFFIXES, recursive=False)
+                file_date_tuple_list = [(x, os.path.getmtime(x)) for x in candidates]
 
                 # 找到删除文件的位置，播放下一个
                 found = False

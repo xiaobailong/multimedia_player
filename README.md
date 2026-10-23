@@ -134,6 +134,7 @@ multimedia_player/
 │       ├── ffmpeg_manager.py         # ffmpeg.exe 检测 / 下载 / 解压
 │       ├── ffmpeg_download_thread.py # ffmpeg 下载后台线程
 │       ├── multipart_downloader.py   # 通用多线程并行下载器
+│       ├── media_types.py            # 图片 / 视频扩展名清单（扫描、播放判定、归集共用）
 │       └── utils.py                  # 路径 / 指纹等通用工具
 ├── scripts/
 │   ├── build.bat              # Windows 一键构建 + 打包

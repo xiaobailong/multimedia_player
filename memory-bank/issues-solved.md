@@ -166,7 +166,9 @@
 - 相关文件: `src/layout/pic_input_layout.py`、`src/layout/pic_scan_thread.py`、
   `src/layout/pic_show_layout.py`、`Player.py`
 - 相关条目: `PIT-012`（AppHang vs Application Error 判定与 faulthandler 定位）、`ADR-012`
-- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
+- 变更（2026-10-23）: 扫描实现集中到 `src/layout/media_scan_thread.py`（`MediaScanThread`），
+  `pic_scan_thread.py::PicScanThread` 变成其薄子类；视频列表也改走同一套后台扫描（`ADR-021`）。
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-23
 
 ## ISSUE-008 目录树展开后"收起箭头"看不见：与深色底同色
 - 状态: 已修复

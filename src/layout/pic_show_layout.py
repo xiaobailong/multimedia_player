@@ -8,6 +8,7 @@ from PyQt5.QtGui import (QPixmap, QImage, QColor)
 
 from loguru import logger
 
+from src.layout.media_scan_thread import IMAGE_SUFFIXES
 from src.layout.pic_input_layout import PicInputLayout
 from src.layout.square_close_button import SquareCloseButton
 
@@ -207,6 +208,9 @@ class PicShowLayout(QVBoxLayout):
         try:
             fckimage = QImage(filePath)
             if fckimage.isNull():
+                # QImage 读不了的格式（.dib / .pcx / .avif 等）交给 Pillow 兜底
+                fckimage = self._load_image_with_pillow(filePath)
+            if fckimage.isNull():
                 logger.warning(f"无法加载图片: {filePath}")
                 self._advance_slideshow()
                 return
@@ -216,6 +220,23 @@ class PicShowLayout(QVBoxLayout):
         except Exception as e:
             logger.error(f"静态图片显示失败: {e}")
             self._advance_slideshow()
+
+    @staticmethod
+    def _load_image_with_pillow(filePath):
+        """用 Pillow 解码 QImage 读不了的格式，转成 QImage；失败返回空 QImage。
+
+        典型场景：`.dib`（Qt 不认这个扩展名）、`.pcx` / `.avif`（Qt5 没有对应插件）。
+        必须 `.copy()`：QImage 不接管传入的 bytes 缓冲，不拷贝会读到已释放的内存。
+        """
+        try:
+            with Image.open(filePath) as pil_image:
+                rgba = pil_image.convert('RGBA')
+                data = rgba.tobytes('raw', 'RGBA')
+                image = QImage(data, rgba.width, rgba.height, QImage.Format_RGBA8888)
+                return image.copy()
+        except Exception as e:
+            logger.warning(f'Pillow 也无法解码 {filePath}: {e}')
+            return QImage()
 
     def _render_static_image(self):
         """根据当前窗口尺寸重新渲染静态图片（用于窗口缩放时）"""
@@ -407,8 +428,8 @@ class PicShowLayout(QVBoxLayout):
     def is_pic(self, path):
         if not path:
             return False
-        return path.lower().endswith(
-            ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm', '.ppm', '.tif', '.tiff', '.webp', '.gif'))
+        # 扩展名口径与扫描线程一致（见 ADR-021：只在 media_scan_thread 里维护一份）
+        return path.lower().endswith(IMAGE_SUFFIXES)
 
     def setVisible(self, visible):
         if visible:
