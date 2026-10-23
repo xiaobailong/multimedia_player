@@ -13,24 +13,28 @@
   2. 任何基于 `RunCommand` 的终端清理方案（杀进程、自杀式关闭）都不可靠，因为清理命令本身也会开新终端。
 - **解决方案/规避**：
   - **接受现实**：无法在工具层面强制复用或清理终端。
-  - **唯一可靠方案 —— 命令末尾 `& exit` 自关闭**：
-    - 所有短命令（git、echo 等）末尾加 `& exit`，命令执行完终端自动关闭。
-    - **关键**：如果命令中包含 `.bat` 或 `.cmd` 文件，必须用 `call` 调用（如 `call build.bat`），否则 cmd 会把控制权转移给该脚本不返回，后面的 `& exit` 不会执行。
-    - 格式：`command args & exit`（cmd 语法，注意是 `&` 不是 `;`）。
+  - **唯一可靠方案 —— 命令末尾 `; exit` 自关闭**：
+    - 所有短命令（git、echo 等）末尾加 `; exit`，命令执行完终端自动关闭。
+    - **关键**：如果命令中包含 `.bat` 或 `.cmd` 文件，直接调用即可（PowerShell 会调用 cmd 执行，执行完自动返回，不需要 `call`）。
+    - 格式：`command args; exit`（PowerShell 语法，用 `;` 分隔）。
   - **终端命名（必须）**：每个新终端首条命令必须是标识头：
-    ```cmd
-    echo === task-N-用途 ===
+    ```powershell
+    echo "=== task-N-用途 ==="
     ```
   - **禁止使用 `taskkill /f /im cmd.exe`**，会误伤用户自己的 cmd。
   - `StopCommand` 只能停止正在运行的命令，不会关闭终端会话。
 
-### 2. cmd 终端中使用 PowerShell 语法会报错
-- **现象**：在 cmd 终端中执行 `#` 开头的注释或 `2>$null` 等 PowerShell 语法，会报 `'#' is not recognized as an internal or external command`。
-- **原因**：cmd 和 PowerShell 语法不同，`#` 不是 cmd 的注释符，`2>$null` 也不是 cmd 的重定向语法。
+### 2. 终端实际是 PowerShell，不是 cmd（重要）
+- **现象**：按 cmd 语法写 `&&`、`2>nul`、`%VAR%`、`rem` 等会报错，或被工具拒绝（`cmd /c` 被禁用）。
+- **原因**：RunCommand 实际启动的是 PowerShell 终端，不是 cmd；旧规则里写的"默认 cmd 终端"已过时。
 - **解决方案/规避**：
-  - 当前环境默认是 cmd 终端，不要在命令中使用 `#` 注释或 PowerShell 专属语法。
-  - cmd 的注释用 `rem`，重定向用 `2>nul`（无 `$`）。
-  - 命令末尾用 `& exit` 关闭终端。
+  - 所有命令一律用 **PowerShell 语法**。
+  - 命令分隔用 `;`，不用 `&&`。
+  - 重定向用 `2>$null`，不用 `2>nul`。
+  - 注释用 `#`，不用 `rem`。
+  - 变量用 `$env:VAR` / `$VAR`，不用 `%VAR%`。
+  - 禁止用 `cmd /c` 包裹命令。
+  - 命令末尾用 `; exit` 关闭终端。
 
 ### 3. `.bat` 文件编码必须是 UTF-8 无 BOM + CRLF；`chcp 65001` 位置有讲究
 - **现象**：

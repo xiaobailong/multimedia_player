@@ -75,21 +75,27 @@ multimedia_player/
 - 代码注释可使用中文或英文
 
 ### 终端管理（强制）
+- **实际终端是 PowerShell，不是 cmd！**（工作区规则里写的"默认 cmd 终端"是旧信息，已过时）
+  - 命令分隔用 `;`，**不要用** `&&`
+  - 重定向用 `2>$null`，**不要用** `2>nul`
+  - 注释用 `#`，**不要用** `rem`
+  - 变量用 `$env:VAR` 或 `$VAR`，**不要用** `%VAR%`
+  - 禁止用 `cmd /c` 包裹命令
 - **终端内容标识（必须）**：每个新终端首条命令必须是标识头：
-  ```cmd
-  echo === task-N-用途 ===
+  ```powershell
+  echo "=== task-N-用途 ==="
   ```
   - `N` 为递增序号（从 1 开始，本次请求范围内唯一）
   - `用途` 为简短英文描述（如 build、git、test）
-- **终端自关闭（强制）**：每条命令末尾加 `& exit`：
-  ```cmd
-  echo === task-1-git === && cd /d "d:\..." && git status & exit
+- **终端自关闭（强制）**：每条命令末尾加 `; exit`：
+  ```powershell
+  echo "=== task-1-git ==="; cd "d:\..."; git status; exit
   ```
 - **禁止主动杀进程**：`taskkill /f /im cmd.exe` 会误伤用户自己的 cmd。
 
 ### 临时文件管理（强制）
 - 所有中间产物（命令输出、临时脚本、状态/轮询文件、探针日志、临时 JSON / CSV）全写 `tmp\`
-- 每完成一个用户请求后，清理本次产生的临时文件：`rmdir /s /q tmp`
+- 每完成一个用户请求后，清理本次产生的临时文件：`Remove-Item -Recurse -Force tmp`
 - `tmp\` 被 `.gitignore` 忽略（`/tmp/`），可放心当垃圾桶
 
 ### 知识库管理
