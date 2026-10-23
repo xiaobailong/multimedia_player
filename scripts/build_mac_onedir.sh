@@ -2,9 +2,9 @@
 
 # ============================================
 #  MultimediaPlayer macOS OneDir Build Script
-#  构建 macOS 目录版 (.app) + ZIP 压缩包，并推送 GitHub Release
-#  Usage: build_mac_onedir.sh [nobump] [norelease]
-#    默认构建后自动推送 Release；加 norelease 可跳过推送
+#  构建 macOS 目录版 (.app) + ZIP 压缩包
+#  Usage: build_mac_onedir.sh [nobump]
+#    构建完成后需手动执行 push_release_mac.sh 推送 Release
 #  兼容 macOS 10.13+（2013 年后机型）
 # ============================================
 
@@ -15,11 +15,11 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_DIR"
 
-# 透传参数到主脚本，固定使用 onedir 目标
+# 透传 nobump 参数到主脚本，固定使用 onedir 目标，不自动推送 Release
 EXTRA_ARGS=()
 for arg in "$@"; do
     case "$arg" in
-        nobump|norelease) EXTRA_ARGS+=("$arg") ;;
+        nobump) EXTRA_ARGS+=("$arg") ;;
     esac
 done
 
@@ -28,6 +28,6 @@ echo " 多媒体播放器 macOS OneDir 构建"
 echo " 目标: onedir + zip"
 echo "========================================="
 
-bash "$SCRIPT_DIR/build_mac.sh" onedir "${EXTRA_ARGS[@]}"
+bash "$SCRIPT_DIR/build_mac.sh" onedir norelease "${EXTRA_ARGS[@]}"
 
 exit $?

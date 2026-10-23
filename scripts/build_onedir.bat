@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 
 REM ============================================
 REM  MultimediaPlayer OneDir Build Script
-REM  Usage: build_onedir [nobump] [norelease]
+REM  Usage: build_onedir [nobump]
 REM ============================================
 
 REM ---- SCRIPT_DIR / PROJECT_ROOT ----
@@ -60,10 +60,6 @@ REM ---- 参数解析 ----
 if not defined SKIP_BUMP set "SKIP_BUMP=0"
 if not "%~1"=="" for %%a in (%*) do if /i "%%a"=="nobump" set "SKIP_BUMP=1"
 
-REM ---- Release 推送开关 ----
-if not defined SKIP_RELEASE set "SKIP_RELEASE=0"
-if not "%~1"=="" for %%a in (%*) do if /i "%%a"=="norelease" set "SKIP_RELEASE=1"
-
 REM ---- 版本号递增 ----
 if "!SKIP_BUMP!"=="0" (
     call :bump_version
@@ -84,11 +80,9 @@ if !ERRORLEVEL! neq 0 exit /b 1
 
 call :print_summary
 
-if "!SKIP_RELEASE!"=="0" (
-    echo.
-    echo 正在推送 Release...
-    call "%SCRIPT_DIR%push_release.bat"
-)
+echo.
+echo 构建完成。如需推送到 GitHub Release，请手动执行:
+echo     scripts\push_release.bat
 
 echo.
 echo 构建完成，窗口将在 30 秒后关闭，或按任意键...
