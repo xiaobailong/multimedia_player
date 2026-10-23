@@ -1,3 +1,5 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 # 多媒体播放器
 
 基于 PyQt5 的桌面多媒体播放器，支持视频/音频播放、图片浏览、视频裁剪截图、媒体评分、文件归集，以及与「密册」兼容的私密媒体加密功能。可跨平台（Windows / macOS）运行。
@@ -9,8 +11,10 @@
 ## 功能特性
 
 ### 🎬 视频播放
-- 支持常见视频格式（mp4 / mkv / mov / avi / flv / webm 等）
+- 支持常见视频格式（mp4 / mkv / mov / avi / flv / webm 等）及音频格式
 - 播放 / 暂停、上一个 / 下一个、快进 / 快退
+- 列表播放：加载当前目录下所有视频依次播放
+- 单视频循环播放（按钮切换）
 - 全屏播放 + 悬浮控制面板（Esc 退出）
 - 视频截图（保存为 jpg，可自定义输出目录）
 - 视频裁剪（指定起止时间，无损裁剪）
@@ -18,9 +22,9 @@
 
 ### 🖼️ 图片浏览
 - 支持常见图片格式（bmp / png / jpg / webp / gif 等）
-- 幻灯片自动播放（可自定义间隔）
+- 幻灯片自动播放（通过「设置 → 幻灯片」自定义播放间隔，立即生效并持久化）
 - 上一张 / 下一张、暂停
-- 悬浮玻璃风格控制面板
+- 悬浮玻璃风格控制面板（可通过「视图 → 显示控制器」切换显隐）
 
 ### 📁 文件管理
 - 左侧目录树浏览，文件名截断 + 悬浮显示全名和大小
@@ -58,6 +62,16 @@
 - 文件列表面板可切换显隐（Ctrl+B）
 - 图片悬浮控制面板可切换显隐
 - 退出全屏动画平滑恢复窗口位置
+
+### 🗂️ 菜单栏
+顶部菜单栏提供全部功能入口：
+
+- **文件**：打开目录（Ctrl+O）、退出（Ctrl+Q）
+- **密钥**：导入 / 导出密钥包、查看密钥状态（密册模式专用）
+- **视图**：切换普通 / 私密模式、切换文件列表面板显隐、切换图片悬浮控制器显隐
+- **归集**：按评分 / 关键字 / 路径批量归集媒体文件
+- **设置**：幻灯片播放间隔设置（秒，立即生效并持久化）
+- **帮助**：关于（版本号、Python / Qt 版本、操作系统、LAV Filters 解码器安装状态）
 
 ## 快捷键
 
@@ -202,4 +216,13 @@ Windows 下播放部分视频格式依赖 LAV Filters 解码器。本程序会�
 
 ## 许可证
 
-本项目仅供学习交流使用。
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 感谢
+
+> This is an optional voluntary donation to support project development.
+> Donation is NOT required to use this software and grants no commercial license.
+
+如果这个工具帮到了您，欢迎随意赞赏，无论多少都是对我最大的鼓励！
+
+![赞赏](img/pay.jpg)
