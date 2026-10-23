@@ -77,6 +77,11 @@
 | 图片 / 视频评分（1~5 键）/ 移动或改名后评分丢失 / 状态栏评分显示 | `ADR-018`（内容指纹 + 独立表 `media_rating`） |
 | 按某个键后程序静默退出（退出码 -1073740791、日志无 traceback） | `PIT-017`（PyQt5 虚函数异常 abort；`Qt.Key_Keypad1` 不存在） |
 | 归集菜单（按评分 / 关键字 / 路径批量拷贝）/ 拷贝重名 / 归集时界面卡死 | `ADR-019`（`CollectDialog` + `CollectThread`） |
+| `Player.py` 太长 / 想拆 MainWindow / 新增窗口功能该放哪 | `ADR-020`（入口只做启动控制，窗口拆进 `src/window/`：mixin + theme/i18n/file_tree/menu_bar） |
+| 新加的 mixin 里 `keyPressEvent` / `closeEvent` 不生效 | `ADR-020`（mixin 必须排在 `QMainWindow` 之前，否则被基类遮蔽） |
+| 幻灯片在切到视频模式后还在后台翻页 / 标题栏莫名变成图片名 | `ISSUE-010`（`pause_slideshow`） |
+| `python -m py_compile src\window\*.py` 报 `[Errno 22] Invalid argument` | `PIT-004`（py_compile 不展开通配符） |
+| `cmd /c` 里嵌 `python -c "..."` 报 `"…"后面缺少表达式` / `意外的标记` | `PIT-009`（改写成 `tmp\` 下的脚本文件） |
 
 ## 5. 条目模板
 
@@ -117,4 +122,4 @@
 
 ---
 
-最后更新: 2026-10-22（ADR-019：新增「归集」菜单（按评分 / 关键字 / 路径批量拷贝，后台线程 + 重名不覆盖））
+最后更新: 2026-10-23（ADR-020：`Player.py` 拆为「入口只做启动控制 + `src/window/` 主窗口 mixin 化」；ISSUE-010：切到视频模式后幻灯片仍在后台翻页；PIT-004 / PIT-009 补复核）

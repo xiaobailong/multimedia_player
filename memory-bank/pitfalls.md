@@ -39,8 +39,10 @@
 - 错误现象: `python -m py_compile` 只在显式语法错误时退出码非 0，某些 import 层面的问题不会报
 - 正确做法: 语法检查用 `python -m py_compile <file>`（只检查语法不执行）；
   类型/导入检查用 `python -c "import py_compile; py_compile.compile('<file>', doraise=True)"`
-- 反例: 以为 `py_compile` 通过就万事大吉（还要看运行时 import 是否成功）
-- 首次记录: 2026-10-21
+- 反例: 以为 `py_compile` 通过就万事大吉（还要看运行时 import 是否成功）；
+  `python -m py_compile src\\window\\*.py` 会报 `[Errno 22] Invalid argument`——
+  **py_compile 不展开通配符**，多文件要么 `-m compileall <dir>`，要么用 `glob` 在脚本里遍历
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-23
 
 ## PIT-005 apsw 与 `sqlite3` 模块 API 不同：没有 `executescript`，`cursor.description` 取完行就报错
 - 触发条件: 用 apsw 执行多语句 DDL，或在 fetch 之后读 `cursor.description`
@@ -95,7 +97,8 @@
 - 正确做法: 继承 `QTranslator` 覆盖 `translate()`，只对
   `QPlatformTheme` / `QDialogButtonBox` 两个 context 返回中文映射，其它 context 返回 **空串**
   （空串表示"不翻译"，Qt 会继续问下一个已安装的翻译）。实现见
-  `Player.py::_StandardButtonTranslator` + `_install_chinese_translator()`
+  `src/window/i18n.py::StandardButtonTranslator` + `install_chinese_translator()`
+  （2026-10-23 起从 `Player.py` 迁到该模块，逻辑未变，见 `ADR-020`）
 - 反例: 以为装了 qt_zh_CN.qm 就万事大吉；或给每个对话框手写 `addButton('是', ...)`
   （静态 `QMessageBox.question()` 改不了按钮，只能逐个替换，工作量大）
 - 变更（2026-10-22）: 项目已不再使用 QMessageBox（弹框统一走 `src/layout/styled_dialogs.py`，见 `ADR-016`），
@@ -115,7 +118,11 @@
   ```
   单行查询改用 `cmd /c findstr /n /c:"..."`，或拆成多条最简单的 PowerShell 单行
 - 反例: 反复调引号/转义想让 `foreach` 内联跑通（耗时且结果不稳定）
-- 首次记录: 2026-10-21
+- 补充（2026-10-23）: 同一条规则也适用于 **`cmd /c` 里嵌 `python -c "..."`**：
+  `cmd /c "set PYTHONIOENCODING=utf-8&& .venv\Scripts\python.exe -c "import io; ..." 2>&1"`
+  会被 PowerShell 先按自己的语法解析，报 `“,”后面缺少表达式` / `意外的标记`（Python 根本没跑起来）。
+  正确做法仍是写到 `tmp\xxx.py`，再 `cmd /c "... python.exe tmp\xxx.py > tmp\xxx.txt 2>&1"`
+- 首次记录: 2026-10-21 ／ 最近复核: 2026-10-23
 
 ## PIT-010 `read_files` 对同一文件再次按行段读取会返回 `[outdated - see the latest file content]`
 - 触发条件: 先整篇读某文件（超过 2000 行 / 47k 字符被截断），再用 `start_line/end_line` 读同一文件的其它区间

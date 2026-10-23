@@ -456,6 +456,24 @@ class PicShowLayout(QVBoxLayout):
         else:
             self.inputAndExeLayout.timer.start()
 
+    def pause_slideshow(self):
+        """停掉幻灯片 / GIF 帧定时器，但保留当前画面（可重复调用）。
+
+        图片区被隐藏（切到视频模式）时必须调用：定时器若继续跑，隐藏的图片会一直翻页，
+        每翻一张都会改写窗口标题、状态栏评分，GIF 还会继续解码重绘白耗 CPU。
+        """
+        # GIF 播放期间会自动暂停幻灯片，这个标记也要清掉，避免之后又被 _advance_slideshow 恢复
+        self._gif_slideshow_active = False
+        if self.inputAndExeLayout.timer.isActive():
+            self.inputAndExeLayout.timer.stop()
+        gif_timer = getattr(self, '_gif_timer', None)
+        if gif_timer is not None:
+            try:
+                gif_timer.stop()
+            except RuntimeError:
+                pass
+        self._gif_playing = False
+
     def delete(self):
         try:
             if not self.is_pic(self.path):

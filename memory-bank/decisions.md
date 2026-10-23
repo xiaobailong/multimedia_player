@@ -547,3 +547,56 @@
   `src/layout/collect_dialog.py`、`Player.py`、`src/data_manager/rating_manager.py`、`src/layout/__init__.py`
 - 相关条目: `ADR-018`（评分表）、`ADR-012`（后台扫描）、`ADR-016`（弹框风格）
 - 首次记录: 2026-10-22
+
+## ADR-020 `Player.py` 瘦身：入口只做启动控制，窗口逻辑拆进 `src/window/`（mixin + 资源模块）
+- 日期: 2026-10-23 | 状态: 已采纳
+- 背景: `Player.py` 原来 2110 行，同一个文件里混了四层东西：启动控制（日志 / 单实例锁 / QApplication）、
+  MainWindow `__init__` 里 380 行界面组装、7 个功能域（文件树操作 / 全屏快捷键 / 评分 / 归集 /
+  私密模式 / 密钥 / 解码器与 ffmpeg）以及全局 QSS、i18n、文件树委托、菜单栏构建。
+  想改任何一处都要在两千行文件里翻，且入口读不出「程序是怎么起来的」。
+- 决策:
+  1. `Player.py` 只保留启动控制流 —— `init_logging()` / `acquire_single_instance_lock()` /
+     `QApplication` → `MainWindow` → `app.exec()`，60 余行，`main()` 一眼看到底；
+  2. 主窗口移入 `src/window/`：`main_window.py` 的 `MainWindow` **只做状态持有 + 界面组装 + 信号接线**
+     （`_init_services` / `_init_window` / `_build_ui` / `_build_media_views` / `_build_file_trees` /
+     `_build_work_area` / `_build_title_bar` / `_build_status_bar` / `_build_central_widget` /
+     `_restore_last_session` / `_schedule_startup_checks`）；
+  3. 功能按职责拆成 mixin：`media_actions` / `view_actions` / `rating_actions` / `collect_actions` /
+     `private_actions` / `key_actions` / `tool_actions`；
+     纯资源与业务无关的部分独立成模块：`theme`（QSS + 目录树箭头图标）、`i18n`（Qt 中文翻译）、
+     `file_tree` / `file_delegate`（左侧树控件与委托）、`menu_bar`（菜单栏构建）；
+  4. `MainWindow` 继承顺序 = `(各 mixin..., QMainWindow)`：mixin **必须排在 QMainWindow 之前**，
+     否则 `keyPressEvent` / `closeEvent` / `eventFilter` / `changeEvent` 会被基类实现遮蔽；
+  5. 类常量（`expand_path_config_key` / `show_type_video` / `normal` / `full` …）留在 `MainWindow`，
+     mixin 内原来的 `MainWindow.xxx` 全部改读 `self.xxx`（取值相同）。
+- 理由:
+  - mixin **保持 `self` 作用域不变** ⇒ 方法体可以逐行原样搬运，重构风险最低（对比组合式 controller
+    要把每个 `self.statusLabel` 改成 `self.window.statusLabel`，改动面覆盖全部方法）；
+  - 入口只剩启动控制，主窗口只剩「装界面 + 连线」，读代码时能直接跳到对应功能模块；
+  - QSS / 菜单 / 文件树这类纯资源代码独立后，改样式或菜单不会碰到业务方法。
+- 备选与为何不选:
+  - 组合式 controller（`MainWindow` 持有 `MediaController(self)` 等对象）：分层更彻底，但要重写全部
+    `self.xxx` 访问、`self` 传参，改一个漏一个的风险远大于收益；
+  - 只把 MainWindow 整体挪到 `src/window/main_window.py`、不再拆 mixin：文件仍有 ~1300 行，
+    达不到「主入口只做逻辑控制」的目标；
+  - 按功能拆成独立 QWidget 子窗口：会改变现有布局层级与信号结构，属于功能性改动，不在重构范围。
+- 影响 / 约束:
+  - 新增窗口功能：属于哪个域就加到对应 `*_actions.py`，不要往 `main_window.py` 里堆；
+  - 新增全局样式：写到 `theme.py`；`view_actions` 里 `screen_normal` / `full_screen_custom`
+    通过 `CENTRAL_WIDGET_STYLE` / `CENTRAL_WIDGET_FULLSCREEN_STYLE` 常量切换，别再内联 QSS；
+  - 新增 mixin 时**必须**排在 `QMainWindow` 之前，且方法名不要与现有 mixin 重名（会被 MRO 遮蔽）；
+  - `_show_about_dialog` 读 VERSION 改用 `get_resource_base_path()`（原实现用 `__file__` 所在目录，
+    代码搬到 `src/window/` 后路径会变；开发环境两者都指向仓库根，打包后同样读不到 VERSION）；
+  - PyInstaller 无需改脚本：`src/window` 全是静态 import，能从 `Player.py` 分析到。
+- 验证方式（可复用）:
+  1. `python -m py_compile` 全部改动文件；
+  2. **AST 逐方法对比**：把原 `MainWindow` 的方法体与新模块方法体（`self.x` / `MainWindow.x` 归一同一个
+     节点）做 `ast.dump` 比较 ⇒ 除 `__init__` / `screen_normal` / `full_screen_custom` /
+     `_show_about_dialog` 四处有意改动外全部一致；
+  3. QSS 文本逐字符对比（4 段样式表 `identical: True`）；
+  4. `symtable` 检查每个模块「被引用但未导入」的全局名 = 0；
+  5. `QT_QPA_PLATFORM=offscreen` 下真实构造 `MainWindow` 冒烟：34 个关键属性齐全、6 个菜单与动作文本、
+     树列宽/隐藏列、`change_show` / `toggle_tree` / 私密模式切换全部正常。
+- 相关文件: `Player.py`、`src/window/*.py`、`README.md`（目录结构）
+- 相关条目: `ADR-005`（知识库制度）、`ISSUE-008`（目录树箭头图标，随 `theme.py` 迁移）
+- 首次记录: 2026-10-23

@@ -110,12 +110,20 @@
 
 ```
 multimedia_player/
-├── Player.py                  # 主入口，应用程序启动
+├── Player.py                  # 主入口：日志 / 单实例锁 / 启动事件循环（只做启动控制）
 ├── VERSION                    # 版本号唯一真源
 ├── requirement.txt            # Windows 依赖
 ├── requirement_mac.txt        # macOS 依赖
 ├── src/
 │   ├── __init__.py
+│   ├── window/                # 主窗口（原 Player.py 里的窗口逻辑，按职责拆分）
+│   │   ├── main_window.py            # MainWindow：状态 + 界面组装 + 信号接线
+│   │   ├── theme.py                  # 全局 QSS、目录树箭头图标
+│   │   ├── i18n.py                   # Qt 标准对话框中文翻译
+│   │   ├── menu_bar.py               # 菜单栏构建
+│   │   ├── file_tree.py              # 左侧文件树控件
+│   │   ├── file_delegate.py          # 文件名截断 / 悬浮提示委托
+│   │   └── *_actions.py              # media / view / rating / collect / private / key / tool
 │   ├── data_manager/          # 配置 / 位置 / 评分 / SQLite 管理
 │   ├── layout/                # UI 布局与组件（视频、图片、滑块、对话框等）
 │   ├── collect/               # 归集功能（按评分/关键字/路径批量拷贝）

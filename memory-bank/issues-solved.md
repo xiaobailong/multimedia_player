@@ -195,6 +195,8 @@
   - 只删掉 `::branch` 规则指望回退原生绘制（实测展开箭头依旧和背景同色）；
   - 用固定路径的图片资源手工放仓库（换机器/打包后路径失效，且多一份二进制资产）。
 - 相关文件: `Player.py`、`.gitignore`
+- 变更（2026-10-23）: 实现随重构迁到 `src/window/theme.py`
+  （`_draw_tree_branch_icon()` / `ensure_tree_branch_icons()`），QSS 文本逐字符未变，见 `ADR-020`
 - 相关条目: `ADR-013`（箭头图标方案的取舍）
 - 首次记录: 2026-10-21 ／ 最近复核: 2026-10-21
 
@@ -232,6 +234,41 @@
   - 打印 `btn.width()/height()` 而不是 `geometry()`，容易看不到被 style polish 之后的实际高度。
 - 相关文件: `src/layout/square_close_button.py`、`src/layout/floating_control_panel.py`、
   `src/layout/pic_show_layout.py`、`Player.py`（全局 QSS）
+- 变更（2026-10-23）: 全局 QSS 现位于 `src/window/theme.py::_MAIN_WINDOW_STYLE`（内容未变），
+  见 `ADR-020`
+
+## ISSUE-010 幻灯片播放中切到视频模式后，幻灯片仍在后台翻页（标题栏 / 状态栏评分被图片覆盖）
+- 状态: 已修复
+- 症状 / 现场: 图片幻灯片（▶ 开始）播放中，点左侧树的视频切到视频模式：图片区已隐藏，
+  但每隔几秒窗口标题变成某张图片名、状态栏右侧评分变成图片的评分；GIF 还会继续解码。
+  用户描述为「幻灯片模式然后切换到视频模式后幻灯片还在播放」。
+- 复发判据: `findstr /n /c:"pause_slideshow" src\window\view_actions.py` 无输出
+  ⇒ 切视频时没停幻灯片；或 offscreen 脚本里 `start_process()` 后调用
+  `win.change_show(MainWindow.show_type_video)`，断言 `inputAndExeLayout.timer.isActive()` 必须为 False
+- 根因: 幻灯片是 `PicInputLayout.timer`（`QTimer`，`timeout → pic_show_layout.refreshPictures`），
+  **与控件是否可见无关**；`MainWindow.change_show()` 只切 `pic_show_qwidget` / `video_show_qwidget`
+  的可见性，从不停止该定时器。而 `refreshPictures() → play()` 每次都会
+  `_update_title_bar()` + `main_window.refresh_rating_status()`，所以"看不见的图片"仍在改写 UI。
+  该问题**重构前就存在**（`change_show` 是逐行原样搬运的，见 `ADR-020`）。
+- 证据: offscreen 用例（8 张图 / interval 300ms）：
+  1. `start_process()` 后 `timer.isActive() == True`，700ms 内 `pic.path` 变化（翻页正常）；
+  2. 对照实验：把 `pause_slideshow` 替换成空实现（还原旧行为）后 `change_show(video)`，
+     1.2s 内 `pic.counter` 继续增长、`timer.isActive()` 仍为 True ⇒ 旧 bug 可复现；
+  3. 修复后同一操作 `timer.isActive() == False`，1.2s 内 `pic.path` / `counter` 都不变。
+- 修法:
+  1. `PicShowLayout.pause_slideshow()`（新增）：停 `inputAndExeLayout.timer`、停 GIF 帧定时器
+     （**不清空当前画面**），并复位 `_gif_slideshow_active` / `_gif_playing`，可重复调用；
+  2. `MainWindow.change_show()` 切到 `show_type_video` 时调用 `self.pic_show_layout.pause_slideshow()`；
+  3. 切回图片模式**不自动续播**（保留"用户按 ▶ 才开始"的语义）；空格 `pause()` 的开/关语义不变。
+- 反例 / 易误判:
+  - 以为控件隐藏后 `QTimer` 会自动停（不会，QTimer 与可见性无关）；
+  - 在 `refreshPictures()` 里加 `if not self.isVisible(): return`：会连"用户手动翻页"一起挡掉，
+    且 GIF 分支（`_advance_gif_frame`）绕过了这个判断；
+  - 用 `_stop_gif()` 停 GIF：它会把 `pictureQLabel` 的 pixmap 清空，
+    切回图片模式时会短暂空白（所以 `pause_slideshow` 只停定时器、不清画面）。
+- 相关文件: `src/layout/pic_show_layout.py`、`src/window/view_actions.py`、`src/layout/pic_input_layout.py`
+- 相关条目: `ADR-010`（幻灯片间隔持久化）、`ADR-020`（窗口拆分）、`ISSUE-007`（后台扫描）
+- 首次记录: 2026-10-23
 - 相关条目: `PIT-014`、`ADR-015`
 - 首次记录: 2026-10-22 ／ 最近复核: 2026-10-22
 
