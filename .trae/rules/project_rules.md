@@ -96,6 +96,11 @@ multimedia_player/
   ```
 - **禁止主动杀进程**：`taskkill /f /im cmd.exe` 会误伤用户自己的 cmd。
 
+### Git 操作约定（强制）
+- **禁用分页器**：所有 `git` 命令必须加 `--no-pager` 参数，避免输出被 less 分页器截断需要手动翻页。
+  - 正确：`git --no-pager diff "文件路径"`、`git --no-pager log -n 10`、`git --no-pager status`
+  - 不要省略 `--no-pager`，即使 `PAGER=cat` 环境变量已设置，git 自身的 pager 配置优先级更高会覆盖它。
+
 ### 临时文件管理（强制）
 - 所有中间产物（命令输出、临时脚本、状态/轮询文件、探针日志、临时 JSON / CSV）全写 `tmp\`
 - 每完成一个用户请求后，清理本次产生的临时文件：`Remove-Item -Recurse -Force tmp`

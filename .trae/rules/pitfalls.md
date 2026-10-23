@@ -37,6 +37,13 @@
     - **cmd**：分隔 `&`/`&&`、重定向 `2>nul`、注释 `rem`、变量 `%VAR%`、末尾 `& exit`
   - 禁止用 `cmd /c` 包裹命令。
 
+### 2.5. git 命令输出被分页器截断，需手动翻页
+- **现象**：执行 `git diff`、`git log` 等命令时，输出进入 less 分页器，内容被截断，需要手动翻页或按 q 退出，无法一次性完整显示。
+- **原因**：仓库的 git 配置（`core.pager`）启用了分页器，即使运行环境设置了 `PAGER=cat`，git 自身的 pager 配置优先级更高，会覆盖环境变量。
+- **解决方案/规避**：
+  - 所有 `git` 命令一律加 `--no-pager` 参数：`git --no-pager diff "路径"`、`git --no-pager log -n 10`、`git --no-pager status`
+  - 不要省略，环境变量 `PAGER=cat` 对 git 无效。
+
 ### 3. `.bat` 文件编码必须是 UTF-8 无 BOM + CRLF；`chcp 65001` 位置有讲究
 - **现象**：
   1. `.bat` 文件带 BOM 时第一行 `@echo off` 变 garbage（cmd 报错/首行不生效）
