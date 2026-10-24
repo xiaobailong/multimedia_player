@@ -82,7 +82,12 @@
 | 图片列表里没有 svg / avif / tga / ico / xbm 等格式 | `ADR-021` 补充（`IMAGE_SUFFIXES` 扩到 25 种 + Pillow 兜底解码） |
 | 打开某些图片（.dib/.pcx/.pnm/.apng）直接闪退、无 traceback、单独 QImage 又正常 | `ISSUE-011`（QImage 插件嗅探崩溃 → `PILLOW_ONLY_SUFFIXES` 走 Pillow） |
 | 并发跑两个窗口级测试报 `apsw.BusyError: database is locked` | `PIT-018`（测试串行执行，或各自临时数据目录） |
-| 大目录扫描慢 / 归集拷贝慢，想开多线程 | `ADR-022`（分层 BFS 扫描 8 线程 + 归集拷贝 4 线程；`src/utils/media_scan.py`） |
+| 大目录扫描慢 / 归集拷贝慢，想开多线程 | `ADR-022`（归集拷贝 4 线程；扫描调度见 `ADR-023`） |
+| 扫描线程提前退出 / 队列一空就结束导致漏扫 / junction 环把扫描卡死 | `ADR-023`（`_ScanQueue`：`pending` 计数 + 条件变量 + `realpath` 去重） |
+| 列表播放遇到打不开的视频不会自动跳过，要手动点「下一个」 | `ISSUE-012`（`_skip_unplayable`，仅列表模式） |
+| 视频列表里混进一大堆 TypeScript `.ts` 文件 | `ISSUE-013`（MPEG-TS 同步字节校验 `_looks_like_mpeg_ts`） |
+| 没点右键却也扫描了目录图片 / 翻目录时反复扫 | `ADR-024`（点目录 300ms 防抖 + 取消排队任务） |
+| 日志被"拒绝访问"警告刷屏 | `ADR-024`（前 10 条 WARNING + 1 条汇总，其余降 DEBUG） |
 | `tmp\` 里几万文件时 `Remove-Item` / `rd /s /q` 超时删不掉 | `PIT-019`（robocopy 空目录 `/mir` 秒删） |
 | `Player.py` 太长 / 想拆 MainWindow / 新增窗口功能该放哪 | `ADR-020`（入口只做启动控制，窗口拆进 `src/window/`：mixin + theme/i18n/file_tree/menu_bar） |
 | 新加的 mixin 里 `keyPressEvent` / `closeEvent` 不生效 | `ADR-020`（mixin 必须排在 `QMainWindow` 之前，否则被基类遮蔽） |
@@ -129,4 +134,4 @@
 
 ---
 
-最后更新: 2026-10-23（ADR-022：扫描/归集多线程化（分层 BFS + 并行拷贝）；ADR-021：列表统一递归扫描 + 图片 25 种 / 视频 24 种格式；ISSUE-011：QImage 插件嗅探崩溃改走 Pillow；ISSUE-010：切视频后幻灯片仍在后台翻页 + 标题栏未跟着切模式；ADR-020：`Player.py` 拆分）
+最后更新: 2026-10-24（ADR-024：点目录加载图片改为 300ms 防抖 + 拒绝访问告警限流；ISSUE-012：列表模式自动跳过无法播放的文件；ISSUE-013：`.ts` 与 TypeScript 冲突按 MPEG-TS 同步字节校验；ADR-023：扫描调度改为任务队列 + 常驻线程池；ADR-022：多线程化 + 并行归集；ADR-021：列表递归扫描 + 图片 25 种 / 视频 24 种格式；ISSUE-011：QImage 插件嗅探崩溃改走 Pillow；ISSUE-010：切视频后幻灯片仍在后台翻页；ADR-020：`Player.py` 拆分）

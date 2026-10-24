@@ -125,6 +125,10 @@ def build_menu_bar(window):
     window.decoder_info_action.triggered.connect(window._show_decoder_info)
     help_menu.addAction(window.decoder_info_action)
 
+    window.shortcuts_action = QAction("快捷键(&K)...", window)
+    window.shortcuts_action.triggered.connect(window._show_shortcuts_dialog)
+    help_menu.addAction(window.shortcuts_action)
+
     help_menu.addSeparator()
 
     about_action = QAction("关于(&A)...", window)

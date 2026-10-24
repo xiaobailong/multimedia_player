@@ -307,3 +307,49 @@ class ToolActionsMixin:
         )
 
         show_about(self, "关于 多媒体播放器", about_text)
+
+    def _show_shortcuts_dialog(self):
+        """显示快捷键说明对话框。"""
+        shortcuts_rows = [
+            ("Space", "播放 / 暂停", "视频、图片"),
+            ("← / →", "上一个 / 下一个", "视频、图片"),
+            ("↑ / ↓", "快进 / 快退", "视频"),
+            ("A / D", "快退 / 快进（同方向键）", "视频"),
+            ("W / E", "上一个 / 下一个", "视频"),
+            ("F", "全屏 / 退出全屏", "全局"),
+            ("Esc", "退出全屏", "全局"),
+            ("S", "截图", "视频"),
+            ("Z", "设置裁剪起点", "视频"),
+            ("X", "设置裁剪终点", "视频"),
+            ("C", "执行视频裁剪", "视频"),
+            ("1 ~ 5", "评分 1~5 星", "图片、视频"),
+            ("Delete / Ctrl+D", "删除当前文件", "图片、视频"),
+            ("Ctrl+B", "切换文件列表面板", "全局"),
+            ("Ctrl+O", "打开目录作为树的根", "全局"),
+            ("Ctrl+Q", "退出", "全局"),
+        ]
+        table_rows = "".join(
+            f"<tr>"
+            f"<td style='padding:4px 10px;'><code style='color:#89b4fa;'>{k}</code></td>"
+            f"<td style='padding:4px 10px;'>{d}</td>"
+            f"<td style='padding:4px 10px;color:#a6adc8;'>{s}</td>"
+            f"</tr>"
+            for k, d, s in shortcuts_rows
+        )
+        html = (
+            "<h2>快捷键说明</h2>"
+            "<p style='color:#bac2de;margin-bottom:10px;'>以下为常用快捷键，按适用范围可分为视频、图片与全局三类。</p>"
+            "<table style='border-collapse:collapse;font-size:13px;'>"
+            "<thead>"
+            "<tr style='border-bottom:1px solid #45475a;'>"
+            "<th style='text-align:left;padding:6px 10px;color:#cdd6f4;'>快捷键</th>"
+            "<th style='text-align:left;padding:6px 10px;color:#cdd6f4;'>功能</th>"
+            "<th style='text-align:left;padding:6px 10px;color:#cdd6f4;'>适用范围</th>"
+            "</tr>"
+            "</thead>"
+            "<tbody>"
+            f"{table_rows}"
+            "</tbody>"
+            "</table>"
+        )
+        show_about(self, "快捷键说明", html)

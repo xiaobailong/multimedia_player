@@ -246,6 +246,8 @@ class VideoShowLayout(QVBoxLayout):
         self.play_list_index = 0
         self.play_mode = VideoShowLayout.play_mode_one
         self._list_reset_mode = False  # 列表播放完毕后的"重播列表"状态
+        # 列表模式自动跳过无法播放的文件：防止一次失败触发多次跳过（error + InvalidMedia 会各报一次）
+        self._skipping_unplayable = False
 
         # 视频列表扫描（后台线程）：token 用于丢弃过期结果，_scan_threads 持有运行中的线程
         self._scan_token = 0
@@ -272,6 +274,8 @@ class VideoShowLayout(QVBoxLayout):
 
         # 媒体状态变化信号：加载完成后跳转到记忆位置
         self.player.mediaStatusChanged.connect(self._on_media_status_changed)
+        # 解码 / 打开失败（格式不支持、文件损坏、权限不足）：列表模式下自动跳过，见 _skip_unplayable
+        self.player.error.connect(self._on_player_error)
         self.player.durationChanged.connect(self._on_duration_changed)
         self._pending_seek_position = -1  # 待跳转的播放位置（-1 表示无跳转）
         self._pending_seek_attempts = 0   # 已重试次数（timer 后备）
@@ -694,6 +698,63 @@ class VideoShowLayout(QVBoxLayout):
                 QTimer.singleShot(200, lambda: self._try_pending_seek())
         elif status in (QMediaPlayer.InvalidMedia, QMediaPlayer.EndOfMedia):
             self._pending_seek_position = -1
+
+        # 列表模式：媒体无效（打不开 / 解不了）时自动跳过下一个，不需要用户手动点
+        if status == QMediaPlayer.InvalidMedia:
+            self._skip_unplayable('媒体无效')
+
+    def _on_player_error(self, error):
+        """QMediaPlayer 报错：格式不支持 / 文件损坏 / 权限不足 / 资源不可用。"""
+        if error == QMediaPlayer.NoError:
+            return
+        logger.warning(f'视频播放失败（error={int(error)}）: {self.path}')
+        self._pending_seek_position = -1
+        self._skip_unplayable('播放器报错')
+
+    def _skip_unplayable(self, reason=''):
+        """列表播放模式下自动跳过无法播放的文件；单片模式保持原来的"报错后停下"。
+
+        - `_skipping_unplayable` 防重入：同一个坏文件会同时收到 error 与 InvalidMedia；
+        - 跳过动作丢到事件循环下一拍（`QTimer.singleShot(0)`）：在 error 回调里直接
+          `setMedia()` 会在播放器内部状态切换过程中重入，容易卡住或丢信号；
+        - `play_list_index` 先自增再播放；到列表末尾则按"播放完毕"收尾（与 `run_list` 一致），
+          用户还能点「重播列表」。
+        """
+        if self.play_mode != VideoShowLayout.play_mode_list:
+            return
+        if self._skipping_unplayable:
+            return
+        self._skipping_unplayable = True
+        bad_path = self.path
+        self._pending_seek_position = -1
+
+        def do_skip():
+            self._skipping_unplayable = False
+            if self.play_mode != VideoShowLayout.play_mode_list:
+                return
+            total = len(self.play_list)
+            name = os.path.basename(bad_path) if bad_path else ''
+            logger.warning(f'跳过无法播放的视频（{reason}）: {bad_path}')
+
+            if total == 0 or self.play_list_index >= total - 1:
+                # 已经是最后一个（或列表为空）：按"列表播放完毕"收尾
+                self.play_state = False
+                self.stop_btn.setIcon(self._play_icon)
+                self.timer.stop()
+                self._list_reset_mode = True
+                self.list_btn.setToolTip('列表已全部播放完毕，点击重播列表')
+                if name:
+                    self.main_window.notice('列表已全部播放完毕（最后一个无法播放：%s）' % name)
+                else:
+                    self.main_window.notice('列表已全部播放完毕')
+                return
+
+            self.play_list_index += 1
+            self.main_window.notice('已跳过无法播放的文件：%s' % name)
+            self.play(self.play_list[self.play_list_index])
+
+        QTimer.singleShot(0, do_skip)
+
 
     def _on_duration_changed(self, duration):
         """

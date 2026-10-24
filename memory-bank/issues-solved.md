@@ -325,3 +325,63 @@
   `PIT-012`（区分卡死与崩溃）
 - 首次记录: 2026-10-23
 
+## ISSUE-012 视频列表播放遇到无法播放的文件不会自动跳过，要手动点「下一个」
+- 状态: 已修复
+- 症状 / 现场: 列表模式（列表按钮 ▶| / 右键「加载为视频列表」）播到打不开或解不了的文件时，
+  画面停住、时间显示 `00:00:00`，不会继续；必须手动点「下一个」或再点列表才继续。
+- 复发判据: 造 3 个内容是文本的 `bad1.mp4 / bad2.mp4 / bad3.mp4`，`loadData()` + `run_list()` 后
+  20s 内 `_list_reset_mode` 必须变成 `True`（说明自动跳完了）；
+  或 `findstr /n /c:"_skip_unplayable" src\layout\video_show_layout.py` 无输出
+- 根因: 列表的"下一集"只在 `onTimerOut()` 里 `position == duration` 时推进；
+  无法播放的文件 `duration == 0`，而 `onTimerOut()` 第一行就是 `if duration == 0: return`
+  ⇒ **永远走不到推进逻辑**。同时 `mediaStatusChanged(InvalidMedia)` 与 `player.error`
+  只重置了"待跳转位置"，没有任何"跳下一个"的动作。
+- 证据: 端到端用例（真实 QMediaPlayer、三个假视频）：
+  修复前停在 bad1 不动；修复后日志依次
+  `视频播放失败（error=1）` → `跳过无法播放的视频（媒体无效）` ×3，
+  结束状态 `index=2 / total=3 / reset=True`，全程无点击；单文件约 50~60ms。
+- 修法:
+  1. `__init__` 里连接 `self.player.error`（`QMediaPlayer.error` 是 pyqtSignal）；
+  2. `_on_player_error()` 与 `_on_media_status_changed(InvalidMedia)` 统一走 `_skip_unplayable()`；
+  3. `_skip_unplayable()` **只在列表模式生效**：`QTimer.singleShot(0)` 里先 `play_list_index += 1`
+     再 `play()`；已经是最后一个则按"列表播放完毕"收尾（`_list_reset_mode=True`、
+     tooltip 改「重播列表」、停止定时器）；
+  4. `_skipping_unplayable` 防重入：同一次失败会先后收到 `error` 和 `InvalidMedia`，不加锁会一次跳两个。
+- 反例 / 易误判:
+  - 以为 `EndOfMedia` 会兜底 —— 坏文件 duration 是 0，`onTimerOut` 第一行就 return；
+  - 在 `mediaStatusChanged` / `error` 回调里直接 `setMedia()`：播放器状态切换中重入，会丢信号或卡住；
+  - 跳过后不检查是否到末尾 → 越界；或反复重试同一个坏文件 → 死循环；
+  - 单片模式也自动跳：会把用户明确点开的文件跳过，体验更差（本修法只在列表模式跳）。
+- 相关文件: `src/layout/video_show_layout.py`
+- 相关条目: `ISSUE-013`（列表里混进大量不可播的 `.ts`，放大了这个现象）、`ISSUE-006`（本机 QMediaPlayer 报 ResourceError）
+- 首次记录: 2026-10-24
+
+## ISSUE-013 `.ts` / `.mts` / `.m2ts` 与 TypeScript 后缀冲突：扫用户目录列出 8000+ 个"视频"
+- 状态: 已修复
+- 症状 / 现场: 右键把 `C:\Users\<用户>` 加载为视频列表后显示「视频扫描完成 … 共 8108 个」，
+  绝大多数是 `.vscode\extensions\...\*.ts`（TypeScript 源码），点哪个都播不了。
+- 复发判据: 建一个内容为 `import x from "y"` 的 `a.ts`，`collect_media_files(dir, VIDEO_SUFFIXES)`
+  的返回值里出现它；或 `findstr /n /c:"_looks_like_mpeg_ts" src\utils\media_scan.py` 无输出
+- 根因: 扩展名清单里 `.ts / .mts / .m2ts` 既是 MPEG-TS / AVCHD 容器，又和 TypeScript 源文件同名
+  （TS 5 新增 `.mts`），纯按后缀匹配无法区分。
+- 证据: 用户日志「视频扫描完成: C:/Users/766698 共 8108 个」+ 目录树里 `.vscode/extensions/...`；
+  按内容抽查，这些 `.ts` 都是文本（首字节不是 0x47）。
+- 复核（2026-10-24）: 用用户给的真实文件
+  `C:\Users\766698\.vscode\extensions\slujbadrujby.column-mode-toggle-0.0.2\src\extension.ts` 实测：
+  616 字节，前 8 字节 `69 6d 70 6f 72 74 20 2a`（`import *`），
+  `_looks_like_mpeg_ts() == False`，`collect_media_files(该目录, VIDEO_SUFFIXES) == []`，
+  整个扩展根目录扫描结果也是 0 个 ⇒ 修复后不会再被当成视频。
+- 修法: `src/utils/media_scan.py::_looks_like_mpeg_ts()` —— 命中 `.ts/.mts/.m2ts` 时读前 377 字节，
+  校验 MPEG-TS 同步字节（标准 TS：偏移 0 与 188 都是 `0x47`；M2TS：偏移 4 与 196 是 `0x47`），
+  不匹配就不算媒体文件。校验只在**扫描阶段**做，`is_video()` 仍按后缀判断（用户仍可手动点开试）。
+- 反例 / 易误判:
+  - **资源管理器里 `.ts` 显示成播放图标**是 Windows 文件关联（系统把 `.ts` 关联给了某个播放器），
+    与本程序的判定无关 —— 别拿图标当"程序识别错了"的证据；
+  - 直接在**旧构建 / 旧进程**里复测：修复只在源码里，需要重启（源码运行）或重新构建才生效；
+  - 直接把 `.ts` 从清单里删掉：真正的 MPEG-TS 录像（电视录制 / 蓝光）再也列不出来；
+  - 只看首字节 `0x47`：TypeScript 文本里也可能出现该字节，必须看 188 / 196 的第二个同步字节；
+  - 用"文件大小"过滤：TypeScript 也可能很大，判不准。
+- 相关文件: `src/utils/media_scan.py`
+- 相关条目: `ADR-021`（视频扩展名扩到 24 种时引入）、`ISSUE-012`（同一次反馈里暴露）
+- 首次记录: 2026-10-24
+
