@@ -102,3 +102,36 @@
 - **现象**：`--specpath "build"` + `--add-data="libs\ffmpeg\ffmpeg.exe;ffmpeg"` → PyInstaller 在 `build\libs\ffmpeg\ffmpeg.exe` 找文件，报 `Unable to find`
 - **原因**：`--specpath` 指定的目录会成为 `--add-data` 相对路径的解析基准（而非当前工作目录）
 - **解决方案/规避**：`--add-data` 一律使用绝对路径：`--add-data="%PROJECT_ROOT%libs\ffmpeg\ffmpeg.exe;ffmpeg"`
+
+### 11. PowerShell 多行 commit message 解析不可靠
+- **现象**：
+  1. 在 PowerShell 里用 `git commit -m "第一行`n第二行"` 提交时，消息要么被压成一行，要么报错 `pathspec '...' did not match any file(s) known to git`（消息内容被 git 当成了文件路径参数）。
+  2. 消息里含中文、括号、引号时更容易出问题。
+- **原因**：
+  1. PowerShell 用反引号 `` ` `` 做转义符，换行是 `` `n``（不是 `\n`），但在工具调用的字符串参数传递过程中，反引号换行容易被吞掉或变成字面量。
+  2. git 的 `-m` 参数本质只收一个 token，多行内容在命令行参数边界处容易被拆分。
+  3. 当 commit message 中包含特殊字符（如 `(`、`)`、`'`、中文）时，PowerShell 的参数解析与 git 的参数解析不一致，会把消息后半段当成路径参数。
+- **解决方案/规避**：
+  - **首选方案：写临时文件 + `git commit -F`**（最稳，完全绕开命令行参数解析）：
+    ```powershell
+    New-Item -ItemType Directory -Force tmp | Out-Null
+    @'
+    feat: 提交标题（第一行）
+
+    详细说明第二行
+    第三行可以列点
+    - 点 1
+    - 点 2
+    '@ | Out-File -FilePath tmp/commit_msg.txt -Encoding utf8
+    git --no-pager commit -F tmp/commit_msg.txt
+    ```
+    - 用 PowerShell 的 here-string `@'...'@`（**单引号**形式，不展开变量、不转义）把消息原样写入 `tmp/commit_msg.txt`
+    - `git commit -F <文件>` 从文件读取提交消息，换行、中文、特殊字符都原样保留
+    - 临时文件放 `tmp/` 下（已被 `.gitignore` 忽略），提交后清理
+  - **次选方案：多次 `-m`**（仅适合消息不含特殊字符、且能接受段落间有空行的场景）：
+    ```powershell
+    git commit -m "feat: 标题" -m "说明第一段" -m "说明第二段"
+    ```
+    - git 允许用多个 `-m`，每个 `-m` 自动成为一个段落（段落间会插入空行）
+    - 中文、括号多时仍可能出问题，不推荐
+  - **禁止**：在 `-m` 参数里用 `\n` 或 `` `n`` 写多行消息，PowerShell + git 双层解析后大概率损坏

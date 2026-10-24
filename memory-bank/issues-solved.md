@@ -402,7 +402,9 @@
   1. 后台实跑 `collect_media_files(r'C:/Users', VIDEO_SUFFIXES, max_workers=8)` → `count = 0`，耗时 **97.2s**；
   2. 直接扫 `...\AppData\Local\KuashengV2` → 0.93s 找到 4 个（含目标 `b0c87a316d30d70e7630b0cf90006dc1.mp4`）；
   3. 单测复现：造 `tree/AppData/Local/media/a.mp4` + junction `tree/Local Settings → tree/AppData/Local`，
-     让 `scandir(junction)` 抛 `PermissionError`：修复前结果 `[]`，修复后返回真实目录里的 `a.mp4`。
+     让 `scandir(junction)` 抛 `PermissionError`：修复前结果 `[]`，修复后返回真实目录里的 `a.mp4`；
+  4. **修复后真实复测**：完整扫 `C:\Users` → `count = 13`（修复前 0），
+     `target hit = True`（`b0c87a316d30d70e7630b0cf90006dc1.mp4` 命中），`appdata hits = 13`，耗时 137.0s。
 - 修法: `media_scan._scan_one_dir()` 对 junction / 目录软链**改用 `os.path.realpath()` 作为入队路径**
   （去重键也用这个真实路径），不再去扫那个可能不可读的链接路径。这样：
   - 不可读的 `Local Settings` 会变成"扫 `AppData\Local`"，文件照样能扫到；
