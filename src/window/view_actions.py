@@ -183,8 +183,6 @@ class ViewActionsMixin:
             # 图片区已经被隐藏：必须停掉幻灯片 / GIF 定时器，
             # 否则图片会在后台继续翻页（改写窗口标题、状态栏评分）
             self.pic_show_layout.pause_slideshow()
-            # 切到视频：放弃还在排队的"点目录 → 扫图片"
-            self._cancel_pic_scan()
             # 标题栏跟着切到视频（否则还挂着图片的文件名 / 幻灯片进度）
             self.video_show_layout.refresh_title_bar()
         # 切换显示后，状态栏右侧跟着显示对应媒体的评分

@@ -27,6 +27,15 @@ def build_menu_bar(window):
     open_action.triggered.connect(window.open_directory)
     file_menu.addAction(open_action)
 
+    # 「加载为列表」只能从这里或右键菜单显式触发（点目录不再自动扫描，见 ADR-025）
+    window.load_pic_list_action = QAction("加载为幻灯片列表...(&P)", window)
+    window.load_pic_list_action.triggered.connect(window.load_pic_list_dialog)
+    file_menu.addAction(window.load_pic_list_action)
+
+    window.load_video_list_action = QAction("加载为视频列表...(&M)", window)
+    window.load_video_list_action.triggered.connect(window.load_video_list_dialog)
+    file_menu.addAction(window.load_video_list_action)
+
     file_menu.addSeparator()
 
     exit_action = QAction("退出(&Q)", window)

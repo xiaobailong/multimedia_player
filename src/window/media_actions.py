@@ -8,7 +8,7 @@ import os
 import shutil
 
 import send2trash
-from PyQt5.QtCore import QModelIndex, Qt, QTimer
+from PyQt5.QtCore import QModelIndex, Qt
 from PyQt5.QtWidgets import QAbstractItemView, QMenu
 from loguru import logger
 
@@ -18,9 +18,6 @@ from src.layout.video_show_layout import VideoShowLayout
 
 class MediaActionsMixin:
     """文件树 → 播放 / 文件操作。"""
-
-    # 点目录后延迟多久才真正去扫图片（见 _schedule_pic_scan）
-    PIC_SCAN_DEBOUNCE_MS = 300
 
 
     def expand_path(self, path):
@@ -174,73 +171,67 @@ class MediaActionsMixin:
     def on_tree_clicked(self, qmodelindex):
         self.path = self.model.filePath(qmodelindex)
 
+        if os.path.isdir(self.path):
+            # 单击目录只做选中 / 展开：**不扫描、不切模式**。
+            # 图片 / 视频列表只能由「右键菜单」或「文件菜单」显式触发
+            # （见 load_for_pic_show / load_for_video_lise / load_pic_list_dialog / load_video_list_dialog），
+            # 否则在树里翻目录会顺带扫一堆大目录（ADR-025）。
+            return
+
+        if not os.path.isfile(self.path):
+            self.notice("非法文件路径: " + self.path)
+            return
+
         if self.inputAndExeLayout.timer.isActive():
             self.inputAndExeLayout.timer.stop()
 
-        if os.path.isdir(self.path):
-            if not self.pic_show_qwidget.isVisible():
-                self.change_show(self.show_type_pic)
-            # 说明：单击目录（含点展开箭头）就会加载该目录的图片列表，不是右键才触发。
-            # 但用户经常只是展开树 / 快速翻目录，每个目录都立刻扫一遍很浪费
-            # （C:/Users 这种要几百 ms 到几秒，还会刷一堆"拒绝访问"），
-            # 所以延迟一小会儿，只扫"最后停下来的那个目录"。
-            self._schedule_pic_scan(self.path)
-        elif os.path.isfile(self.path):
-            self._cancel_pic_scan()   # 点了具体文件：放弃还在排队的目录扫描
-            if self.video_show_layout.is_video(self.path):
-                # 点击单个视频：退出列表播放模式
-                self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
-                self.video_show_layout.play_list.clear()
-                self.video_show_layout.play_list_index = 0
-                self.change_show(self.show_type_video)
-                self.video_show_layout.play(self.model.filePath(qmodelindex))
-            elif self.pic_show_layout.is_pic(self.path):
-                # 点击单个图片：退出幻灯片/列表模式
-                self.pic_show_layout.counter = 0
-                self.pic_show_layout.inputAndExeLayout.list_files.clear()
-                self.change_show(self.show_type_pic)
-                self.pic_show_layout.play(self.model.filePath(qmodelindex))
-            else:
-                self.video_show_layout.titleQLabel.setText('文件格式错误!!!')
-                self.pic_show_layout.titleQLabel.setText('文件格式错误!!!')
-                self.notice('文件格式错误!!!')
+        if self.video_show_layout.is_video(self.path):
+            # 点击单个视频：退出列表播放模式
+            self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
+            self.video_show_layout.play_list.clear()
+            self.video_show_layout.play_list_index = 0
+            self.change_show(self.show_type_video)
+            self.video_show_layout.play(self.model.filePath(qmodelindex))
+        elif self.pic_show_layout.is_pic(self.path):
+            # 点击单个图片：退出幻灯片/列表模式
+            self.pic_show_layout.counter = 0
+            self.pic_show_layout.inputAndExeLayout.list_files.clear()
+            self.change_show(self.show_type_pic)
+            self.pic_show_layout.play(self.model.filePath(qmodelindex))
         else:
-            self.notice("非法文件路径: " + self.path)
+            self.video_show_layout.titleQLabel.setText('文件格式错误!!!')
+            self.pic_show_layout.titleQLabel.setText('文件格式错误!!!')
+            self.notice('文件格式错误!!!')
 
     # ============================================
-    #  点目录 → 加载图片列表（带防抖）
+    #  显式加载列表（文件菜单 / 右键菜单触发）
     # ============================================
-    def _schedule_pic_scan(self, directory):
-        """延迟把目录交给图片列表：连续点目录 / 展开树时只扫最后停下的那个。
+    def _list_dir_hint(self):
+        """选目录对话框的起始目录：当前选中项（文件则取所在目录）。"""
+        path = self.path or ''
+        if path and os.path.isdir(path):
+            return path
+        if path and os.path.isfile(path):
+            return os.path.dirname(path)
+        return ''
 
-        单击目录本身就会加载该目录的图片（这是既有交互，不需要右键）；
-        但展开树、快速翻目录时每个目录都立刻扫一遍很浪费（大目录几百 ms~几秒），
-        所以这里做成 300ms 防抖：期间又点了别的目录就重置计时器。
+    def load_pic_list_dialog(self):
+        """文件菜单 → 加载为幻灯片列表：选目录后扫描图片。
+
+        与右键「加载为幻灯片列表」等价；点目录本身不再自动触发扫描（ADR-025）。
         """
-        self._pending_pic_scan_dir = directory
-        timer = getattr(self, '_pic_scan_timer', None)
-        if timer is None:
-            timer = QTimer(self)
-            timer.setSingleShot(True)
-            timer.timeout.connect(self._apply_pending_pic_scan)
-            self._pic_scan_timer = timer
-        timer.start(self.PIC_SCAN_DEBOUNCE_MS)
-
-    def _apply_pending_pic_scan(self):
-        """防抖计时到点：真正去扫图片列表（期间模式变了就放弃）。"""
-        directory = getattr(self, '_pending_pic_scan_dir', '')
-        self._pending_pic_scan_dir = ''
+        directory = pick_directory(self, "选择图片目录", start_dir=self._list_dir_hint())
         if not directory or not os.path.isdir(directory):
             return
-        # 期间可能已经切到视频 / 私密模式，或用户已经点了别的文件
-        if self.private_mode or self.video_show_qwidget.isVisible():
-            return
+        self.change_show(self.show_type_pic)
         self.inputAndExeLayout.set_content_path(directory)
 
-    def _cancel_pic_scan(self):
-        """取消还在排队的目录图片扫描（点了文件 / 切到视频模式时调用）。"""
-        self._pending_pic_scan_dir = ''
-        timer = getattr(self, '_pic_scan_timer', None)
-        if timer is not None and timer.isActive():
-            timer.stop()
+    def load_video_list_dialog(self):
+        """文件菜单 → 加载为视频列表：选目录后递归扫描视频。"""
+        directory = pick_directory(self, "选择视频目录", start_dir=self._list_dir_hint())
+        if not directory or not os.path.isdir(directory):
+            return
+        self.config_manager.add_or_update(VideoShowLayout.video_show_list_key, directory)
+        self.video_show_layout.loadData(directory)
+        self.change_show(self.show_type_video)
 

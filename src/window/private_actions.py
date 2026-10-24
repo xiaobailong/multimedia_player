@@ -121,8 +121,6 @@ class PrivateActionsMixin:
 
     def _on_private_tree_clicked(self, qmodelindex):
         """私密模式下树节点点击事件（点到密文时先解密再交给现有展示逻辑）"""
-        # 私密模式下不要执行"点目录 → 扫普通图片列表"的排队任务
-        self._cancel_pic_scan()
         file_path = self.private_tree_model.filePath(qmodelindex)
 
         if os.path.isdir(file_path):
@@ -216,7 +214,6 @@ class PrivateActionsMixin:
         # 私密模式：文件已解密到缓存目录，列表直接用解密后的明文路径
         # （先取消后台扫描，避免其它目录的扫描结果覆盖这里的列表）
         self.inputAndExeLayout.cancel_scan()
-        self._cancel_pic_scan()   # 手动填充列表前，先丢掉排队中的普通目录扫描
         self.inputAndExeLayout.content_path = dir_path
         self.inputAndExeLayout.list_files.clear()
         self.inputAndExeLayout.list_files.extend(playable)

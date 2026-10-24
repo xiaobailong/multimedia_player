@@ -35,16 +35,8 @@ def _worker_count(max_workers):
 
 
 def _path_key(path):
-    """默认去重键：绝对路径 + 大小写归一（Windows 大小写不敏感）。"""
+    """去重键：绝对路径 + 大小写归一（Windows 大小写不敏感）。"""
     return os.path.normcase(os.path.abspath(path))
-
-
-def _canonical_key(path):
-    """junction / 软链的去重键：用真实路径，避免"环"导致无限递归。"""
-    try:
-        return os.path.normcase(os.path.abspath(os.path.realpath(path)))
-    except OSError:
-        return _path_key(path)
 
 
 def _is_link_dir(entry):
@@ -141,8 +133,16 @@ def _scan_one_dir(directory, suffixes, should_stop=None):
                 try:
                     if entry.is_dir(follow_symlinks=False):
                         if _is_link_dir(entry):
-                            # 目录链接：跟随，但用真实路径去重（同一个目标只扫一次、防环）
-                            subdirs.append((entry.path, _canonical_key(entry.path)))
+                            # 目录链接（junction / 软链）：**扫真实路径**，并用真实路径做去重键。
+                            # 为什么不能扫链接路径：Windows 上 `Local Settings` / `Application Data`
+                            # / `Cookies` 这类老 junction 本身是"拒绝访问"的，而它们指向的正是
+                            # `AppData\Local` 等真实目录。若先按链接路径入队、又用 realpath 记键，
+                            # 真实目录后来被发现时会被判成"重复"跳过 ⇒ 整个 AppData 漏扫（ISSUE-014）。
+                            try:
+                                real = os.path.realpath(entry.path)
+                            except OSError:
+                                continue
+                            subdirs.append((real, _path_key(real)))
                         else:
                             subdirs.append((entry.path, None))
                         continue

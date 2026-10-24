@@ -385,3 +385,35 @@
 - 相关条目: `ADR-021`（视频扩展名扩到 24 种时引入）、`ISSUE-012`（同一次反馈里暴露）
 - 首次记录: 2026-10-24
 
+## ISSUE-014 扫 `C:/Users` 一个视频都扫不到（AppData 下明明有 mp4）：junction 用 realpath 去重，把真实目录"顶掉"了
+- 状态: 已修复
+- 症状 / 现场: 右键把 `C:/Users` 加载为视频列表 → 日志 `视频扫描完成: C:/Users 共 0 个`；
+  可是 `C:\Users\766698\AppData\Local\KuashengV2\pro\ks_766698\video\*.mp4` 明明存在（资源管理器能播）。
+  直接扫那一层 0.9s 就能找到 4 个视频。
+- 复发判据: `collect_media_files(r'C:/Users', VIDEO_SUFFIXES)` 的结果里**没有任何 `\AppData\` 路径**
+  （或对"junction 路径不可读"的模拟环境返回 0）；用后台脚本跑一次，正常应 ≥ 4 个、且命中目标文件。
+- 根因: `ADR-023` 为了"跟随 junction 但不重复/不死循环"，用 `realpath` 当去重键，但**入队的是链接路径**。
+  Windows 用户目录里有一批老式 junction：`Local Settings` → `AppData\Local`、`Application Data` → `AppData\Roaming`、
+  `Cookies` / `Recent` / `SendTo` / `Templates` / `「开始」菜单` … 这些链接**本身 ACL 拒绝访问**。
+  于是：扫 `C:\Users\<u>` 时先把这些链接的真实路径（如 `appdata\local`）记进了去重键，
+  随后真正扫到 `AppData\Local` 时被判为"重复"直接跳过；而去扫那些链接路径又会 `拒绝访问` ⇒
+  **整个 AppData 一棵都没扫**。同时 `All Users`（→ `C:\ProgramData`）让扫描在 ProgramData/WER 里空转。
+- 证据:
+  1. 后台实跑 `collect_media_files(r'C:/Users', VIDEO_SUFFIXES, max_workers=8)` → `count = 0`，耗时 **97.2s**；
+  2. 直接扫 `...\AppData\Local\KuashengV2` → 0.93s 找到 4 个（含目标 `b0c87a316d30d70e7630b0cf90006dc1.mp4`）；
+  3. 单测复现：造 `tree/AppData/Local/media/a.mp4` + junction `tree/Local Settings → tree/AppData/Local`，
+     让 `scandir(junction)` 抛 `PermissionError`：修复前结果 `[]`，修复后返回真实目录里的 `a.mp4`。
+- 修法: `media_scan._scan_one_dir()` 对 junction / 目录软链**改用 `os.path.realpath()` 作为入队路径**
+  （去重键也用这个真实路径），不再去扫那个可能不可读的链接路径。这样：
+  - 不可读的 `Local Settings` 会变成"扫 `AppData\Local`"，文件照样能扫到；
+  - 真实目录后到也不会重复（键相同）；
+  - 指向树外的 junction 仍然会被跟随（不漏扫）。
+- 反例 / 易误判:
+  - 以为"拒绝访问的目录跳过就行" —— 跳过的其实是链接，真实目录因为去重键被占而永远不会再扫；
+  - 以为 realpath 去重只是"防环" —— 它还会和**真实目录自己**抢去重键；
+  - 用 `os.walk` 复测：`os.walk` 不跟随 junction，结果当然也不含 AppData（会误判成"本来就没有视频"）；
+  - 只看"扫了 97s 没报错"就当扫完了 —— 要检查结果里有没有 `\AppData\` 路径。
+- 相关文件: `src/utils/media_scan.py`
+- 相关条目: `ADR-023`（任务队列调度，去重键设计）、`ADR-021`、`ISSUE-013`
+- 首次记录: 2026-10-24
+

@@ -86,7 +86,9 @@
 | 扫描线程提前退出 / 队列一空就结束导致漏扫 / junction 环把扫描卡死 | `ADR-023`（`_ScanQueue`：`pending` 计数 + 条件变量 + `realpath` 去重） |
 | 列表播放遇到打不开的视频不会自动跳过，要手动点「下一个」 | `ISSUE-012`（`_skip_unplayable`，仅列表模式） |
 | 视频列表里混进一大堆 TypeScript `.ts` 文件 | `ISSUE-013`（MPEG-TS 同步字节校验 `_looks_like_mpeg_ts`） |
-| 没点右键却也扫描了目录图片 / 翻目录时反复扫 | `ADR-024`（点目录 300ms 防抖 + 取消排队任务） |
+| 没点右键却也扫描了目录图片 / 翻目录时反复扫 | `ADR-025`（点目录不再扫描，改由右键 / 文件菜单触发） |
+| 点目录就自动扫描、还想让列表只在菜单里加载 | `ADR-025`（`加载为幻灯片列表...` / `加载为视频列表...` 两个菜单项） |
+| 扫 `C:/Users` 一个视频都扫不到（AppData 下有 mp4） | `ISSUE-014`（junction 改用真实路径入队，别让不可读链接占住去重键） |
 | 日志被"拒绝访问"警告刷屏 | `ADR-024`（前 10 条 WARNING + 1 条汇总，其余降 DEBUG） |
 | `tmp\` 里几万文件时 `Remove-Item` / `rd /s /q` 超时删不掉 | `PIT-019`（robocopy 空目录 `/mir` 秒删） |
 | `Player.py` 太长 / 想拆 MainWindow / 新增窗口功能该放哪 | `ADR-020`（入口只做启动控制，窗口拆进 `src/window/`：mixin + theme/i18n/file_tree/menu_bar） |
