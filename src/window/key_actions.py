@@ -57,7 +57,7 @@ class KeyActionsMixin:
             result.get('imported', 0), result.get('updated', 0), result.get('skipped', 0)))
         show_info(self, '导入密钥', message)
         self.notice(message.replace('\n', ' '))
-        self.private_tree_model.refresh()
+        self.model.refresh()
 
     def _export_key_package(self):
         """导出与密册完全一致的密钥数据库文件（SQLite，*.db）。"""

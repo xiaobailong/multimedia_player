@@ -78,6 +78,14 @@ def _looks_like_mpeg_ts(path):
     return False
 
 
+def is_mpeg_ts_file(path):
+    """公开判定：`.ts/.mts/.m2ts` 是不是真正的 MPEG-TS（TypeScript 源码返回 False）。
+
+    私密列表（`PrivateService.list_videos`）也用同一套判断，别在别处复制逻辑（`ISSUE-013`）。
+    """
+    return _looks_like_mpeg_ts(path)
+
+
 def _safe_cancelled(is_cancelled):
     """调用方传入的取消判定；任何异常都当作"未取消"，不能让它打断扫描线程。"""
     if is_cancelled is None:

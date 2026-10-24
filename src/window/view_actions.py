@@ -15,7 +15,7 @@ from src.window.theme import CENTRAL_WIDGET_FULLSCREEN_STYLE, CENTRAL_WIDGET_STY
 
 
 class ViewActionsMixin:
-    """全屏 / 快捷键 / 窗口状态 / 普通与私密显示切换。"""
+    """全屏 / 快捷键 / 窗口状态 / 显示切换。"""
 
     def change_screen_full(self):
         if self.full_screen_state % 2 == self.full:
@@ -32,11 +32,7 @@ class ViewActionsMixin:
             self.video_show_layout.setVisible(True)
         if self.pic_show_qwidget.isVisible():
             self.pic_show_layout.setVisible(True)
-        if self.private_mode:
-            self.treeView.setVisible(False)
-            self.private_tree_view.setVisible(True)
-        else:
-            self.treeView.setVisible(True)
+        self.treeView.setVisible(True)
         self.statusbar.setVisible(True)
         # 恢复标题栏
         self.title_bar.setVisible(True)
@@ -143,7 +139,6 @@ class ViewActionsMixin:
             self.pic_show_layout.setVisible(False)
 
         self.treeView.setVisible(False)
-        self.private_tree_view.setVisible(False)
         self.statusbar.setVisible(False)
         # 隐藏标题栏
         self.title_bar.setVisible(False)
@@ -227,8 +222,6 @@ class ViewActionsMixin:
         event.accept()
 
     def toggle_tree(self):
-        if self.private_mode:
-            return
         if self.tree_visible:
             self.tree_sizes = self.mainQWidget.sizes()
             self.treeView.setVisible(False)

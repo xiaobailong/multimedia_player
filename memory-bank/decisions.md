@@ -905,3 +905,156 @@
   `src/window/view_actions.py`、`src/window/private_actions.py`
 - 相关条目: `ADR-024`（已废弃）、`ISSUE-014`（同一次反馈里的漏扫 bug）、`ISSUE-007`
 - 首次记录: 2026-10-24
+
+## ADR-026 「私密模式」是否值得作为独立模式：建议删掉模式开关、合并为单一工作区（仅评估，待决）
+- 日期: 2026-10-24 | 状态: 已采纳（阶段 1 已落地；阶段 2 明确不做）
+- 背景: 用户提出「私密模式是否有必要存在；能否与普通模式合并，一个界面包含两者全部功能，并去掉视图菜单里的模式选择」。
+- 评估（以当前代码为证）:
+  1. **模式不是安全边界**：`_toggle_private_mode()` 只改内存标志 + 显隐控件，**没有任何口令 / 鉴权**
+     （`private_actions.py:16-60`）；`private_mode` 不持久化（`main_window.py:99`，重启恒 `False`）。
+     也就是说任何人点一下「视图 → 私密模式」就能看到私密库，模式挡不住本机用户；
+     真正的保护来自 AES-256-GCM + 随机文件名 + 密钥库（`ADR-009`）。
+  2. **私密树是普通树的功能子集**：私密树右键只有「加密 / 解密 / 刷新」三项（`private_actions.py:247-251`）；
+     普通树有复制 / 移动 / 删除 / 刷新 / 加载为幻灯片列表 / 加载为视频列表 / 设置为截图路径 /
+     设置为剪切路径 / 设置默认展开（`media_actions.py:44-69`）。而私密模式下点目录会**同步解密整目录图片**
+     （`private_actions.py:172-227`），与 `ADR-025`「点目录不做事」直接冲突。
+  3. **代价是双份 UI 状态**：两套 `QDirModel` + 两棵 `FileTreeView`（`main_window.py:149-166`）、
+     三栏 splitter、私密占位层与「打开私密库」按钮（`main_window.py:176-198`）、
+     切模式时保存 / 恢复可见性与比例（`private_actions.py:62-87`），`private_mode` 分支还散在
+     `view_actions.py:35 / 230`；`private_tree_model.refresh()` 要在 `key_actions.py:60`、
+     `private_actions.py:349` 各刷一次。引用计数（`private_mode|private_tree|private_overlay|private_library`）：
+     `main_window.py` 19 / `private_actions.py` 38 / `menu_bar.py` 9 / `view_actions.py` 4 / `key_actions.py` 1。
+  4. **密文在普通树里本来就看得见**：`QDirModel` 不过滤文件，32 位 hex 无扩展名密文在普通模式下同样显示；
+     只是 `on_tree_clicked()` 按扩展名判类型（`pic_show_layout.py:432` / `video_show_layout.py:880`），
+     密文落到「文件格式错误!!!」（`media_actions.py:201-204`）。
+     所以合并缺的不是安全，而是**点击时的解密分流**。
+- 决策建议（待用户确认后实施）:
+  - **阶段 1（推荐先做，风险低）：删掉模式开关，只留一套树 / 工作区。**
+    1. `menu_bar.py`：删 `mode_group` / `normal_mode_action` / `private_mode_action`；视图菜单只留
+       「文件列表面板」「显示控制器」；文件菜单加「打开私密库...」（用 `private.library.path` 记路径、
+       把树根切过去，替代原来的占位按钮）。
+    2. `main_window.py`：删 `private_mode` 标志、`private_tree_model/view`、`private_overlay_widget`；
+       splitter 回到两栏。
+    3. `media_actions.on_tree_clicked()`：入口先 `private_service.resolve_playable(self.path)`（密文→解密缓存、
+       明文原样），再按返回的 `play_path` 判视频 / 图片，标题栏用原始文件名。`describe()` 只查一次 sqlite
+       + 读 4 字节文件头，单击开销可忽略。
+    4. `media_actions.right_click_menu()`：补「加密该路径下的图片和视频」「解密该路径下的文件」，
+       复用现成的 `_encrypt_private_path` / `_decrypt_private_path`。
+    5. `private_actions.py`：删 `_toggle_private_mode` / `_save_normal_state` / `_restore_normal_state` /
+       `_show_private_overlay` / `_load_private_library` / `_on_private_tree_clicked` / `_private_right_click_menu`；
+       保留批量加解密、`_load_private_slideshow`（改挂到显式菜单项）与全部进度 / 失败回调。
+    6. `view_actions.py`：去掉两处 `private_mode` 分支（`screen_normal` / `toggle_tree`）。
+    7. `key_actions.py` 与批量完成回调：`private_tree_model.refresh()` → `model.refresh()`。
+  - **阶段 2（可选、暂不建议）**：让「加载为幻灯片 / 视频列表」的扫描包含密文并按需解密。
+    要动 `PicInputLayout._on_scan_finished` 与 `VideoShowLayout.loadData`（后者 50KB 遗留代码），
+    风险远高于收益；阶段 1 用显式的「加载私密幻灯片（含密文）」保住现有能力即可。
+- 理由: 模式开关不提供任何访问控制，却带来双份 UI 状态、功能割裂（私密树少 8 个普通树入口：复制 / 移动 /
+  删除 / 加载为幻灯片列表 / 加载为视频列表 / 截图路径 / 剪切路径 / 默认展开）和与 `ADR-025`
+  冲突的隐式扫描；合并后「一份界面 = 全部功能」，加密 / 解密退化为普通的**文件操作**，语义更准。
+- 备选与为何不选:
+  - 保留模式并加口令解锁 / 自动锁定：能做，但要新增解锁 UI、超时锁定、忘记口令兜底，
+    且仍挡不住资源管理器 / 其它进程直接看密文；安全收益接近 0。
+  - 保留模式、只把两棵树补成等价：等于每类操作写两遍，维护成本翻倍，模式本身仍无意义。
+  - 阶段 1 就做密文列表扫描：视频列表切歌时要逐个解密大文件，还要改 50KB 遗留布局，收益不抵风险。
+- 影响 / 约束（实施时要注意）:
+  - **密文可见性**：合并后普通树里能直接看到 hex 名密文（现在普通模式也能看到，不是新增暴露）；
+    「打开私密库」书签保留一键进入。
+  - **误删风险（新增）**：普通树右键「删除 / 移动」可作用到密文；建议对密文目标的「删除」加二次确认
+    （删掉密文＝丢数据，密钥库救不回）。
+  - **私密幻灯片**：点目录不再自动解密（符合 `ADR-025`），必须走显式菜单项；
+    `_load_private_slideshow` 逻辑原样保留，只换触发入口。
+  - **列表 / 归集不含密文**：`media_scan` / `collect` 按扩展名筛，密文天然被排除（本次不处理；
+    归集若需要，直接拷密文即可，另开条目）。
+  - **评分不受影响**：`RatingManager` 用内容指纹（`rating_manager.py:61`），密文解密后指纹与明文一致。
+- 验证方法（阶段 1 实施后，offscreen 构造 `MainWindow`）:
+  1. 菜单里没有「普通模式 / 私密模式」，视图菜单只剩两项；
+  2. 普通图片 / 视频点击仍能播放；密文点击 → 解密到缓存并播放，标题栏显示原文件名；
+     缺密钥 → 弹提示不崩溃；
+  3. 右键「加密该路径下的图片和视频」→ 密文生成、源文件删除；「解密该路径下的文件」→ 原名恢复；
+  4. 私密幻灯片动作能把整目录图片按序展示；
+  5. 全屏进出、`Ctrl+B` 切树、关闭清理缓存均正常。
+- 相关文件: `src/window/private_actions.py`、`src/window/main_window.py`、`src/window/menu_bar.py`、
+  `src/window/media_actions.py`、`src/window/view_actions.py`、`src/window/key_actions.py`、
+  `src/private_mode/private_service.py`
+- 相关条目: `ADR-009`（密钥 / 加解密方案，不变）、`ADR-020`（mixin 拆分）、`ADR-025`（点目录不扫描）
+- 首次记录: 2026-10-24
+- 落地结果（2026-10-24，阶段 1 已完成）:
+  - `menu_bar.py`：删 `mode_group` 与两个模式 QAction；视图菜单只剩「文件列表面板」「显示控制器」；
+    文件菜单新增「打开私密库...」「加载为私密幻灯片列表...」（密文没有扩展名，普通扫描认不出）；
+  - `main_window.py`：删 `private_mode` 标志、`private_tree_model/view`、`private_overlay_widget`
+    与「打开私密库」按钮；splitter 回到两栏 `[10000*left, 10000*right]`；
+  - `media_actions.py`：`right_click_menu()` 重写为 4 组（加载列表 / 文件操作 / 路径设置 / 私密操作子菜单），
+    菜单位置改用 `treeView.viewport().mapToGlobal(pos)`（错误写法见 `PIT-020`）；
+    `on_tree_clicked()` 统一走 `private_service.resolve_playable()`；`delete()` 对密文加二次确认；
+  - `private_actions.py`：删模式切换 / 状态保存恢复 / 私密树点击 / 私密右键菜单 / 覆盖层；
+    保留 `_open_private_library`（改为切树根）、`_load_private_slideshow`、加解密与批量进度回调；
+    新增 `_is_encrypted_file` / `_encrypt_current_target` / `_decrypt_current_target` /
+    `load_private_pic_list_dialog` / `load_private_slideshow_for_target`（378 → 265 行）；
+  - `view_actions.py`：去掉 `private_mode` 两个分支（全屏隐藏树 / `Ctrl+B` 提前 return）；
+  - `key_actions.py`：`private_tree_model.refresh()` → `model.refresh()`；
+  - `file_tree.py`、`README.md` 文档同步；
+  - 全仓库 `private_mode|private_tree|private_overlay|normal_mode_action|_toggle_private_mode`
+    引用归零（只剩包名 `src.private_mode`，与界面模式无关）。
+- 验证（offscreen 窗口级冒烟 **36 项全 PASS**，脚本 `tmp\smoke_merge.py`，验证后已清理）:
+  1. 8 个已删属性 `hasattr == False`；splitter 两栏；
+  2. 视图菜单无模式项、文件菜单两个新入口在位；
+  3. 右键菜单 4 组齐全 + 私密子菜单 3 项；文件目标禁用目录类动作、目录目标启用；
+     空白处右键（无目标）只剩「刷新」可用；
+  4. 明文图片点击正常播放；密文点击 → 解密到 `cache/<md5>/<原名>` 并播放，标题栏显示原名；
+  5. 右键「加密 / 解密」正确转发右键目标；私密幻灯片列出 2 张缓存明文并显示；
+  6. `Ctrl+B`、全屏进出、关闭清理缓存均正常。
+  - 另外逐函数比对：`_encrypt_private_path` / `_decrypt_private_path` / `_on_private_batch_progress`
+    与重构前**逐行相同**；`_run_private_batch` / `_on_private_batch_completed` / `_on_private_batch_failed`
+    只有「私密模式 → 私密操作」文案和删掉 `private_tree_model.refresh()` 两处差异。
+- 阶段 2（密文参与「加载为幻灯片 / 视频列表」扫描、树里显示原文件名）**部分落地**：
+  「私密视频列表」以**显式入口 + 按需解密**的方式补上（`ADR-027`），没有改扫描器；
+  「树里显示解密后原名」仍未做（当前用 `[私密库]` 目录标记代替）。
+
+## ADR-027 私密视频列表（播到哪一集解哪一集）+ 私密库目录标记 + 私密侧扩展名口径统一
+- 日期: 2026-10-24 | 状态: 已采纳
+- 背景: `ADR-026` 合并模式后，私密操作只剩「加载私密幻灯片」。用户提出两点：
+  ① 想按列表播放私密视频，得有对应入口；② 需要「把某个目录标记为私密库」，
+     以标识该目录下都是加密文件（否则密文没有扩展名，普通入口扫出来是 0 个，看着像坏了）。
+- 决策:
+  1. **私密视频列表**：`PrivateService.list_videos(dir_path)`（含密文、按 mtime 升序）；
+     `VideoShowLayout` 增加 `set_path_resolver()`，在 `play()` 里把密文换成缓存明文 ⇒
+     列表里直接放**密文原路径**，播到哪一集才解密哪一集，不预先解整目录大文件；
+     解析失败返回空串，列表模式自动走已有的 `_skip_unplayable()` 跳过。
+  2. **私密库标记**：配置项 `private.library.dirs`（JSON 数组，绝对路径），右键在
+     「标记为私密库（本目录全是密文）/ 取消私密库标记」之间切换；标记对**子目录**同样生效；
+     树里该目录行追加 `[私密库]` 并高亮（`FileDisplayDelegate.paint`），tooltip 补一句说明；
+     标记目录上的「加载为幻灯片 / 视频列表」自动改走解密分支（右键菜单与文件菜单两个入口都做了）。
+  3. **扩展名口径统一**：私密侧 `IMAGE_EXTENSIONS / VIDEO_EXTENSIONS` 改为复用
+     `src/utils/media_types.py`（25 图 / 24 视频），加密范围、`describe()`、`list_images()`、
+     `list_videos()` 全部同一份清单（原来私密侧只有 12 图 + mp4/mkv，.avi/.mov/.svg 既加不了密也列不出来）。
+- 理由: 视频动辄几百 MB~数 GB，加载列表时全量解密既慢又占盘；按需解密把成本摊到真正看的那一集。
+  标记则解决「密文没扩展名 ⇒ 普通扫描 0 结果」的误导，并给树一个可见标识。
+- 备选与为何不选:
+  - 视频列表也在加载时全解密（与幻灯片一致）：实现最简单，但 10 集 5GB 的目录要先解 5GB 才开播；
+  - 列表里放解密后的缓存路径：切集时会指向过期缓存（批量操作 / 重启后失效）；
+  - 标记写进文件系统（`desktop.ini` / 隐藏标记文件）：会被同步盘带走，对「本机私密」语义过重；
+  - 只做视觉标记、不改加载行为：用户还得手动选「私密视频列表」，容易以为普通入口坏了；
+  - 在 `looks_like_plain_media()` 里补齐所有容器签名：每加一种格式都要维护，
+    不如「有媒体扩展名 ⇒ 必是明文」这条硬规则（落地时暴露的误判见 `ISSUE-015`）。
+- 影响 / 约束:
+  - `VideoShowLayout.play()` 多 4 行解析逻辑；解析器用 **lambda 动态取服务实例**（见 `PIT-021`），
+    直接绑定实例方法在替换 `private_service` 后会失效；
+  - 密文视频的播放位置记忆落在缓存路径上（缓存退出即清），与合并前行为一致；
+  - `ISSUE-015`：`encrypt_one()` / `scan_encryptable()` 的密文判定改为
+    「`is_v2_file()` 或（无扩展名 + `looks_encrypted()`）」，否则 .mpg/.vob/.ts/.rmvb 会被误判为已加密；
+  - `.ts/.mts/.m2ts` 复用 `media_scan.is_mpeg_ts_file()`（新增公开包装），与扫描端同一套校验（`ISSUE-013`）；
+  - `private.library.dirs` 是新增配置项（首次运行不存在）；JSON 直接拼进 `config` 表，
+    含单引号的路径仍受 `ConfigManager` 字符串拼 SQL 的限制（本机路径极少出现，未改 `ConfigManager`）。
+- 验证（offscreen 窗口级冒烟 **44 项 PASS / 0 FAIL**，脚本 `tmp\smoke_private.py`，验证后已清理）:
+  1. 标记写入配置 / 重读 / 祖先判定 / 取消标记都正确，未标记目录不受影响；
+  2. 已标记目录的右键项显示「取消私密库标记」；标记目录上的「加载为视频列表」自动走私密分支；
+  3. `list_videos()` 只列视频、返回密文原路径；`.ts` 文本被排除、真 MPEG-TS 保留；
+  4. 密文视频第 1 集与 `next()` 的下一集都解到 `cache/<md5>/<原名>`；
+  5. `FileDisplayDelegate.paint` 绘制 `[私密库]` 行不崩；`Ctrl+B`、全屏进出正常；
+  6. 测试写入的 `private.library.dirs` 已在收尾删掉（`player.db` 无残留）。
+- 相关文件: `src/private_mode/private_service.py`、`src/layout/video_show_layout.py`、
+  `src/window/private_actions.py`、`src/window/media_actions.py`、`src/window/file_delegate.py`、
+  `src/window/menu_bar.py`、`src/window/main_window.py`、`src/utils/media_scan.py`
+- 相关条目: `ADR-026`（模式合并）、`ADR-021`（扩展名单点）、`ISSUE-013`（TS 校验）、
+  `ISSUE-015`（密文误判）、`PIT-021`
+- 首次记录: 2026-10-24

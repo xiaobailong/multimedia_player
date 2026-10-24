@@ -1,176 +1,203 @@
 # -*- coding: utf-8 -*-
-"""私密模式：模式切换、私密库加载、密文播放、批量加解密。"""
+"""私密媒体动作：打开私密库、密文点开即解密、批量加解密、私密幻灯片。
+
+私密不再是独立的界面模式（见 ADR-026）：加密 / 解密只是普通工作区里的文件操作，
+密文在目录树里被点开时按需解密到本次运行的缓存目录，退出 / 批量操作后清空。
+"""
+import json
 import os
 
 from loguru import logger
-from PyQt5.QtWidgets import QApplication, QMenu
+from PyQt5.QtWidgets import QApplication
 
 from src.layout.styled_dialogs import (ProgressDialog, ask_yes_no, pick_directory,
-                                       show_error, show_info, show_warning)
+                                       show_error, show_info)
+from src.layout.video_show_layout import VideoShowLayout
 from src.private_mode.private_batch_thread import PrivateBatchThread
 
 
 class PrivateActionsMixin:
-    """私密模式相关的窗口动作。"""
+    """私密媒体相关的窗口动作（模式已合并，只保留功能入口）。"""
 
-    def _toggle_private_mode(self, enable):
-        if enable == self.private_mode:
-            return
-
-        self.private_mode = enable
-
-        if enable:
-            # 切换到私密模式
-            self._save_normal_state()
-            self.normal_mode_action.setChecked(False)
-            self.private_mode_action.setChecked(True)
-
-            # 隐藏普通树
-            self.treeView.setVisible(False)
-            self.toggle_tree_action.setEnabled(False)
-
-            # 隐藏普通模式的视频/图片
-            self.video_show_qwidget.setVisible(False)
-            self.pic_show_qwidget.setVisible(False)
-
-            # 检查是否有私密库路径
-            if self.config_manager.exist(self.private_library_path_key):
-                private_path = self.config_manager.get(self.private_library_path_key)
-                if os.path.isdir(private_path):
-                    self._load_private_library(private_path)
-                else:
-                    self._show_private_overlay()
-            else:
-                self._show_private_overlay()
-
-            self.statusLabel.setText("私密模式")
-        else:
-            # 切换回普通模式
-            self.normal_mode_action.setChecked(True)
-            self.private_mode_action.setChecked(False)
-
-            # 隐藏私密切换相关控件
-            self.private_tree_view.setVisible(False)
-            self.private_overlay_widget.setVisible(False)
-
-            # 恢复普通模式状态
-            self._restore_normal_state()
-            self.toggle_tree_action.setEnabled(True)
-
-            self.statusLabel.setText("普通模式")
-
-    def _save_normal_state(self):
-        """保存普通模式下的UI状态"""
-        self._saved_tree_visible = self.tree_visible
-        self._saved_tree_sizes = self.mainQWidget.sizes()
-        self._saved_video_visible = self.video_show_qwidget.isVisible()
-        self._saved_pic_visible = self.pic_show_qwidget.isVisible()
-
-    def _restore_normal_state(self):
-        """恢复普通模式下的UI状态"""
-        if hasattr(self, '_saved_tree_visible'):
-            self.tree_visible = self._saved_tree_visible
-            self.treeView.setVisible(self._saved_tree_visible)
-        else:
-            self.treeView.setVisible(True)
-            self.tree_visible = True
-        if hasattr(self, 'toggle_tree_action'):
-            self.toggle_tree_action.setChecked(self.tree_visible)
-
-        if hasattr(self, '_saved_video_visible') and self._saved_video_visible:
-            self.video_show_qwidget.setVisible(True)
-        if hasattr(self, '_saved_pic_visible') and self._saved_pic_visible:
-            self.pic_show_qwidget.setVisible(True)
-
-        if hasattr(self, '_saved_tree_sizes'):
-            self.mainQWidget.setSizes(self._saved_tree_sizes)
-
-    def _show_private_overlay(self):
-        """显示私密模式覆盖层（无路径状态）"""
-        self.private_overlay_widget.setVisible(True)
-        self.video_show_qwidget.setVisible(False)
-        self.pic_show_qwidget.setVisible(False)
-        self.private_tree_view.setVisible(False)
-        # 无路径时树隐藏，右侧工作区占满
-        self.mainQWidget.setSizes([0, 0, 1])
-
+    # ============================================
+    #  入口：打开私密库 / 私密幻灯片
+    # ============================================
     def _open_private_library(self):
-        """打开私密库文件夹选择对话框"""
-        selected_path = pick_directory(self, "选择私密库文件夹")
+        """文件菜单 → 打开私密库：选目录并把它设为左侧树的根（等价于打开该目录）。"""
+        start_dir = ''
+        if self.config_manager.exist(self.private_library_path_key):
+            saved = self.config_manager.get(self.private_library_path_key)
+            if saved and os.path.isdir(saved):
+                start_dir = saved
+
+        selected_path = pick_directory(self, '选择私密库文件夹', start_dir=start_dir)
         if not selected_path or not os.path.isdir(selected_path):
             return
 
         self.config_manager.add_or_update(self.private_library_path_key, selected_path)
-        self._load_private_library(selected_path)
-
-    def _load_private_library(self, path):
-        """加载私密库路径到左侧树"""
-        self.private_overlay_widget.setVisible(False)
-        self.private_tree_view.setVisible(True)
-        self.private_tree_model.refresh()
-        root_index = self.private_tree_model.index(path)
-        self.private_tree_view.setRootIndex(root_index)
-        # 展开根目录
-        self.private_tree_view.setExpanded(root_index, True)
-        # 私密树 : 工作区 = left : right
-        self.mainQWidget.setSizes([0, 10000 * self.left, 10000 * self.right])
+        self._set_tree_root(selected_path)
+        self.expand_path(selected_path)
         if self.private_service.has_key():
-            self.notice('私密模式：已加载密钥')
+            self.notice('私密库：已加载密钥')
         else:
-            self.notice('私密模式：尚未导入密钥，加密文件请先「密钥 → 导入密钥」')
+            self.notice('私密库：尚未导入密钥，加密文件请先「密钥 → 导入密钥」')
 
-    def _on_private_tree_clicked(self, qmodelindex):
-        """私密模式下树节点点击事件（点到密文时先解密再交给现有展示逻辑）"""
-        file_path = self.private_tree_model.filePath(qmodelindex)
-
-        if os.path.isdir(file_path):
-            self._load_private_slideshow(file_path)
+    # ============================================
+    #  私密库标记：记住「这个目录下全是密文」
+    # ============================================
+    def _load_private_library_dirs(self):
+        """从配置读出被标记的私密库目录（JSON 数组），缓存成绝对路径列表。"""
+        self._private_library_dirs = []
+        if not self.config_manager.exist(self.private_library_dirs_key):
             return
-
-        if not os.path.isfile(file_path):
-            return
-
-        # 停止幻灯片定时器
-        if self.inputAndExeLayout.timer.isActive():
-            self.inputAndExeLayout.timer.stop()
-
-        # 密文 → 解密到本次运行缓存；明文 → 原样返回
+        raw = self.config_manager.get(self.private_library_dirs_key) or ''
         try:
-            play_path, display_name = self.private_service.resolve_playable(file_path)
+            values = json.loads(raw) if raw.strip() else []
+        except (TypeError, ValueError):
+            logger.warning('私密库标记配置无法解析: %r' % raw)
+            return
+        if not isinstance(values, list):
+            return
+        result = []
+        for value in values:
+            if isinstance(value, str) and value.strip():
+                result.append(os.path.normpath(os.path.abspath(value)))
+        self._private_library_dirs = result
+
+    def _save_private_library_dirs(self, paths):
+        self.config_manager.add_or_update(
+            self.private_library_dirs_key,
+            json.dumps(paths, ensure_ascii=False) if paths else '')
+        self._private_library_dirs = list(paths)
+        try:
+            self.model.refresh()
+            self.treeView.viewport().update()
         except Exception as e:
-            logger.error(f'私密文件解密失败 {file_path}: {e}')
-            self.notice('解密失败：' + str(e))
-            show_warning(self, '私密文件', str(e))
-            return
+            logger.warning(f'刷新私密库标记失败: {e}')
 
-        # 根据文件类型切换显示（复用普通模式的播放 / 看图功能）
-        if self.video_show_layout.is_video(play_path):
-            self.video_show_layout.play_mode = self.video_show_layout.play_mode_one
-            self.video_show_layout.play_list.clear()
-            self.video_show_layout.play_list_index = 0
-            self.change_show(self.show_type_video)
-            self.video_show_layout.play(play_path)
-        elif self.pic_show_layout.is_pic(play_path):
-            self.pic_show_layout.counter = 0
-            self.pic_show_layout.inputAndExeLayout.list_files.clear()
-            self.pic_show_layout.inputAndExeLayout.list_files.append(play_path)
-            self.change_show(self.show_type_pic)
-            self.pic_show_layout.play(play_path)
+    def is_private_library_root(self, path):
+        """这一行目录本身是否被标记为私密库（树里只给被标记的那一行打标记）。"""
+        if not path:
+            return False
+        key = os.path.normcase(os.path.normpath(os.path.abspath(path)))
+        return any(os.path.normcase(p) == key
+                   for p in getattr(self, '_private_library_dirs', []))
+
+    def is_in_private_library(self, path):
+        """path 自身或任一祖先被标记为私密库（标记对子目录同样生效）。"""
+        if not path:
+            return False
+        marks = {os.path.normcase(p) for p in getattr(self, '_private_library_dirs', [])}
+        if not marks:
+            return False
+        current = os.path.normcase(os.path.normpath(os.path.abspath(path)))
+        while True:
+            if current in marks:
+                return True
+            parent = os.path.dirname(current)
+            if parent == current:
+                return False
+            current = parent
+
+    def _toggle_private_library_target(self):
+        """右键 → 私密操作 → 标记 / 取消标记本目录为私密库。"""
+        target = self.path_right_click
+        if not target or not os.path.isdir(target):
+            self.notice('请先在左侧树中选择一个目录')
+            return
+        target = os.path.normpath(os.path.abspath(target))
+        paths = list(getattr(self, '_private_library_dirs', []))
+        key = os.path.normcase(target)
+        if any(os.path.normcase(p) == key for p in paths):
+            paths = [p for p in paths if os.path.normcase(p) != key]
+            self._save_private_library_dirs(paths)
+            self.notice('已取消私密库标记：' + target)
         else:
-            message = '文件格式不支持：' + display_name
-            self.video_show_layout.titleQLabel.setText(message)
-            self.pic_show_layout.titleQLabel.setText(message)
-            self.notice(message)
+            paths.append(target)
+            self._save_private_library_dirs(paths)
+            self.notice('已标记为私密库（本目录下按密文处理）：' + target)
+
+    def load_private_pic_list_dialog(self):
+        """文件菜单 → 加载为私密幻灯片列表：选目录后解密其中图片并按序展示。"""
+        directory = pick_directory(self, '选择私密目录（可含密文）',
+                                   start_dir=self._private_list_start_dir())
+        if not directory or not os.path.isdir(directory):
+            return
+        self._load_private_slideshow(directory)
+
+    def load_private_video_list_dialog(self):
+        """文件菜单 → 加载为私密视频列表：选目录后把视频（含密文）加入播放列表。"""
+        directory = pick_directory(self, '选择私密视频目录（可含密文）',
+                                   start_dir=self._private_list_start_dir())
+        if not directory or not os.path.isdir(directory):
+            return
+        self._load_private_video_list(directory)
+
+    def _private_list_start_dir(self):
+        """私密列表选择框的起始目录：优先当前选中项，其次上次打开过的私密库。"""
+        start_dir = self._list_dir_hint()
+        if not start_dir and self.config_manager.exist(self.private_library_path_key):
+            saved = self.config_manager.get(self.private_library_path_key)
+            if saved and os.path.isdir(saved):
+                start_dir = saved
+        return start_dir
+
+    def load_private_video_list_for_target(self):
+        """右键 → 私密操作 → 加载私密视频列表（含密文）：作用于右键选中的目录。"""
+        target = self.path_right_click
+        if not target or not os.path.isdir(target):
+            self.notice('请在左侧树中选择一个目录')
+            return
+        self._load_private_video_list(target)
+
+    def _load_private_video_list(self, dir_path):
+        """私密目录：列表里放密文原路径，播到哪一集才解密（不预先解密大文件）。
+
+        `VideoShowLayout` 通过 `set_path_resolver()` 注入的解析器在 `play()` 里
+        把密文换成缓存明文，所以这里可以直接把密文路径塞进 `play_list`。
+        """
+        try:
+            videos = self.private_service.list_videos(dir_path)
+        except Exception as e:
+            logger.error(f'读取私密视频目录失败 {dir_path}: {e}')
+            self.notice('读取目录失败：' + str(e))
+            return
+        if not videos:
+            self.notice('该目录下没有可播放的视频（或缺少配套密钥）')
             return
 
-        # 标题栏显示原始文件名（而不是解密缓存里的路径）
+        layout = self.video_show_layout
+        layout.cancel_scan()
+        layout.play_list.clear()
+        layout.play_list.extend(videos)
+        layout.play_list_index = 0
+        layout._list_reset_mode = False
+        layout.play_mode = layout.play_mode_list
+        self.config_manager.add_or_update(VideoShowLayout.video_show_list_key, dir_path)
+        self.change_show(self.show_type_video)
+        layout.play(videos[0])
+        self.notice('私密视频列表：%d 个（%s）' % (len(videos), dir_path))
+
+    def load_private_slideshow_for_target(self):
+        """右键 → 私密操作 → 加载私密幻灯片（含密文）：作用于右键选中的目录。"""
+        target = self.path_right_click
+        if not target or not os.path.isdir(target):
+            self.notice('请在左侧树中选择一个目录')
+            return
+        self._load_private_slideshow(target)
+
+    def _is_encrypted_file(self, path):
+        """判断文件是否为密文（右键「删除」前的二次确认用）。"""
+        if not path or not os.path.isfile(path):
+            return False
         try:
-            self.title_bar.setInfo(os.path.splitext(display_name)[0], '')
-        except Exception:
-            pass
+            return bool(self.private_service.describe(path).get('encrypted'))
+        except Exception as e:
+            logger.warning(f'判断密文失败 {path}: {e}')
+            return False
 
     def _load_private_slideshow(self, dir_path):
-        """私密目录：把目录下的图片（含密文）准备好，交给幻灯片功能展示。"""
+        """私密目录：把目录下的图片（含密文）解密到缓存，交给幻灯片功能展示。"""
         try:
             images = self.private_service.list_images(dir_path)
         except Exception as e:
@@ -181,11 +208,10 @@ class PrivateActionsMixin:
         if not images:
             self.pic_show_qwidget.setVisible(False)
             self.video_show_qwidget.setVisible(False)
-            self.private_overlay_widget.setVisible(False)
             self.notice('该目录下没有可展示的图片')
             return
 
-        progress = ProgressDialog(self, '私密模式', '正在解密图片...', len(images))
+        progress = ProgressDialog(self, '私密幻灯片', '正在解密图片...', len(images))
         progress.show()
         QApplication.processEvents()
 
@@ -211,8 +237,7 @@ class PrivateActionsMixin:
             self.notice('没有可展示的图片（可能是缺少配套密钥）')
             return
 
-        # 私密模式：文件已解密到缓存目录，列表直接用解密后的明文路径
-        # （先取消后台扫描，避免其它目录的扫描结果覆盖这里的列表）
+        # 列表里直接用解密后的明文路径；先取消后台扫描，避免其它目录的扫描结果覆盖
         self.inputAndExeLayout.cancel_scan()
         self.inputAndExeLayout.content_path = dir_path
         self.inputAndExeLayout.list_files.clear()
@@ -225,38 +250,26 @@ class PrivateActionsMixin:
                                    '(1/%d)' % len(playable))
         except Exception:
             pass
+        self.notice('私密幻灯片：%d 张（%s）' % (len(playable), dir_path))
 
     # ============================================
-    #  私密模式：左侧树右键（加密 / 解密）
+    #  批量加解密（右键「私密操作」触发）
     # ============================================
-    def _private_right_click_menu(self, pos):
-        """私密模式左侧树右键菜单（只有私密模式才有）。"""
-        if not self.private_mode:
+    def _encrypt_current_target(self):
+        """右键 → 私密操作 → 加密该路径下的图片和视频。"""
+        target = self.path_right_click
+        if not target or not os.path.exists(target):
+            self.notice('请先在左侧树中选择文件或目录')
             return
+        self._encrypt_private_path(target)
 
-        index = self.private_tree_view.indexAt(pos)
-        if index.isValid():
-            target = self.private_tree_model.filePath(index)
-        else:
-            root_index = self.private_tree_view.rootIndex()
-            target = self.private_tree_model.filePath(root_index) if root_index.isValid() else ''
-        if not target:
-            self.notice('请先在左侧树中选择目录')
+    def _decrypt_current_target(self):
+        """右键 → 私密操作 → 解密该路径下的文件。"""
+        target = self.path_right_click
+        if not target or not os.path.exists(target):
+            self.notice('请先在左侧树中选择文件或目录')
             return
-
-        menu = QMenu(self.private_tree_view)
-        encrypt_action = menu.addAction('加密该路径下的图片和视频')
-        decrypt_action = menu.addAction('解密该路径下的文件')
-        menu.addSeparator()
-        refresh_action = menu.addAction('刷新')
-
-        chosen = menu.exec_(self.private_tree_view.viewport().mapToGlobal(pos))
-        if chosen == encrypt_action:
-            self._encrypt_private_path(target)
-        elif chosen == decrypt_action:
-            self._decrypt_private_path(target)
-        elif chosen == refresh_action:
-            self.private_tree_model.refresh()
+        self._decrypt_private_path(target)
 
     def _encrypt_private_path(self, target):
         try:
@@ -312,11 +325,11 @@ class PrivateActionsMixin:
 
     def _run_private_batch(self, mode, target, total):
         if self.private_batch_thread is not None and self.private_batch_thread.isRunning():
-            show_info(self, '私密模式', '已有加解密任务在运行，请等待完成。')
+            show_info(self, '私密操作', '已有加解密任务在运行，请等待完成。')
             return
 
         title = '正在加密' if mode == 'encrypt' else '正在解密'
-        progress = ProgressDialog(self, '私密模式', '%s：%s' % (title, target), max(total, 1))
+        progress = ProgressDialog(self, '私密操作', '%s：%s' % (title, target), max(total, 1))
         progress.show()
 
         thread = PrivateBatchThread(mode, target, parent=self)
@@ -346,7 +359,6 @@ class PrivateActionsMixin:
 
         # 加解密后缓存里的明文已经过期，清掉重新按需解密
         self.private_service.clear_cache()
-        self.private_tree_model.refresh()
         self.model.refresh()
 
         if mode == 'encrypt':
@@ -367,12 +379,12 @@ class PrivateActionsMixin:
         if errors:
             message += '\n\n前几个错误：\n' + '\n'.join(errors[:5])
 
-        show_info(self, '私密模式', message)
+        show_info(self, '私密操作', message)
         self.notice(message.replace('\n', ' '))
 
     def _on_private_batch_failed(self, message, progress):
         progress.close()
         self.private_batch_thread = None
         logger.error('私密批量操作失败: ' + message)
-        show_error(self, '私密模式', '操作失败：\n' + message)
+        show_error(self, '私密操作', '操作失败：\n' + message)
         self.notice('私密操作失败：' + message)

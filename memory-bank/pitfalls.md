@@ -281,3 +281,30 @@
   更省事的做法：基准/压力测试的目录直接建在 `%TEMP%` 下，不往 `tmp\` 里塞大量文件
 - 反例: 反复重试 `Remove-Item`（越删越慢，还可能卡在被占用的文件上）；把基准数据留在 `tmp\` 里忘删
 - 首次记录: 2026-10-23
+
+## PIT-020 `customContextMenuRequested` 的 pos 是 viewport 坐标，用主窗口 `mapToGlobal` 会让右键菜单错位
+- 触发条件: 在 `QTreeView`（QAbstractScrollArea）的 `customContextMenuRequested` 槽里给 `QMenu.exec_()` 定位置
+- 错误现象: 右键菜单整体往上偏（偏了标题栏 + 菜单栏的高度），树里越靠下的项越明显；
+  旧代码 `menu.exec_(self.mapToGlobal(pos))` 以**主窗口**原点为基准，忽略了树控件在窗口中的偏移
+- 正确做法:
+  ```python
+  self.treeView.customContextMenuRequested.connect(self.right_click_menu)
+  ...
+  menu.exec_(self.treeView.viewport().mapToGlobal(pos))   # pos 来自 viewport
+  ```
+- 反例: `menu.exec_(self.mapToGlobal(pos))`；
+  `menu.exec_(self.treeView.mapToGlobal(pos))`（也不对：viewport 还比 treeView 多偏移了表头高度）
+- 首次记录: 2026-10-24
+
+## PIT-021 把实例方法直接交给回调，之后替换实例不生效
+- 触发条件: 用 `layout.set_path_resolver(self.private_service.resolve_playable)` 这种「绑定方法」
+  注册回调，之后又把 `self.private_service` 换成了另一个实例（测试注入 / 换密钥库 / 重建服务）
+- 错误现象: 回调始终用注册那一刻的旧实例（旧密钥库）：
+  明明导入了密钥却解不开，且**不抛异常**——本次冒烟里表现为 `video_show_layout.path` 一直停在上一集
+- 正确做法: 用 lambda 动态取当前实例：
+  ```python
+  layout.set_path_resolver(lambda path: self.private_service.resolve_playable(path))
+  ```
+- 反例: `layout.set_path_resolver(self.private_service.resolve_playable)`
+  （`self.private_service` 只在注册时求值一次，绑定的就是那个对象）
+- 首次记录: 2026-10-24

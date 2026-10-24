@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 """目录树的文件名显示委托。
 
-QDirModel 的第 0 列是文件名：超长名字截断显示，悬浮时再给出完整文件名与大小。
+QDirModel 的第 0 列是文件名：超长名字截断显示，悬浮时再给出完整文件名与大小；
+被标记为「私密库」的目录额外加 ``[私密库]`` 后缀并用高亮色绘制（`ADR-027`）。
 """
 import os
 
 from PyQt5.QtCore import QEvent, QSize
-from PyQt5.QtGui import QFontMetrics
-from PyQt5.QtWidgets import QStyledItemDelegate, QToolTip
+from PyQt5.QtGui import QColor, QFontMetrics, QPalette
+from PyQt5.QtWidgets import (QApplication, QStyle, QStyleOptionViewItem,
+                             QStyledItemDelegate, QToolTip)
+
+PRIVATE_MARK_SUFFIX = '  [私密库]'
+PRIVATE_MARK_COLOR = QColor('#f9e2af')
 
 
 class FileDisplayDelegate(QStyledItemDelegate):
@@ -25,7 +30,39 @@ class FileDisplayDelegate(QStyledItemDelegate):
         text = index.model().fileName(index)
         font_metrics = QFontMetrics(option.font)
         text_width = font_metrics.horizontalAdvance(text) + 40  # 完整文件名宽度 + 图标/边距余量
+        if self._is_private_root(index.model().filePath(index)):
+            text_width += font_metrics.horizontalAdvance(PRIVATE_MARK_SUFFIX)
         return QSize(text_width, super().sizeHint(option, index).height())
+
+    def _is_private_root(self, path):
+        """这一行是否是被标记为「私密库」的目录（判断逻辑放在窗口 mixin 里）。"""
+        if not path:
+            return False
+        view = self.parent()
+        window = view.window() if view is not None else None
+        checker = getattr(window, 'is_private_library_root', None)
+        if checker is None:
+            return False
+        try:
+            return bool(checker(path))
+        except Exception:
+            return False
+
+    def paint(self, painter, option, index):
+        """私密库目录：文件名后追加 [私密库] 并用高亮色，其余行走默认绘制。"""
+        model = index.model()
+        path = model.filePath(index) if model is not None else ''
+        if not self._is_private_root(path):
+            super().paint(painter, option, index)
+            return
+
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.text = (opt.text or model.fileName(index)) + PRIVATE_MARK_SUFFIX
+        opt.palette.setColor(QPalette.Text, PRIVATE_MARK_COLOR)
+        opt.palette.setColor(QPalette.HighlightedText, PRIVATE_MARK_COLOR)
+        style = opt.widget.style() if opt.widget is not None else QApplication.style()
+        style.drawControl(QStyle.CE_ItemViewItem, opt, painter, opt.widget)
 
     def helpEvent(self, event, view, option, index):
         if event.type() == QEvent.ToolTip and index.model() is not None:
@@ -35,6 +72,10 @@ class FileDisplayDelegate(QStyledItemDelegate):
                 size_bytes = os.path.getsize(file_path)
                 size_str = self._format_size(size_bytes)
                 QToolTip.showText(event.globalPos(), f"{file_name}\n大小: {size_str}")
+            elif self._is_private_root(file_path):
+                QToolTip.showText(event.globalPos(),
+                                  f"{file_name}\n私密库：本目录下都是加密文件，"
+                                  f"点密文即可解密播放")
             else:
                 QToolTip.showText(event.globalPos(), file_name)
             return True

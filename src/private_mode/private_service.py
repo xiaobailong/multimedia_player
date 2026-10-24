@@ -26,11 +26,14 @@ from loguru import logger
 
 from src.private_mode import privi_crypto
 from src.private_mode.key_store import PrivateKeyStore
+from src.utils.media_scan import is_mpeg_ts_file
+from src.utils.media_types import IMAGE_SUFFIXES, VIDEO_SUFFIXES
 from src.utils.utils import get_private_cache_path
 
-IMAGE_EXTENSIONS = ('.bmp', '.dib', '.png', '.jpg', '.jpeg', '.pbm', '.pgm',
-                    '.ppm', '.tif', '.tiff', '.webp', '.gif')
-VIDEO_EXTENSIONS = ('.mp4', '.mkv')
+# 扩展名口径与播放器 / 列表扫描 / 归集共用同一份（`src/utils/media_types.py`，见 `ADR-021`）。
+# 之前这里只认 12 种图片 + mp4/mkv，导致 .avi / .mov / .svg 之类既加不了密也列不出来（`ADR-027`）。
+IMAGE_EXTENSIONS = tuple(IMAGE_SUFFIXES)
+VIDEO_EXTENSIONS = tuple(VIDEO_SUFFIXES)
 MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
 
 TEMP_PREFIX = '.prv_tmp_'   # 加解密临时文件；不参与媒体扫描与加密
@@ -219,6 +222,30 @@ class PrivateService:
         except OSError:
             return 0
 
+    def list_videos(self, dir_path):
+        """目录下可播放的视频（含密文），按修改时间升序。
+
+        密文按密钥库里的原始文件名判类型（加密后文件名是 32 位 hex、没有扩展名）；
+        `.ts/.mts/.m2ts` 复用扫描端的 MPEG-TS 同步字节校验，避免把 TypeScript 源码
+        当成视频列出来（`ISSUE-013`）。
+        """
+        result = []
+        for path in self._iter_files(dir_path):
+            try:
+                info = self.describe(path)
+            except Exception as e:
+                logger.warning(f'识别文件失败 {path}: {e}')
+                continue
+            name = (info['original_name'] or path).lower()
+            if not name.endswith(VIDEO_EXTENSIONS):
+                continue
+            if not info['encrypted'] and name.endswith(('.ts', '.mts', '.m2ts')) \
+                    and not is_mpeg_ts_file(path):
+                continue
+            result.append(path)
+        result.sort(key=self._mtime)
+        return result
+
     def _cache_path_for(self, source_path, original_name):
         """每个密文一个缓存目录，目录内保留原始文件名（标题栏显示才友好）。"""
         key = os.path.normpath(os.path.abspath(source_path)).lower().encode('utf-8')
@@ -270,7 +297,7 @@ class PrivateService:
             if not path.lower().endswith(MEDIA_EXTENSIONS):
                 skipped += 1
                 continue
-            if privi_crypto.looks_encrypted(path):
+            if privi_crypto.is_v2_file(path):
                 skipped += 1
                 continue
             media = self.store.find_media(path)
@@ -381,7 +408,11 @@ class PrivateService:
         """
         if not os.path.isfile(path):
             raise PrivateServiceError('文件不存在: %s' % path)
-        if privi_crypto.looks_encrypted(path):
+        # 只拦两种"确定的密文"：PRV2 魔数（哪怕被改名加了后缀），或"无扩展名 + 看起来像密文"
+        # （privi ADR-042：密文名一律不带扩展名）。不能对所有媒体文件用 looks_encrypted，
+        # 因为 mpg / vob / ts / rmvb / ogv 这些容器的文件头它认不出来，会被误判成密文而拒绝加密（ADR-027）。
+        if privi_crypto.is_v2_file(path) or (
+                not os.path.splitext(path)[1] and privi_crypto.looks_encrypted(path)):
             raise PrivateServiceError('文件看起来已经是密文，跳过以免重复加密')
 
         kek = self.ensure_key()

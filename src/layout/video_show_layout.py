@@ -248,6 +248,8 @@ class VideoShowLayout(QVBoxLayout):
         self._list_reset_mode = False  # 列表播放完毕后的"重播列表"状态
         # 列表模式自动跳过无法播放的文件：防止一次失败触发多次跳过（error + InvalidMedia 会各报一次）
         self._skipping_unplayable = False
+        # 密文列表用：调用方注入 path -> (可播放明文路径, 显示名) 的解析器（ADR-027）
+        self._path_resolver = None
 
         # 视频列表扫描（后台线程）：token 用于丢弃过期结果，_scan_threads 持有运行中的线程
         self._scan_token = 0
@@ -613,7 +615,39 @@ class VideoShowLayout(QVBoxLayout):
                 self.player.setPosition(0)
                 self.player.play()
 
+    def set_path_resolver(self, resolver):
+        """注入「播放路径 → 可播放路径」的解析器（密文列表用，见 ADR-027）。
+
+        resolver(path) 需返回 ``(可播放路径, 原始文件名)``；明文应原样返回。
+        """
+        self._path_resolver = resolver
+
+    def _resolve_playable_path(self, filePath):
+        """列表里混着密文（无扩展名、解不开）时，播到这一集才解密。
+
+        已经带扩展名的正常视频直接返回，普通列表播放不受影响；
+        解析失败返回 ``''``，由调用方决定跳过还是停下（列表模式会自动跳过下一集）。
+        """
+        resolver = getattr(self, '_path_resolver', None)
+        if resolver is None or not filePath or self.is_video(filePath):
+            return filePath
+        try:
+            resolved, _display_name = resolver(filePath)
+        except Exception as e:
+            logger.error(f'播放前解密失败 {filePath}: {e}')
+            if self.main_window is not None:
+                self.main_window.notice('解密失败：' + str(e))
+            return ''
+        return resolved or filePath
+
     def play(self, filePath):
+        # 密文没有扩展名：先解到本次运行缓存，再交给 QMediaPlayer（ADR-027）
+        playable_path = self._resolve_playable_path(filePath)
+        if not playable_path:
+            if self.play_mode == VideoShowLayout.play_mode_list and self.play_list:
+                self._skip_unplayable('解密失败')
+            return
+        filePath = playable_path
         self.titleQLabel.setText(filePath)
         self.path = filePath
 

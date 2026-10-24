@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-"""左侧文件树（普通模式 / 私密模式共用）。
+"""左侧文件树（普通文件与密文共用同一棵树、同一套事件）。
 
-两个模式各有一份 ``QDirModel`` + ``FileTreeView``，只是事件接线不同：
-- 普通模式：clicked → 播放 / 看图，selectionChanged → 图片预览；
-- 私密模式：clicked / 右键 → 解密播放与批量加解密。
+密文（32 位 hex、无扩展名）与普通媒体文件都在这棵树里：
+- 点文件 → `MediaActionsMixin.on_tree_clicked`：密文先解密到缓存再播，明文直接播；
+- 右键 → `MediaActionsMixin.right_click_menu`：分组后的文件操作 / 私密操作。
+
+私密曾经是独立的第二棵树 + 模式切换，已按 `ADR-026` 合并掉。
 """
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QDirModel, QHeaderView, QTreeView

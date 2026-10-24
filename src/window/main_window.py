@@ -13,14 +13,14 @@
 | ``view_actions`` | 全屏、快捷键、窗口状态、显示切换、关闭清理 |
 | ``rating_actions`` | 评分（数字键 1~5） |
 | ``collect_actions`` | 归集（批量拷贝） |
-| ``private_actions`` | 私密模式（密文播放 / 加解密） |
+| ``private_actions`` | 私密功能（密文点开即解密播放 / 批量加解密 / 私密幻灯片） |
 | ``key_actions`` | 密钥包导入 / 导出 / 状态 |
 | ``tool_actions`` | 解码器 / ffmpeg / 幻灯片设置 / 关于 |
 """
 import os
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import (QApplication, QLabel, QMainWindow, QPushButton, QSplitter,
+from PyQt5.QtWidgets import (QApplication, QLabel, QMainWindow, QSplitter,
                              QStatusBar, QVBoxLayout, QWidget)
 
 from src.data_manager.config_manager import ConfigManager
@@ -55,6 +55,7 @@ class MainWindow(MediaActionsMixin, ViewActionsMixin, RatingActionsMixin,
     expand_path_config_key = 'default.expand.path'
     open_path_config_key = 'default.open.path'
     private_library_path_key = 'private.library.path'
+    private_library_dirs_key = 'private.library.dirs'
     show_type_video = 'video'
     show_type_pic = 'pic'
     normal = 0
@@ -88,6 +89,9 @@ class MainWindow(MediaActionsMixin, ViewActionsMixin, RatingActionsMixin,
         self.private_service = PrivateService()
         self.private_service.clear_cache()   # 上次运行残留的解密明文一律清掉
         self.private_batch_thread = None
+        # 被标记为「私密库」的目录（本目录下全是密文，树里打标记 / 列表自动走解密分支）
+        self._private_library_dirs = []
+        self._load_private_library_dirs()
         # 归集后台线程（扫描 / 拷贝）
         self.collect_thread = None
         # 解码器安装后台线程（下载 / 安装）
@@ -96,7 +100,6 @@ class MainWindow(MediaActionsMixin, ViewActionsMixin, RatingActionsMixin,
         self.ffmpeg_thread = None
         self.style_sheet = self.styleSheet()
         self.full_screen_state = self.normal
-        self.private_mode = False
 
     def _init_window(self):
         """窗口本身：无边框、标题、按屏幕可用区域定尺寸、全局暗色主题。"""
@@ -135,6 +138,10 @@ class MainWindow(MediaActionsMixin, ViewActionsMixin, RatingActionsMixin,
     def _build_media_views(self):
         """视频 / 图片展示区：两个 QWidget 叠在右侧工作区，同一时刻只显示一个。"""
         self.video_show_layout = VideoShowLayout(self)
+        # 密文视频（无扩展名）播到哪一集解哪一集：布局只管路径，解密交给私密服务。
+        # 用 lambda 而不是直接绑定方法，服务实例被替换/重建时也能跟上（ADR-027）。
+        self.video_show_layout.set_path_resolver(
+            lambda path: self.private_service.resolve_playable(path))
         self.pic_show_layout = PicShowLayout(self)
         self.inputAndExeLayout = self.pic_show_layout.inputAndExeLayout
 
@@ -147,7 +154,7 @@ class MainWindow(MediaActionsMixin, ViewActionsMixin, RatingActionsMixin,
         self.pic_show_qwidget.setLayout(self.pic_show_layout)
 
     def _build_file_trees(self):
-        """普通模式树 + 私密模式树（同一个 splitter 里，隐藏的那个宽度为 0）。"""
+        """左侧文件树（唯一一棵）：普通文件与密文都在这里，点开密文时按需解密。"""
         self.model = create_dir_model()
         self.treeView = FileTreeView(self.model)
         self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -156,55 +163,20 @@ class MainWindow(MediaActionsMixin, ViewActionsMixin, RatingActionsMixin,
         self.treeView.selectionModel().selectionChanged.connect(self.on_selection_changed)
         self.mainQWidget.addWidget(self.treeView)
 
-        # ---- 私密模式左侧树 ----
-        self.private_tree_model = create_dir_model()
-        self.private_tree_view = FileTreeView(self.private_tree_model)
-        self.private_tree_view.clicked.connect(self._on_private_tree_clicked)
-        self.private_tree_view.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.private_tree_view.customContextMenuRequested.connect(self._private_right_click_menu)
-        self.private_tree_view.setVisible(False)
-        self.mainQWidget.addWidget(self.private_tree_view)
-
     def _build_work_area(self):
-        """右侧工作区：视频 / 图片 / 私密模式占位层，以及 splitter 初始比例。"""
+        """右侧工作区：视频 / 图片两个展示区（同一时刻只显示一个）。"""
         self.work = QVBoxLayout()
         self.work.setContentsMargins(0, 0, 0, 0)
         self.work.addWidget(self.video_show_qwidget)
         self.video_show_qwidget.setVisible(False)
         self.work.addWidget(self.pic_show_qwidget)
 
-        # ---- 私密模式覆盖层：无路径时显示"打开私密库"按钮 ----
-        self.private_overlay_widget = QWidget()
-        private_overlay_layout = QVBoxLayout(self.private_overlay_widget)
-        private_overlay_layout.setAlignment(Qt.AlignCenter)
-        self.open_private_lib_btn = QPushButton("打开私密库")
-        self.open_private_lib_btn.setFixedSize(160, 48)
-        self.open_private_lib_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #89b4fa;
-                color: #1e1e2e;
-                border: none;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #b4d0fb;
-            }
-        """)
-        self.open_private_lib_btn.clicked.connect(self._open_private_library)
-        private_overlay_layout.addWidget(self.open_private_lib_btn)
-        self.private_overlay_widget.setVisible(False)
-        self.work.addWidget(self.private_overlay_widget)
-
         self.workQWidget = QWidget()
         self.workQWidget.setLayout(self.work)
 
         self.mainQWidget.addWidget(self.workQWidget)
-        # splitter 含 3 个 widget: treeView / private_tree_view / workQWidget
-        # 普通模式下 private_tree_view 隐藏，比例为 left : 0 : right
-        sizes = [10000 * self.left, 0, 10000 * self.right]
-        self.mainQWidget.setSizes(sizes)
+        # splitter 只有两栏：文件树 / 工作区，比例 left : right
+        self.mainQWidget.setSizes([10000 * self.left, 10000 * self.right])
 
     def _build_title_bar(self):
         """自定义无边框标题栏（最小化 / 最大化 / 还原 / 关闭）。"""

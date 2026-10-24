@@ -5,7 +5,7 @@
 仍然由 ``window``（各 mixin）里的方法决定。
 """
 from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import QAction, QActionGroup, QMenuBar
+from PyQt5.QtWidgets import QAction, QMenuBar
 
 from src.window.theme import MENU_BAR_STYLE
 
@@ -14,8 +14,7 @@ def build_menu_bar(window):
     """构建主菜单栏并返回 QMenuBar。
 
     需要在别处回写勾选状态的 QAction 全部挂到 ``window`` 上
-    （``normal_mode_action`` / ``private_mode_action`` / ``toggle_tree_action`` /
-    ``show_control_action`` 等），与重构前保持同一套属性名。
+    （``toggle_tree_action`` / ``show_control_action`` 等），与重构前保持同一套属性名。
     """
     menu_bar = QMenuBar(window)
     menu_bar.setStyleSheet(MENU_BAR_STYLE)
@@ -27,6 +26,13 @@ def build_menu_bar(window):
     open_action.triggered.connect(window.open_directory)
     file_menu.addAction(open_action)
 
+    # 私密库只是「把某一目录设为树根」的快捷入口（模式已合并，见 ADR-026）
+    window.open_private_library_action = QAction("打开私密库...(&L)", window)
+    window.open_private_library_action.triggered.connect(window._open_private_library)
+    file_menu.addAction(window.open_private_library_action)
+
+    file_menu.addSeparator()
+
     # 「加载为列表」只能从这里或右键菜单显式触发（点目录不再自动扫描，见 ADR-025）
     window.load_pic_list_action = QAction("加载为幻灯片列表...(&P)", window)
     window.load_pic_list_action.triggered.connect(window.load_pic_list_dialog)
@@ -35,6 +41,15 @@ def build_menu_bar(window):
     window.load_video_list_action = QAction("加载为视频列表...(&M)", window)
     window.load_video_list_action.triggered.connect(window.load_video_list_dialog)
     file_menu.addAction(window.load_video_list_action)
+
+    # 密文没有扩展名，普通扫描认不出来：私密目录走单独入口（解密后按序展示）
+    window.load_private_list_action = QAction("加载为私密幻灯片列表...(&E)", window)
+    window.load_private_list_action.triggered.connect(window.load_private_pic_list_dialog)
+    file_menu.addAction(window.load_private_list_action)
+
+    window.load_private_video_list_action = QAction("加载为私密视频列表...(&D)", window)
+    window.load_private_video_list_action.triggered.connect(window.load_private_video_list_dialog)
+    file_menu.addAction(window.load_private_video_list_action)
 
     file_menu.addSeparator()
 
@@ -62,27 +77,6 @@ def build_menu_bar(window):
 
     # ---- 视图菜单 ----
     view_menu = menu_bar.addMenu("视图(&V)")
-
-    mode_group = QActionGroup(window)
-    mode_group.setExclusive(True)
-
-    window.normal_mode_action = QAction("普通模式", window)
-    window.normal_mode_action.setCheckable(True)
-    window.normal_mode_action.setChecked(True)
-    window.normal_mode_action.triggered.connect(
-        lambda checked: checked and window._toggle_private_mode(False))
-    mode_group.addAction(window.normal_mode_action)
-    view_menu.addAction(window.normal_mode_action)
-
-    window.private_mode_action = QAction("私密模式", window)
-    window.private_mode_action.setCheckable(True)
-    window.private_mode_action.setChecked(False)
-    window.private_mode_action.triggered.connect(
-        lambda checked: checked and window._toggle_private_mode(True))
-    mode_group.addAction(window.private_mode_action)
-    view_menu.addAction(window.private_mode_action)
-
-    view_menu.addSeparator()
 
     window.toggle_tree_action = QAction("文件列表面板", window)
     window.toggle_tree_action.setCheckable(True)

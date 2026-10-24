@@ -419,3 +419,28 @@
 - 相关条目: `ADR-023`（任务队列调度，去重键设计）、`ADR-021`、`ISSUE-013`
 - 首次记录: 2026-10-24
 
+## ISSUE-015 加密 `.mpg / .vob / .ts / .rmvb / .ogv` 被当成「已经是密文」而跳过
+- 状态: 已修复
+- 症状 / 现场: 对含这些容器的目录执行「加密该路径下的图片和视频」时大量跳过；
+  直接调 `PrivateService.encrypt_one()` 抛
+  `PrivateServiceError: 文件看起来已经是密文，跳过以免重复加密`。
+  在私密侧扩展名口径统一之前，它们根本进不了待加密清单（`MEDIA_EXTENSIONS` 只有 12 种图片 + mp4/mkv），
+  所以这个误判一直没暴露。
+- 复发判据: 造一个 `.mpg`（内容别用 JPEG/PNG/MP4 等已知魔数），
+  `privi_crypto.looks_encrypted(path)` 返回 `True` 且 `encrypt_one(path)` 报「已经是密文」。
+- 根因: `looks_encrypted()` 对 v1 密文的兜底是「长度够 + 不是已知明文媒体」，
+  而 `looks_like_plain_media()` 只认 jpg / png / gif / mp4(ftyp) / avi / webp / mkv / flv / asf / bmp / tiff，
+  不认识 MPEG-PS / VOB / MPEG-TS / RealMedia / Ogg 的文件头 ⇒ 被判成密文。
+- 证据: 同时造的 `.mp4`（全 0 内容）与 `.avi`（全 0 内容）在修复前也走同一分支；
+  `.avi` 修复后能加密、`.mpg` 仍被拒，差别只在 `looks_like_plain_media` 的签名表。
+- 修法:
+  1. `encrypt_one()` 只拦「确定的密文」：`is_v2_file()`（PRV2 魔数，改名加后缀也认得出）
+     或「**无扩展名** + `looks_encrypted()`」（privi ADR-042：密文名一律不带扩展名）；
+  2. `scan_encryptable()` 里的 `looks_encrypted()` 改成 `is_v2_file()`
+     （能进这个循环的文件一定带媒体扩展名，用魔数判定就够）。
+- 反例 / 易误判: 以为是权限 / 磁盘问题；以为必须把 `looks_like_plain_media()` 补全所有容器签名
+  （能补，但每加一种格式都要维护；「有媒体扩展名 ⇒ 必是明文」这条硬规则更省事、也不会漏）。
+- 相关文件: `src/private_mode/private_service.py`、`src/private_mode/privi_crypto.py`
+- 相关条目: `ADR-027`（扩展名口径统一时暴露）、`ADR-009`（密文命名规则）
+- 首次记录: 2026-10-24
+
