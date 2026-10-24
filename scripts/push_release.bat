@@ -70,21 +70,32 @@ goto :die
 :gh_found
 echo gh: !GH_EXE!
 
-REM ---- 检查 gh 登录状态 ----
+REM ---- 检查 gh 登录状态（重试 3 次，应对 Windows 凭据管理器间歇性超时） ----
 set "GH_AUTH_FILE=%TEMP%\mediaplayer_gh_auth.txt"
+set "GH_LOGGED_IN=0"
+set "GH_RETRY=0"
+
+:auth_retry
+set /a "GH_RETRY+=1"
 "%GH_EXE%" auth status > "%GH_AUTH_FILE%" 2>&1
 set "GH_AUTH_RC=!ERRORLEVEL!"
-set "GH_LOGGED_IN=0"
-set "GH_HAS_REPO_SCOPE=0"
 
 if !GH_AUTH_RC! equ 0 set "GH_LOGGED_IN=1"
 for /f "tokens=*" %%l in ('findstr /i "Logged.in" "%GH_AUTH_FILE%" 2^>nul') do set "GH_LOGGED_IN=1"
 
-if "!GH_LOGGED_IN!"=="0" (
-    del "%GH_AUTH_FILE%" 2>nul
-    set "ERR_MSG=gh 未登录。请执行: gh auth login"
-    goto :die
+if "!GH_LOGGED_IN!"=="1" goto :auth_ok
+if !GH_RETRY! lss 3 (
+    echo        gh auth keyring 超时，重试 !GH_RETRY!/3...
+    timeout /t 2 >nul
+    goto :auth_retry
 )
+
+del "%GH_AUTH_FILE%" 2>nul
+set "ERR_MSG=gh 未登录。请执行: gh auth login"
+goto :die
+
+:auth_ok
+set "GH_HAS_REPO_SCOPE=0"
 echo        gh 已登录
 
 REM ---- 检查 token scope ----
@@ -139,19 +150,26 @@ echo 提交: !GIT_DESC!
 REM ---- 检查 Release 是否已存在且资产完整 ----
 set "RELEASE_TAG=v!VERSION!"
 set "ALREADY_PUBLISHED=0"
-"%GH_EXE%" release view "!RELEASE_TAG!" !REL_REPO_ARG! >nul 2>&1
+set "GH_REL_FILE=%TEMP%\mediaplayer_gh_rel.txt"
+"%GH_EXE%" release view "!RELEASE_TAG!" --json assets,isDraft !REL_REPO_ARG! > "!GH_REL_FILE!" 2>nul
 if !ERRORLEVEL! equ 0 (
     set "ZIP_ASSET_OK=0"
     set "EXE_ASSET_OK=0"
-    for /f "delims=" %%a in ('"%GH_EXE%" release view "!RELEASE_TAG!" --json assets !REL_REPO_ARG! 2^>nul ^| findstr /c:"\"name\":\"!APP_NAME_EN!_v!VERSION!.zip\""') do set "ZIP_ASSET_OK=1"
-    for /f "delims=" %%a in ('"%GH_EXE%" release view "!RELEASE_TAG!" --json assets !REL_REPO_ARG! 2^>nul ^| findstr /c:"\"name\":\"!APP_NAME_EN!_v!VERSION!.exe\""') do set "EXE_ASSET_OK=1"
+    set "IS_DRAFT=0"
+
+    for /f "delims=" %%a in ('powershell -NoProfile -Command "$j=Get-Content '!GH_REL_FILE!' ^| ConvertFrom-Json; if ($j.assets.name -contains '!APP_NAME_EN!_v!VERSION!.zip') { '1' } else { '0' }"') do set "ZIP_ASSET_OK=%%a"
+    for /f "delims=" %%a in ('powershell -NoProfile -Command "$j=Get-Content '!GH_REL_FILE!' ^| ConvertFrom-Json; if ($j.assets.name -contains '!APP_NAME_EN!_v!VERSION!.exe') { '1' } else { '0' }"') do set "EXE_ASSET_OK=%%a"
+    for /f "delims=" %%a in ('powershell -NoProfile -Command "$j=Get-Content '!GH_REL_FILE!' ^| ConvertFrom-Json; if ($j.isDraft -eq $true) { '1' } else { '0' }"') do set "IS_DRAFT=%%a"
 
     set "ALL_OK=1"
     if "!HAS_ZIP!"=="1" if "!ZIP_ASSET_OK!"=="0" set "ALL_OK=0"
     if "!HAS_EXE!"=="1" if "!EXE_ASSET_OK!"=="0" set "ALL_OK=0"
+    if "!IS_DRAFT!"=="1" set "ALL_OK=0"
 
     if "!ALL_OK!"=="1" set "ALREADY_PUBLISHED=1"
 )
+del "!GH_REL_FILE!" 2>nul
+set "GH_REL_FILE="
 if "!ALREADY_PUBLISHED!"=="1" (
     echo.
     echo ============================================
@@ -233,8 +251,8 @@ echo ```>> "!NOTES_FILE!"
 
 REM ---- 构建待上传文件列表 ----
 set "ASSET_FILES="
-if "!HAS_ZIP!"=="1" set "ASSET_FILES=!ASSET_FILES! "!ZIP_FILE!" "!ZIP_FILE!.sha256""
-if "!HAS_EXE!"=="1" set "ASSET_FILES=!ASSET_FILES! "!EXE_FILE!" "!EXE_FILE!.sha256""
+if "!HAS_ZIP!"=="1" set ASSET_FILES=!ASSET_FILES! "!ZIP_FILE!" "!ZIP_FILE!.sha256"
+if "!HAS_EXE!"=="1" set ASSET_FILES=!ASSET_FILES! "!EXE_FILE!" "!EXE_FILE!.sha256"
 
 REM ---- 推送 Release ----
 echo.
@@ -269,7 +287,7 @@ echo Release !RELEASE_TAG! 已存在，正在更新资产和说明...
 "%GH_EXE%" release upload "!RELEASE_TAG!" !ASSET_FILES! --clobber !REL_REPO_ARG!
 set "REL_EXIT=!ERRORLEVEL!"
 if "!REL_EXIT!"=="0" (
-    "%GH_EXE%" release edit "!RELEASE_TAG!" --title "!RELEASE_TITLE!" --notes-file "!NOTES_FILE!" --latest !REL_REPO_ARG!
+    "%GH_EXE%" release edit "!RELEASE_TAG!" --title "!RELEASE_TITLE!" --notes-file "!NOTES_FILE!" --latest --draft=false !REL_REPO_ARG!
     set "REL_EXIT=!ERRORLEVEL!"
 )
 goto :check_rel_exit
