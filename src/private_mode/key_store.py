@@ -22,8 +22,13 @@ from datetime import datetime, timezone
 import apsw
 from loguru import logger
 
+from src.data_manager.sqlite3_client import Sqlite3Client
 from src.private_mode import privi_crypto
-from src.utils.utils import get_private_key_db_path
+from src.utils.utils import get_db_path, get_private_key_db_path
+
+# `ADR-028`：密钥表并入主库 player.db；批量线程与 UI 线程各有一条 apsw 连接，
+# 同时写时让 SQLite 等待而不是立刻抛 database is locked。
+DB_BUSY_TIMEOUT_MS = 5000
 
 # 本机表结构（media_keys 比私密包多 3 列，导出时忽略）
 _LOCAL_SCHEMA = """
@@ -139,6 +144,71 @@ def _run_script(conn, script):
             conn.execute(statement)
 
 
+def _tune_connection(conn):
+    """设置 busy_timeout（多条连接写同一个库时等待而不是立刻报 locked）。"""
+    try:
+        conn.execute('PRAGMA busy_timeout = %d' % DB_BUSY_TIMEOUT_MS)
+    except Exception as e:
+        logger.warning(f'设置 busy_timeout 失败: {e}')
+
+
+def _migrate_legacy_db(conn):
+    """把旧的 `data/private_keys.db` 一次性并进主库（表名不变），旧文件改名为 `.bak`。
+
+    幂等：`INSERT OR IGNORE`（`key_material.id` / `media_keys.media_id` 是主键），
+    中途崩溃下次再跑一遍即可；迁移失败时**保留旧文件**，绝不删数据。
+    """
+    legacy_path = get_private_key_db_path()
+    if not os.path.isfile(legacy_path):
+        return
+    if os.path.normcase(os.path.abspath(legacy_path)) == \
+            os.path.normcase(os.path.abspath(get_db_path())):
+        return
+    try:
+        conn.execute('ATTACH DATABASE ? AS legacy', (legacy_path,))
+    except Exception as e:
+        logger.error(f'挂载旧私密密钥库失败 {legacy_path}: {e}')
+        return
+
+    copied = False
+    try:
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM legacy.sqlite_master WHERE type='table'")}
+        if 'key_material' in tables:
+            conn.execute(
+                'INSERT OR IGNORE INTO key_material '
+                '(id, encryption_salt, kek, kek_source, created_at) '
+                'SELECT id, encryption_salt, kek, kek_source, created_at '
+                'FROM legacy.key_material')
+        if 'media_keys' in tables:
+            legacy_columns = {row[1] for row in conn.execute(
+                'PRAGMA legacy.table_info(media_keys)')}
+            columns = [name for name in MEDIA_COLUMNS if name in legacy_columns]
+            if columns:
+                joined = ', '.join(columns)
+                conn.execute('INSERT OR IGNORE INTO media_keys (%s) '
+                             'SELECT %s FROM legacy.media_keys' % (joined, joined))
+        copied = True
+    except Exception as e:
+        logger.error(f'迁移旧私密密钥库失败（旧文件保留，未删除）：{e}')
+    finally:
+        try:
+            conn.execute('DETACH DATABASE legacy')
+        except Exception:
+            pass
+
+    if not copied:
+        return
+    backup_path = legacy_path + '.bak'
+    try:
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        os.replace(legacy_path, backup_path)
+        logger.info(f'旧私密密钥库已并入 player.db，原文件备份为 {backup_path}')
+    except OSError as e:
+        logger.warning(f'旧私密密钥库已并入主库，但改名失败: {e}')
+
+
 class PrivateKeyStore:
     """本机私密密钥库（SQLite / apsw），同时负责 privi 密钥包的导入导出。"""
 
@@ -147,13 +217,36 @@ class PrivateKeyStore:
     KEK_BYTES = privi_crypto.KEK_LEN
     FILE_EXTENSION = '.db'
 
-    def __init__(self, db_path=None):
-        self.db_path = db_path or get_private_key_db_path()
-        parent = os.path.dirname(self.db_path)
-        if parent:
-            os.makedirs(parent, exist_ok=True)
-        self.conn = apsw.Connection(self.db_path)
+    def __init__(self, db_path=None, connection=None):
+        """默认使用主库 `player.db` 的**共享连接**（`Sqlite3Client`）。
+
+        - `connection=`：复用调用方已有连接（上层已持有连接时）；
+        - `db_path=`：自建连接（**批量线程必须走这个** —— apsw 连接不能跨线程使用）；
+        - 都不传：主库共享连接，并把旧的 `data/private_keys.db` 一次性并进来（`ADR-028`）。
+
+        密钥表（`key_material` / `media_keys`）与配置、评分、播放位置同在 `player.db`，
+        不再单独占一个数据库文件。
+        """
+        self._owns_connection = False
+        if connection is not None:
+            self.conn = connection
+            self.db_path = db_path or get_db_path()
+        elif db_path is not None:
+            self.db_path = db_path
+            parent = os.path.dirname(self.db_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            self.conn = apsw.Connection(self.db_path)
+            self._owns_connection = True
+        else:
+            self.db_path = get_db_path()
+            self.conn = Sqlite3Client().conn
+
+        _tune_connection(self.conn)
         _run_script(self.conn, _LOCAL_SCHEMA)
+        if connection is None and not self._owns_connection:
+            # 只在“用主库共享连接”时迁移；测试 / 批量线程的临时库不会碰真实数据
+            _migrate_legacy_db(self.conn)
         logger.info(f'私密密钥库: {self.db_path}')
 
     # ────────────────────────── 主密钥（KEK） ──────────────────────────
@@ -247,6 +340,9 @@ class PrivateKeyStore:
         return int(rows[0][0]) if rows else 0
 
     def close(self):
+        """只关自己开的连接；共享的 `player.db` 连接归 `Sqlite3Client` 管。"""
+        if not self._owns_connection:
+            return
         try:
             self.conn.close()
         except Exception:

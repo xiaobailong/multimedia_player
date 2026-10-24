@@ -43,32 +43,44 @@ class PrivateActionsMixin:
             self.notice('私密库：尚未导入密钥，加密文件请先「密钥 → 导入密钥」')
 
     # ============================================
-    #  私密库标记：记住「这个目录下全是密文」
+    #  私密库标记：记住「这个目录下全是密文」（表 private_library_dir）
     # ============================================
     def _load_private_library_dirs(self):
-        """从配置读出被标记的私密库目录（JSON 数组），缓存成绝对路径列表。"""
-        self._private_library_dirs = []
+        """读出被标记的私密库目录；顺手把老版本存在 config 里的 JSON 数组搬进表。"""
+        self._migrate_library_marks_from_config()
+        try:
+            self._private_library_dirs = self.private_library_manager.list_dirs()
+        except Exception as e:
+            logger.warning(f'读取私密库标记失败: {e}')
+            self._private_library_dirs = []
+
+    def _migrate_library_marks_from_config(self):
+        """老版本把标记存成 config 里的 JSON 数组：搬进表后删掉该键（一次性，幂等）。"""
         if not self.config_manager.exist(self.private_library_dirs_key):
             return
         raw = self.config_manager.get(self.private_library_dirs_key) or ''
         try:
             values = json.loads(raw) if raw.strip() else []
         except (TypeError, ValueError):
-            logger.warning('私密库标记配置无法解析: %r' % raw)
-            return
-        if not isinstance(values, list):
-            return
-        result = []
-        for value in values:
-            if isinstance(value, str) and value.strip():
-                result.append(os.path.normpath(os.path.abspath(value)))
-        self._private_library_dirs = result
+            logger.warning('旧的私密库标记配置无法解析，已丢弃: %r' % raw)
+            values = []
+        imported = 0
+        for value in values if isinstance(values, list) else []:
+            if not isinstance(value, str) or not value.strip():
+                continue
+            try:
+                self.private_library_manager.add(
+                    os.path.normpath(os.path.abspath(value)))
+                imported += 1
+            except Exception as e:
+                logger.warning(f'迁移私密库标记失败 {value}: {e}')
+        self.config_manager.remove(self.private_library_dirs_key)
+        if imported:
+            logger.info(f'已把 {imported} 个私密库标记从 config 迁移到 private_library_dir 表')
 
-    def _save_private_library_dirs(self, paths):
-        self.config_manager.add_or_update(
-            self.private_library_dirs_key,
-            json.dumps(paths, ensure_ascii=False) if paths else '')
-        self._private_library_dirs = list(paths)
+    def _refresh_library_marks(self):
+        """重新从表里取标记并刷新树（委托靠 `_private_library_dirs` 决定是否画 [私密库]）。"""
+        self._private_library_dirs = self.private_library_manager.list_dirs()
         try:
             self.model.refresh()
             self.treeView.viewport().update()
@@ -106,16 +118,23 @@ class PrivateActionsMixin:
             self.notice('请先在左侧树中选择一个目录')
             return
         target = os.path.normpath(os.path.abspath(target))
-        paths = list(getattr(self, '_private_library_dirs', []))
-        key = os.path.normcase(target)
-        if any(os.path.normcase(p) == key for p in paths):
-            paths = [p for p in paths if os.path.normcase(p) != key]
-            self._save_private_library_dirs(paths)
-            self.notice('已取消私密库标记：' + target)
-        else:
-            paths.append(target)
-            self._save_private_library_dirs(paths)
+        try:
+            if self.private_library_manager.contains(target):
+                self.private_library_manager.remove(target)
+                marked = False
+            else:
+                self.private_library_manager.add(target)
+                marked = True
+        except Exception as e:
+            logger.error(f'更新私密库标记失败 {target}: {e}')
+            self.notice('更新私密库标记失败：' + str(e))
+            return
+
+        self._refresh_library_marks()
+        if marked:
             self.notice('已标记为私密库（本目录下按密文处理）：' + target)
+        else:
+            self.notice('已取消私密库标记：' + target)
 
     def load_private_pic_list_dialog(self):
         """文件菜单 → 加载为私密幻灯片列表：选目录后解密其中图片并按序展示。"""

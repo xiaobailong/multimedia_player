@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (QApplication, QLabel, QMainWindow, QSplitter,
                              QStatusBar, QVBoxLayout, QWidget)
 
 from src.data_manager.config_manager import ConfigManager
+from src.data_manager.private_library_manager import PrivateLibraryManager
 from src.data_manager.rating_manager import RatingManager
 from src.layout.custom_title_bar import CustomTitleBar
 from src.layout.pic_show_layout import PicShowLayout
@@ -90,6 +91,7 @@ class MainWindow(MediaActionsMixin, ViewActionsMixin, RatingActionsMixin,
         self.private_service.clear_cache()   # 上次运行残留的解密明文一律清掉
         self.private_batch_thread = None
         # 被标记为「私密库」的目录（本目录下全是密文，树里打标记 / 列表自动走解密分支）
+        self.private_library_manager = PrivateLibraryManager()
         self._private_library_dirs = []
         self._load_private_library_dirs()
         # 归集后台线程（扫描 / 拷贝）

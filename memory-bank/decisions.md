@@ -166,6 +166,13 @@
   私密树点击 → 解密到 `data/private_cache/<hash>/<原名>.<扩展名>`：
   缓存文件与原始文件**字节完全一致**，图片已实际渲染出图，视频 OpenCV 可打开并读帧。
   `QMediaPlayer` 在本机自动化会话里连明文 mp4 都 `ResourceError`，见 `ISSUE-006`（与加密无关）。
+- 变更（2026-10-24，两处已被后续决策取代，原文保留作历史）:
+  1. 决策 3「本机索引放在独立库 `data/private_keys.db`」→ 已被 `ADR-028` 取代：
+     密钥表（`key_material` / `media_keys`）并入 `data/player.db`，旧库启动时自动迁移并改名 `.bak`。
+     因此上面「删除 `data/private_keys.db` 等于丢失解密能力」应理解为
+     「删掉 `data/player.db` 里的 `key_material` / `media_keys` 两张表」。
+  2. 约束「批量加解密只处理 mp4/mkv」→ 已被 `ADR-027` 扩大为播放器支持的 25 种图片 / 24 种视频
+     （`src/utils/media_types.py`）。
 
 ## ADR-010 幻灯片设置收进「设置」菜单：间隔持久化到 config，播放区只留操作按钮
 - 日期: 2026-10-21 | 状态: 已采纳
@@ -1057,4 +1064,53 @@
   `src/window/menu_bar.py`、`src/window/main_window.py`、`src/utils/media_scan.py`
 - 相关条目: `ADR-026`（模式合并）、`ADR-021`（扩展名单点）、`ISSUE-013`（TS 校验）、
   `ISSUE-015`（密文误判）、`PIT-021`
+- 首次记录: 2026-10-24
+
+## ADR-028 两个 SQLite 合并成一个：密钥表并入 `player.db`，私密库标记单独建表
+- 日期: 2026-10-24 | 状态: 已采纳
+- 背景: 之前私密密钥 / 索引单独一个 `data/private_keys.db`（`ADR-009` 决策 3），
+  配置 / 评分 / 播放位置在 `data/player.db`。用户要求：① 两个库合成一个；
+  ② 私密库目录标记不要再塞进 config 的 JSON 数组，单独存一张表便于维护。
+- 决策:
+  1. `PrivateKeyStore` 默认使用 `player.db` 的**共享连接**（`Sqlite3Client().conn`）；
+     显式传 `db_path=` 时自建连接（批量线程走这条，不和 UI 线程共用同一条连接）。
+     表名不变：`key_material` / `media_keys`，与 `config` / `media_rating` / `video_play_position`
+     同在 `player.db`。
+  2. **一次性迁移** `_migrate_legacy_db()`（只在默认构造时执行）：
+     `ATTACH` 旧库 → `INSERT OR IGNORE` 复制两张表（列名按 `MEDIA_COLUMNS` 取交集，兼容老版本缺列）
+     → `DETACH` → `os.replace` 旧文件为 `private_keys.db.bak`。
+     幂等（主键 + OR IGNORE）；**任何一步失败都保留旧文件**，绝不删数据。
+  3. 私密库标记：新表 `private_library_dir(path TEXT PRIMARY KEY, create_time)`，
+     由 `src/data_manager/private_library_manager.py` 的 `PrivateLibraryManager` 维护，
+     全部用参数化 SQL（路径带单引号也不会破 SQL）。老的 config 键 `private.library.dirs`
+     在启动时自动搬进表并删除该键。
+  4. 两条连接写同一个库 ⇒ 都设 `PRAGMA busy_timeout=5000`（`Sqlite3Client` 与 `PrivateKeyStore`）。
+- 理由: 一个库文件便于备份 / 迁移（用户原话「便于维护」）；新表命名独立，不污染既有表；
+  参数化 SQL 解决 config 存 JSON 的两个毛病（不可查、路径含引号会破 SQL）。
+- 备选与为何不选:
+  - 保留两个库、只把标记挪进 `private_keys.db`：仍是两个文件，不符合「合成一个」；
+  - 用 `ATTACH` 长期挂第二个库：每连接都要挂，备份仍是两个文件；
+  - 把旧库改名成 `player.db` 再导入另一份：会丢 `player.db` 现有表；
+  - 标记改成「一个目录一个 config key」：能避开引号问题，但增删要自己扫前缀，概念上仍不是表。
+- 影响 / 约束:
+  - **批量线程必须显式传 `db_path`**（`PrivateKeyStore(get_db_path())`）；
+  - `PrivateKeyStore.close()` 对共享连接是 no-op，不会关掉 `Sqlite3Client` 的连接
+    （否则窗口关闭时会把评分 / 播放位置的连接一起关掉）；
+  - 旧文件迁移后改名 `private_keys.db.bak`，`.gitignore` 已加 `private_keys.db*`，可人工删除；
+  - 迁移只在「默认构造 + 主库共享连接」分支执行，测试 / 临时库不会被迁移逻辑碰到；
+  - 多连接并发写只能靠 `busy_timeout` 缓解；`PIT-018`（并发跑两个窗口级测试）仍要求串行。
+- 验证:
+  - `tmp\migrate_check.py`：迁移前主库无密钥表 → 迁移后三张表都在主库、旧库行数不丢、
+    `private_keys.db` 已改名 `.bak`；`store.close()` 后共享连接仍可查询；
+    `db_path=` / `connection=` 两种构造正常；标记表增删查幂等（重复 add 不产生重复行）。
+  - `tmp\smoke_onedb.py`（窗口级，19 项全 PASS）：私密服务库路径 = `player.db`、共享连接、
+    标记写表不写 config、重置缓存后能从表读回、老 config JSON 自动迁入并删键、
+    密文点击解密播放、私密视频列表按需解密、右键文案在「标记 / 取消标记」间切换。
+  - 真实数据：本机迁移前 `private_keys.db` 两张表都是 0 行（无密钥数据），迁移后主库表已建好；
+    用户之前在 config 里标记的 `C:\Users\<用户>\Downloads` 已随迁移进入新表并保留（未被测试清掉）。
+- 相关文件: `src/private_mode/key_store.py`、`src/private_mode/private_batch_thread.py`、
+  `src/data_manager/sqlite3_client.py`、`src/data_manager/private_library_manager.py`、
+  `src/window/private_actions.py`、`src/window/main_window.py`、`src/utils/utils.py`、`.gitignore`
+- 相关条目: `ADR-009`（被本条取代的「独立库」决策）、`ADR-027`（私密库标记来源）、
+  `PIT-018`（并发写库）、`PIT-022`（apsw 线程亲和性）
 - 首次记录: 2026-10-24

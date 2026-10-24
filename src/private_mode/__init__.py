@@ -4,6 +4,7 @@
 模块划分：
     privi_crypto.py          AES-256-GCM 容器与 DEK 包裹（与密册字节级一致）
     key_store.py             密册密钥包（v2 SQLite / v1 JSON）导入导出 + 本机索引
+                             （密钥表与配置 / 评分同在 data/player.db，见 ADR-028）
     private_service.py       业务层：批量加解密、播放前按需解密
     private_batch_thread.py  批量操作的 QThread 包装
 

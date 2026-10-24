@@ -20,6 +20,12 @@ class Sqlite3Client:
         self._initialized = True
         db_path = get_db_path()
         self.conn = apsw.Connection(db_path)
+        # 私密密钥表也在这个库里，批量线程会另开一条连接并发写：
+        # 让 SQLite 等待一会儿，而不是立刻抛 database is locked（ADR-028 / PIT-018）
+        try:
+            self.conn.execute('PRAGMA busy_timeout = 5000')
+        except apsw.Error as e:
+            logger.warning(f'设置 busy_timeout 失败: {e}')
         logger.info(f"数据库路径: {db_path}")
 
     def showData(self, sql):

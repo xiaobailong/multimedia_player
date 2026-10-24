@@ -308,3 +308,17 @@
 - 反例: `layout.set_path_resolver(self.private_service.resolve_playable)`
   （`self.private_service` 只在注册时求值一次，绑定的就是那个对象）
 - 首次记录: 2026-10-24
+
+## PIT-022 apsw 连接跨线程：实测不报错，但不代表可以共用
+- 触发条件: 把主线程建的 `Sqlite3Client().conn` 交给 `QThread` 里的代码执行 SQL
+- 错误现象: 本次实测**没有**异常（子线程里 `SELECT count(*) FROM key_material` 正常返回），
+  看起来"能共用"；但 apsw / SQLite 都不承诺连接线程安全，压力下可能出现
+  `ThreadingViolationError`、游标状态错乱或事务互相干扰
+- 正确做法:
+  1. 主线程用共享连接（`PrivateKeyStore()` 默认就是 `Sqlite3Client().conn`）；
+  2. 后台线程**自建连接**指向同一个库：`PrivateKeyStore(get_db_path())`
+     （`PrivateBatchThread.run()` 就是这么做的）；
+  3. 两条连接都设 `PRAGMA busy_timeout=5000`，并发写时等待而不是立刻 `database is locked`
+- 反例: 图省事把共享连接传进线程（正因为"实测不报错"，很容易误以为安全）；
+  或给每个临时用法都新开连接又忘了关（文件句柄泄漏）
+- 首次记录: 2026-10-24

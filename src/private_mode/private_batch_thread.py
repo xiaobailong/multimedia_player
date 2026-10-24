@@ -10,6 +10,7 @@ from loguru import logger
 
 from src.private_mode.key_store import PrivateKeyStore
 from src.private_mode.private_service import PrivateService
+from src.utils.utils import get_db_path
 
 
 class PrivateBatchThread(QThread):
@@ -39,8 +40,10 @@ class PrivateBatchThread(QThread):
 
     def run(self):
         try:
+            # 工作线程自建一条指向同一个 player.db 的连接：
+            # apsw 不保证连接跨线程使用，别和 UI 线程共用同一条（ADR-028 / PIT-022）
             self._service = PrivateService(
-                store=PrivateKeyStore(self.db_path),
+                store=PrivateKeyStore(self.db_path or get_db_path()),
                 cache_dir=self.cache_dir,
             )
             if self.mode == 'encrypt':

@@ -15,7 +15,7 @@ build/
 # 运行时数据
 player.db
 log/
-private_keys.db
+private_keys.db*
 private_cache/
 data/theme/
 data/decoder_cache/

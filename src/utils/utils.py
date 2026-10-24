@@ -60,8 +60,10 @@ def get_db_path():
 
 
 def get_private_key_db_path():
-    """
-    获取私密模式密钥库路径（与 player.db 同目录，独立文件，避免污染既有表结构）。
+    """**旧版**私密密钥库路径（`data/private_keys.db`）。
+
+    `ADR-028` 之后密钥表已并入 `data/player.db`（`key_material` / `media_keys`），
+    这个路径只用于「启动时把旧库一次性并进主库」的迁移逻辑，不再作为运行时数据库。
     """
     db_dir = get_app_data_path()
     return os.path.join(db_dir, 'private_keys.db')
