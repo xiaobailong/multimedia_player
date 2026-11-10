@@ -444,3 +444,39 @@
 - 相关条目: `ADR-027`（扩展名口径统一时暴露）、`ADR-009`（密文命名规则）
 - 首次记录: 2026-10-24
 
+## ISSUE-016 导出的保险库数据被 privi 判 `malformedManifest`：`media.file_name` 必须唯一，且去重不能留下没 DEK 的那条
+- 状态: 已修复
+- 症状 / 现场:
+  1. 自测（回归脚本 `scripts\tools\selftest_vault_data.py`）里造一条「与现有记录同 `file_name`、
+     但 `encrypted_dek` 为空」的脏记录后，
+     导出的 `privi-vault-*.db` 里 `media` 表出现了那条空记录（`SELECT ... FROM media` 里 `encrypted_dek IS NULL`），
+     断言「每条都带 encryption_key_id」直接 FAIL；
+  2. 这种文件交给 privi 会被 `_VaultBackupManifestValidator.validate()` 判
+     `VaultBackupErrorCode.malformedManifest`（整包拒收，不是跳过某条）。
+- 复发判据: 导出后对生成的 `.db` 跑
+  `SELECT file_name, COUNT(*) FROM media GROUP BY file_name HAVING COUNT(*) > 1`（必须 0 行）
+  且 `SELECT COUNT(*) FROM media WHERE encrypted_dek IS NULL` 应为 0。
+  或者直接跑回归脚本 `python scripts\tools\selftest_vault_data.py`（应输出 `ALL PASS`；
+  它内部会造一条同名无 DEK 的脏记录再导出）。
+- 根因: 两个独立问题叠加
+  1. privi 的校验器把 `media.file_name` 当**引用键**（`_requireUnique(referencedNames, media.fileName)`），
+     所以文件名在包里必须唯一；
+  2. 本机 `list_media()` 按 `COALESCE(date_added, 0), media_id` 排序，脏记录（导入时没带 `date_added`）
+     排在**最前面**；第一版去重是「先到先得」，于是保留了没 DEK 的那条，把真实记录当重复丢掉。
+- 证据: probe 第一次运行输出 `FAIL 每条都带 encryption_key_id`；把导出的 `media` 表 dump 出来看到
+  `dup.jpg`（`encrypted_dek` 为空）在、真实密文记录不在。
+- 修法: `PrivateKeyStore.export_vault_package()` 先按 `file_name` 归并：
+  - 空 `file_name` 直接跳过；
+  - 同名冲突时**带 `encrypted_dek` 的记录优先**替换已选中的空记录；
+  - 跳过条数打 WARNING（`导出时跳过 N 条空文件名 / 重复文件名的记录`）；
+  - 自测里加了「导出的 file_name 唯一」断言，防止回归。
+- 反例 / 易误判:
+  - 只做「去重」不比较 DEK：包能被 privi 接收，但那些记录**打不开**（比拒收更难发现）；
+  - 以为 privi 校验太严想绕过去：它靠文件名把行和密文文件对上，重复必然歧义，只能我们这边保证唯一；
+  - 用 `SELECT * FROM media_keys` 肉眼确认「记录都在」：`date_added` 为 NULL 的脏行混在里面，肉眼看不出谁被替换。
+- 相关文件: `src/private_mode/key_store.py`（`export_vault_package`）、
+  `scripts\tools\selftest_vault_data.py`（回归脚本）
+- 相关条目: `ADR-029`（保险库数据导入导出）、`ISSUE-005`（cryptography 依赖）
+- 首次记录: 2026-11-10
+
+

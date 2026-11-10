@@ -21,9 +21,14 @@
 
 DEK 包裹（privi MediaEncryptionService.encryptDek）：
     base64([nonce:12][ciphertext:32][auth_tag:16])
+
+密钥环（privi ADR-050）：一个保险库可以有多把 KEK，每把 KEK 的 id 由**密钥字节**推导
+（`key_id_for`），因此同一把密钥在任何设备上都是同一个 id，媒体记录用它记住
+「这条记录的 DEK 是哪把 KEK 包的」——导入别人的密钥后不必覆盖本机默认密钥。
 """
 
 import base64
+import hashlib
 import os
 import secrets
 import struct
@@ -61,6 +66,20 @@ def generate_nonce():
 def random_file_name():
     """privi ADR-042：32 位小写 hex、不带扩展名的随机文件名。"""
     return secrets.token_hex(16)
+
+
+def key_fingerprint(kek):
+    """KEK 指纹 = sha256(kek) 的 64 位小写 hex（privi `fingerprintOf`）。"""
+    return hashlib.sha256(bytes(kek)).hexdigest()
+
+
+def key_id_for(kek):
+    """密钥环里的稳定 id = `k_` + 指纹前 16 位（privi `EncryptionKeyManager.keyIdFor`）。
+
+    id 完全由密钥字节推导（与安装、口令无关），所以同一把密钥在每台设备上 id 相同；
+    导出 / 导入密钥环时不需要重新编号媒体记录。
+    """
+    return 'k_' + key_fingerprint(kek)[:16]
 
 
 def _aes_gcm_encrypt(key, nonce, data):

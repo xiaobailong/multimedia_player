@@ -58,18 +58,26 @@ def build_menu_bar(window):
     exit_action.triggered.connect(window.close)
     file_menu.addAction(exit_action)
 
-    # ---- 密钥菜单（密册兼容的密钥包导入 / 导出）----
+    # ---- 密钥菜单（密册「保险库数据」/ 旧密钥包 / 密钥环与目录绑定）----
     key_menu = menu_bar.addMenu("密钥(&K)")
 
-    window.import_key_action = QAction("导入密钥...", window)
+    window.import_key_action = QAction("导入保险库数据 / 密钥包...", window)
     window.import_key_action.triggered.connect(window._import_key_package)
     key_menu.addAction(window.import_key_action)
 
-    window.export_key_action = QAction("导出密钥...", window)
+    window.export_vault_action = QAction("导出保险库数据...", window)
+    window.export_vault_action.triggered.connect(window._export_vault_data)
+    key_menu.addAction(window.export_vault_action)
+
+    window.export_key_action = QAction("导出旧版密钥包...", window)
     window.export_key_action.triggered.connect(window._export_key_package)
     key_menu.addAction(window.export_key_action)
 
     key_menu.addSeparator()
+
+    window.manage_keys_action = QAction("密钥与目录管理...", window)
+    window.manage_keys_action.triggered.connect(lambda: window._manage_keys())
+    key_menu.addAction(window.manage_keys_action)
 
     window.key_status_action = QAction("密钥状态...", window)
     window.key_status_action.triggered.connect(window._show_key_status)

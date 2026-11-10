@@ -1114,3 +1114,87 @@
 - 相关条目: `ADR-009`（被本条取代的「独立库」决策）、`ADR-027`（私密库标记来源）、
   `PIT-018`（并发写库）、`PIT-022`（apsw 线程亲和性）
 - 首次记录: 2026-10-24
+
+## ADR-029 适配 privi「保险库数据」v6 + 一个保险库多把密钥（目录绑定）
+- 日期: 2026-11-10 | 状态: 已采纳（静态校验 + 无 GUI 自测通过；真机未验证）
+- 背景:
+  1. privi 侧改版（`ADR-047` → `ADR-049` → `ADR-053`）：导入导出统一叫「保险库数据」，
+     容器从「密钥包 + media_keys」换成**单个 SQLite** `privi-vault-YYYYMMDD-HHMMSS.db`
+     （`meta.format = privi-vault-data`、`meta.version = 1` 容器、`meta.manifestVersion = 6` 记录布局），
+     表变成 `meta / media / albums / album_groups / memberships / encryption_keys / app_settings`。
+     本程序原来只认旧密钥包（`privi-key-backup`），**新导出的文件根本导不进来**。
+  2. privi 同时引入**密钥环**（`ADR-050`）：一个保险库可以有多把 KEK，
+     每条媒体记录用 `encryption_key_id` 记住自己的 DEK 是哪把 KEK 包的。
+     本程序原来只有一个 `key_material(id=1)`，做不到这件事。
+  3. 用户要求：**不同私密库目录使用不同密钥加解密**（例如旧保险库用旧密钥、新保险库用新密钥）。
+- 决策:
+  1. `key_store.py` 按 `meta.format` 分派：`privi-vault-data` → 新容器读取器
+     `_read_vault_container()`；`privi-key-backup` → 旧读取器（保留只读兼容）；
+     首字符 `{` → v1 JSON（保留）。
+  2. 导出两种格式：`export_vault_package()` 写新容器（表结构、列顺序、meta 键与 privi
+     `_VaultBackupDatabaseCodec` 一字不差，`journal_mode = DELETE` 保证单文件；
+     `albums / album_groups / memberships / app_settings` 只建空表），
+     `export_package()` 保留旧 `privi-key-backup`。
+  3. 本机新增表：`vault_keys`（密钥环，id = `k_` + sha256(kek)[:16]，与 privi `keyIdFor` 一致）、
+     `vault_dir_key(path PRIMARY KEY, key_id, create_time)`；
+     `media_keys` 增列 `encryption_key_id`（`_ensure_columns()` 用 `PRAGMA table_info` + `ALTER TABLE` 补，
+     因为 `CREATE TABLE IF NOT EXISTS` 不会给老表加列）。
+  4. `key_material` 保留为「默认密钥镜像」：`_bootstrap_key_ring()` 在启动时双向对齐
+     （老库只有 key_material → 登记进环；只导入过数据 → 回写 key_material），
+     并给「有 DEK 但没 key id」的老记录回填默认 key id。
+  5. 加密选密钥：`key_for_encryption(path)` = 目录绑定（**最长前缀匹配**）→ 默认密钥；
+     目录绑定的路径比较统一走 `normcase(normpath(abspath()))`，避免大小写 / 相对路径漏匹配。
+     `encrypt_one()` 把 `encryption_key_id` 一起写库。
+  6. 解密选密钥：`_dek_and_key()` 依次试「记录里的 key id → 该密文路径的目录绑定 → 默认密钥 →
+     密钥环其余密钥」。DEK 是 AES-GCM 包裹的，解不开只会 `InvalidTag`，逐个试不会误命中。
+     解密缓存目录名把 key id 也算进哈希，换密钥重加密后不会拿旧明文冒充。
+  7. UI：`密钥` 菜单 → 导入保险库数据 / 导出保险库数据 / 导出旧版密钥包 / 密钥与目录管理 / 密钥状态；
+     右键 `私密操作 → 为当前目录绑定密钥...`。管理框是新文件 `src/layout/vault_key_dialog.py`。
+- 理由:
+  - privi 的新导出是**用户当前唯一能拿到的迁移数据**，不兼容等于换机 / 重装后密钥全丢；
+  - 密钥环 + 每行 key id 是 privi 自己的解法，照抄语义最省事（同一把密钥在两边 id 相同，
+    导入时不需要重新编号记录），也不会像以前那样「导入新包 = 覆盖老密钥 = 老文件全废」；
+  - 目录绑定放本机表而不是数据文件：换机时目录绝对路径必然变化，跟着数据文件走只会带一堆死路径。
+- 备选与为何不选:
+  - **只支持旧密钥包**：privi 新版已经不再导出这种文件（只在导入时兜底），继续等于是不支持；
+  - **导入新包时直接覆盖本机默认密钥**（旧行为）：多把密钥场景下会让本机已有文件全部解不开；
+  - **给每条媒体记录加 `vault_id` 表示归属**：需要额外维护「库 → 密钥」映射且历史数据无法归属，
+    按路径最长前缀判定已经够用（与 privi `ADR-051` 不用 `vault_id` 的思路一致）；
+  - **把目录绑定写进保险库数据**：`albums / app_settings` 表里没有对应字段，写进去 privi 也不认；
+  - **支持旧 `privi_manifest.json`（v1..v6）导入**：只在 privi 侧还保留读取器的老格式，
+    用户手上的新版 privi 不会再产出；本程序给出明确提示（需要 `.db`），暂不实现，避免再造一套 JSON 解析；
+  - **提供「删除密钥」**：密钥删掉后对应文件永久解不开，收益低风险高，明确不做。
+- 影响 / 约束（后续改动必须注意）:
+  - `.db` 扩展名两种格式共用，**只能靠 `meta.format` 区分**（`privi-vault-data` vs `privi-key-backup`）；
+  - 容器版本 / 记录布局抬高时：`VAULT_CONTAINER_VERSION` / `VAULT_MANIFEST_VERSION` 一起改，
+    并且 `_read_vault_container()` 要保留旧版本分支；高于支持值必须报 `unsupportedVersion`，不要猜；
+  - 导出前必须做 `media.file_name` 去重（privi 校验器要求唯一，否则整包 `malformedManifest`），
+    且**优先保留带 `encrypted_dek` 的那条**（见 `ISSUE-016`）；
+  - 导出写 `byte_length = NULL` + `meta.totalBytes = 0`：privi 的 `payloadBytes` 是
+    `sum(byteLength)`，两者必须同时为 0，否则 `validateSummary` 判 malformed；
+  - `app_settings` 留空是刻意的：本程序的配置项与 privi 的 `SharedPreferences` 不同命名空间，
+    写进去只会污染对方设置；
+  - 导入是**增量**的：已有 DEK 不覆盖（文件可能在本包之后重新加密过），只补缺的 DEK / key id；
+    新密钥一律先按「非默认」登记，最后才显式选一个默认 —— 否则包里的 `is_default=1` 会和本机默认
+    并存（两条 `is_default=1`），`default_key()` 可能挑到导入的那把，等于偷偷换掉本机默认密钥；
+  - 记录里的 `encryption_key_id` 必须是本机密钥环里真实存在的 id：包里的 id 对不上时回落到本机默认密钥
+    （否则只能靠逐把试，且状态显示不准）；
+  - 目录绑定**不随数据文件迁移**，换机后要重新绑（绑定的是本机绝对路径）；
+  - `media_keys.encryption_key_id` 列必须存在：老库靠 `_ensure_columns()` 补，别只改 `_LOCAL_SCHEMA`。
+- 验证:
+  - `scripts\tools\selftest_vault_data.py`（无 GUI，全 PASS，可反复跑）：
+    两把密钥 + 三级目录绑定（最长前缀）、分目录加密写对 key id、按需解密、导出容器
+    （`meta.format/version/manifestVersion/defaultKeyId`、七张表、`media` 列与 privi 完全一致、
+    file_name 唯一、KEK base64 + sha256 指纹）、导入到新库（2 密钥 / 3 记录 / ISO→毫秒 /
+    key id 保留 / 默认密钥换成另一把仍能解密）、旧密钥包回归、已有同名记录只补 DEK、
+    容器 v9 明确拒收、**导入到已有密钥的库时不改变本机默认密钥**（密钥环里只剩一条 is_default）。
+  - 一次性窗口级冒烟（`tmp\probe_window.py`，跑完已按 tmp 规则清理）：offscreen 下
+    密钥菜单 5 项、6 个动作方法、9 个服务方法、`list_keys()` 不含 KEK 字节；
+    启动日志显示老库已自动补 `encryption_key_id` 列。
+- 相关文件: `src/private_mode/key_store.py`、`src/private_mode/private_service.py`、
+  `src/private_mode/privi_crypto.py`、`src/private_mode/__init__.py`、
+  `src/layout/vault_key_dialog.py`、`src/window/key_actions.py`、`src/window/menu_bar.py`、
+  `src/window/media_actions.py`、`src/window/private_actions.py`、`README.md`
+- 相关条目: `ADR-009`（加解密方案来源）、`ADR-027`（私密库标记）、`ADR-028`（密钥表并入 player.db）、
+  `ISSUE-015`（密文误判）、`ISSUE-016`（导出被 privi 拒收）、`PIT-022`（批量线程自建连接）
+- 首次记录: 2026-11-10

@@ -14,7 +14,6 @@
     3. 加密文件名：32 位小写 hex、无扩展名（privi ADR-042）。
 """
 
-import base64
 import hashlib
 import mimetypes
 import os
@@ -76,45 +75,86 @@ class PrivateService:
     # ────────────────────────── 密钥管理 ──────────────────────────
 
     def has_key(self):
-        return self.store.has_key()
+        return self.store.default_key() is not None
 
     def key_info(self):
-        material = self.store.key_material()
-        if material is None:
+        """密钥状态摘要（含密钥环 / 默认密钥 / 目录绑定数量）。"""
+        default = self.store.default_key()
+        if default is None:
             return None
+        keys = self.store.list_keys()
+        bindings = self.store.list_directory_bindings()
         return {
-            'salt': material.get('encryption_salt'),
-            'source': material.get('kek_source'),
-            'created_at': material.get('created_at'),
+            'salt': default.get('salt'),
+            'source': 'imported',
+            'created_at': default.get('created_at'),
             'encrypted_count': self.store.count_encrypted(),
+            'key_count': len(keys),
+            'default_key_id': default['id'],
+            'default_label': default.get('label') or '',
+            'fingerprint': default.get('fingerprint') or '',
+            'binding_count': len(bindings),
+            'bindings': bindings,
         }
 
     def ensure_key(self):
-        """有密钥就返回 KEK；没有就生成一把随机 KEK（可再导出备份）。"""
-        material = self.store.key_material()
-        if material is not None:
-            return material['kek']
-        kek = privi_crypto.generate_dek()
-        salt = base64.b64encode(os.urandom(16)).decode('ascii')
-        self.store.save_key_material(kek, salt, 'imported')
-        logger.info('已生成本机随机私密密钥，可通过「密钥 → 导出密钥」备份')
-        return kek
-
-    def _require_kek(self):
-        material = self.store.key_material()
-        if material is None:
-            raise PrivateServiceError(
-                '尚未导入密钥：请先通过「密钥 → 导入密钥」选择密册导出的 .db 密钥包')
-        return material['kek']
+        """有默认密钥就返回 KEK；没有就生成一把（可再导出备份）。"""
+        return self.store.ensure_default_key()
 
     def inspect_key_package(self, file_path):
+        """检查 privi 数据文件（保险库数据 / 旧密钥包）。"""
         return self.store.inspect_package(file_path)
 
     def import_key_package(self, file_path, overwrite_key=False):
+        """导入 privi 数据文件（保险库数据 / 旧密钥包 / 旧 JSON）。"""
         return self.store.import_package(file_path, overwrite_key=overwrite_key)
 
     def export_key_package(self, directory):
+        """导出旧版密钥包（privi-key-backup v2，体积小、只带一把 KEK）。"""
         return self.store.export_package(directory)
+
+    def export_vault_data(self, directory):
+        """导出「保险库数据」（privi-vault-*.db，含密钥环 + 全部密钥索引）。"""
+        return self.store.export_vault_package(directory)
+
+    # ────────────────────────── 密钥环 / 目录密钥绑定 ──────────────────────────
+
+    def list_keys(self):
+        """密钥环摘要（不含 KEK 字节）。"""
+        return self.store.list_keys()
+
+    def default_key_id(self):
+        return self.store.default_key_id()
+
+    def set_default_key(self, key_id):
+        self.store.set_default_key(key_id)
+
+    def bind_directory_key(self, directory, key_id):
+        """把目录（含子目录）绑定到某把密钥：加密时按最长前缀匹配选密钥。"""
+        self.store.bind_directory(directory, key_id)
+
+    def unbind_directory_key(self, directory):
+        self.store.unbind_directory(directory)
+
+    def list_directory_bindings(self):
+        return self.store.list_directory_bindings()
+
+    def key_id_for_directory(self, directory):
+        return self.store.key_id_for_directory(directory)
+
+    def key_for_path(self, path):
+        """某路径实际会用哪把密钥：目录绑定优先，其次默认密钥。"""
+        return self.store.key_for_encryption(path)
+
+    def key_label(self, key_id):
+        """给界面显示用：`标签（k_xxxx…）`；找不到时返回 id 本身。"""
+        if not key_id:
+            return '（无）'
+        for item in self.store.list_keys():
+            if item['id'] == key_id:
+                label = item.get('label') or '未命名密钥'
+                return '%s（%s…）' % (label, key_id[2:10])
+        return key_id
 
 
     # ────────────────────────── 文件识别 ──────────────────────────
@@ -171,10 +211,11 @@ class PrivateService:
         if not media or not (media.get('encrypted_dek') or ''):
             raise PrivateServiceError(
                 '文件已加密，但密钥库里没有对应记录，无法解密：\n%s\n\n'
-                '请确认已通过「密钥 → 导入密钥」导入与这些文件配套的密钥包。' % path)
+                '请确认已通过「密钥 → 导入保险库数据 / 密钥包」导入与这些文件配套的数据文件。'
+                % path)
 
-        dek = self._dek_for(media)
-        cache_path = self._cache_path_for(path, info['original_name'])
+        dek, key_id = self._dek_and_key(media)
+        cache_path = self._cache_path_for(path, info['original_name'], key_id)
         if not os.path.exists(cache_path):
             tmp = cache_path + '.part'
             try:
@@ -246,10 +287,16 @@ class PrivateService:
         result.sort(key=self._mtime)
         return result
 
-    def _cache_path_for(self, source_path, original_name):
-        """每个密文一个缓存目录，目录内保留原始文件名（标题栏显示才友好）。"""
-        key = os.path.normpath(os.path.abspath(source_path)).lower().encode('utf-8')
-        folder = os.path.join(self.cache_dir, hashlib.md5(key).hexdigest()[:12])
+    def _cache_path_for(self, source_path, original_name, key_id=''):
+        """每个密文一个缓存目录，目录内保留原始文件名（标题栏显示才友好）。
+
+        缓存目录名把 `key_id` 也算进去：同一路径换了密钥重新加密后，
+        旧缓存（用旧密钥解出来的明文）不会冒充新文件（多密钥场景才会触发）。
+        """
+        key = os.path.normpath(os.path.abspath(source_path)).lower()
+        if key_id:
+            key += '|' + key_id
+        folder = os.path.join(self.cache_dir, hashlib.md5(key.encode('utf-8')).hexdigest()[:12])
         os.makedirs(folder, exist_ok=True)
         return os.path.join(folder, safe_file_name(original_name))
 
@@ -262,13 +309,48 @@ class PrivateService:
         except Exception as e:
             logger.warning(f'清理解密缓存失败: {e}')
 
+    def _dek_and_key(self, media):
+        """解开某条记录的 DEK，返回 `(dek, key_id)`。
+
+        候选顺序（多密钥 / 多目录场景下必须这样试）：
+        1. 记录里的 `encryption_key_id`（privi ADR-050，正常情况第一发就中）；
+        2. 该密文路径绑定的目录密钥；
+        3. 本机默认密钥；
+        4. 密钥环里其余密钥（导入的老包没记 key id 时的兜底）。
+
+        DEK 是被 KEK 用 AES-GCM 包裹的，解不开只会抛 `InvalidTag`，所以逐个试是安全的
+        （不会误命中别的密钥）。
+        """
+        candidates = []
+        seen = set()
+
+        def add(key):
+            if key and key.get('kek') and key['id'] not in seen:
+                seen.add(key['id'])
+                candidates.append(key)
+
+        key_id = (media.get('encryption_key_id') or '').strip()
+        if key_id:
+            add(self.store.get_key(key_id))
+        local_path = media.get('local_path') or media.get('private_path')
+        if local_path:
+            add(self.store.key_for_directory(local_path))
+        add(self.store.default_key())
+        for item in self.store.list_keys():
+            add(self.store.get_key(item['id']))
+
+        for key in candidates:
+            dek = privi_crypto.unwrap_dek(media.get('encrypted_dek'), key['kek'])
+            if dek is not None:
+                return dek, key['id']
+
+        raise PrivateServiceError(
+            '密钥不匹配：该文件的 DEK 用本机密钥环里的 %d 把密钥都解不开'
+            '（密钥与文件不是同一套，请导入配套的保险库数据）' % len(candidates))
+
     def _dek_for(self, media):
-        kek = self._require_kek()
-        dek = privi_crypto.unwrap_dek(media.get('encrypted_dek'), kek)
-        if dek is None:
-            raise PrivateServiceError(
-                '密钥不匹配：该文件不是用当前密钥加密的（密钥包与文件不是同一套）')
-        return dek
+        """只要 DEK 的场景（批量解密）。"""
+        return self._dek_and_key(media)[0]
 
 
 
@@ -338,7 +420,6 @@ class PrivateService:
         }
         if not files:
             return stats
-        self.ensure_key()
         for index, path in enumerate(files, 1):
             if should_cancel and should_cancel():
                 stats['cancelled'] = True
@@ -415,7 +496,10 @@ class PrivateService:
                 not os.path.splitext(path)[1] and privi_crypto.looks_encrypted(path)):
             raise PrivateServiceError('文件看起来已经是密文，跳过以免重复加密')
 
-        kek = self.ensure_key()
+        # 加密用哪把密钥：目录绑定优先（不同私密库目录可以用不同密钥），否则默认密钥
+        key = self.store.key_for_encryption(path)
+        kek = key['kek']
+        key_id = key['id']
         name = os.path.basename(path)
         directory = os.path.dirname(path) or '.'
         abs_source = os.path.normpath(os.path.abspath(path))
@@ -445,6 +529,7 @@ class PrivateService:
             size_bytes=stat.st_size,
             date_added=_millis_from_timestamp(stat.st_mtime),
             encrypted_dek=encrypted_dek,
+            encryption_key_id=key_id,
         )
 
         tmp = os.path.join(directory, TEMP_PREFIX + uuid.uuid4().hex)

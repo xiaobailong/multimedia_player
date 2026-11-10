@@ -322,3 +322,23 @@
 - 反例: 图省事把共享连接传进线程（正因为"实测不报错"，很容易误以为安全）；
   或给每个临时用法都新开连接又忘了关（文件句柄泄漏）
 - 首次记录: 2026-10-24
+
+## PIT-023 在 PowerShell 里跑带断言的 Python 脚本：`> out.txt 2>&1` 只拿到空文件，结果全丢
+- 触发条件: 用 `run_commands` 直接在 PowerShell 里执行
+  `python tmp\probe_xxx.py > tmp\out.txt 2>&1`（尤其脚本里还会 `import loguru` / `import PyQt5`）
+- 错误现象: 命令返回 `exited with code 1`，`tmp\out.txt` **0 字节**；
+  终端只看得到一条 loguru 日志被包成 `NativeCommandError`（`CategoryInfo: NotSpecified ... RemoteException`），
+  真正的断言输出 / traceback 全部消失，看起来像"脚本什么都没跑"
+- 正确做法（任选其一，本次两条都用了）:
+  1. **让脚本自己写日志**（最稳，能拿到 traceback 和 faulthandler）：
+     ```python
+     _LOG = open(os.path.join(TMP, 'probe_log.txt'), 'w', encoding='utf-8')
+     sys.stdout = _LOG; sys.stderr = _LOG
+     faulthandler.enable(open(os.path.join(TMP, 'probe_fault.txt'), 'w', encoding='utf-8'))
+     ```
+     跑完用 Read 工具读 `tmp\probe_log.txt`（不要用 `Get-Content` 看中文，会乱码）；
+  2. 用 cmd 包一层让代码页与输出都正常：`cmd /c "chcp 65001>nul && python tmp\probe_xxx.py"`，
+     这样 `findstr` 过滤 `PASS / FAIL / ALL PASS` 也能用
+- 反例: 反复重跑 `> out.txt 2>&1` 并怀疑脚本没执行（其实输出被 PowerShell 的
+  `NativeCommandError` 拦截机制吞了）；用 `Get-Content` 判定"文件是空的"（先看字节数 / 用 Read 工具）
+- 首次记录: 2026-11-10

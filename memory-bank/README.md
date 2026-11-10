@@ -103,6 +103,13 @@
 | 换了 `private_service` 实例后，回调还按旧实例解密 / 播放停住不动 | `PIT-021`（注册回调要用 lambda 动态取实例） |
 | 两个 SQLite 要不要合并 / `private_keys.db` 还有用吗 / 私密库标记存哪张表 | `ADR-028`（密钥表并入 `player.db` + `private_library_dir` 表 + 旧库自动迁移） |
 | apsw 连接能不能跨线程用 / 后台线程报 `ThreadingViolationError` / `database is locked` | `PIT-022`（线程自建连接 + `busy_timeout`） |
+| 密册换了导出格式 / 新导出的 `privi-vault-*.db` 导不进来 / `meta.format = privi-vault-data` | `ADR-029`（保险库数据 v6 容器 + 密钥环） |
+| 一个保险库要多把密钥 / 不同私密库目录用不同密钥 / 目录→密钥绑定 | `ADR-029`（`vault_keys` + `vault_dir_key` + 最长前缀匹配） |
+| privi 导入报 `malformedManifest` / 我们导出的 `.db` 被整包拒收 | `ISSUE-016`（`media.file_name` 必须唯一，去重优先留带 DEK 的记录） |
+| 老库 `media_keys` 没有 `encryption_key_id` 列 / 多密钥导出缺 key id | `ADR-029`（`_ensure_columns()` 补列 + 启动回填默认 key id） |
+| PowerShell 里跑 python 探针只拿到 0 字节 `out.txt` / `NativeCommandError` | `PIT-023`（脚本内写 utf-8 日志 + faulthandler） |
+| 保险库数据 / 多密钥要回归自测 / 导入导出是否还正常 | `python scripts\tools\selftest_vault_data.py`（`ADR-029` / `ISSUE-016`） |
+
 
 ## 5. 条目模板
 
@@ -143,4 +150,4 @@
 
 ---
 
-最后更新: 2026-10-24（ADR-028：两个 SQLite 合并为 `player.db`（密钥表并入 + 旧库自动迁移）+ 私密库标记改独立表 `private_library_dir`；PIT-022：apsw 连接跨线程实测不报错但别共用；ADR-027：私密视频列表按需解密 + 私密库目录标记 + 私密侧扩展名口径统一；ISSUE-015：`.mpg/.vob/.ts/.rmvb` 被误判为已加密；PIT-021：回调别绑定实例方法；ADR-026 已落地：删掉「普通/私密模式」切换，合并成单一工作区 + 右键菜单 4 组分组；PIT-020 右键菜单坐标坑；ISSUE-014：junction 改用真实路径入队；ADR-025：取消点目录自动扫描；ISSUE-012：列表自动跳过无法播放的文件；ISSUE-013：`.ts` 按 MPEG-TS 同步字节校验；ADR-023：扫描调度=任务队列+线程池；ADR-022：多线程化 + 并行归集；ADR-021：列表递归扫描 + 图片 25 种 / 视频 24 种；ISSUE-011：QImage 崩溃改走 Pillow；ISSUE-010：切视频后幻灯片仍在翻页；ADR-020：`Player.py` 拆分）
+最后更新: 2026-11-10（ADR-029：适配 privi「保险库数据」v6（`privi-vault-data` 单 SQLite 容器）+ 密钥环/多密钥 + 目录密钥绑定；ISSUE-016：导出的 `media.file_name` 必须唯一且去重优先留带 DEK 的记录；PIT-023：PowerShell 跑 python 探针输出被吞，改为脚本内写日志。此前：ADR-028 两个 SQLite 合并为 `player.db`；PIT-022 apsw 连接跨线程；ADR-027 私密视频列表按需解密 + 私密库目录标记；ISSUE-015 `.mpg/.vob/.ts/.rmvb` 被误判为已加密；PIT-021 回调别绑定实例方法；ADR-026 已落地：删掉「普通/私密模式」切换；PIT-020 右键菜单坐标坑；ISSUE-014：junction 改用真实路径入队；ADR-025：取消点目录自动扫描；ISSUE-012：列表自动跳过无法播放的文件；ISSUE-013：`.ts` 按 MPEG-TS 同步字节校验；ADR-023：扫描调度=任务队列+线程池；ADR-022：多线程化 + 并行归集；ADR-021：列表递归扫描 + 图片 25 种 / 视频 24 种；ISSUE-011：QImage 崩溃改走 Pillow；ISSUE-010：切视频后幻灯片仍在翻页；ADR-020：`Player.py` 拆分）

@@ -40,7 +40,7 @@ class PrivateActionsMixin:
         if self.private_service.has_key():
             self.notice('私密库：已加载密钥')
         else:
-            self.notice('私密库：尚未导入密钥，加密文件请先「密钥 → 导入密钥」')
+            self.notice('私密库：尚未导入密钥，加密文件请先「密钥 → 导入保险库数据 / 密钥包」')
 
     # ============================================
     #  私密库标记：记住「这个目录下全是密文」（表 private_library_dir）
@@ -305,15 +305,20 @@ class PrivateActionsMixin:
             if not ask_yes_no(
                     self, '尚未导入密钥',
                     '当前还没有密钥。\n继续将自动生成一把新的随机密钥'
-                    '（可通过「密钥 → 导出密钥」备份）。\n\n继续？'):
+                    '（可通过「密钥 → 导出保险库数据」备份）。\n\n继续？'):
                 return
+
+        bound_key_id = self.private_service.key_id_for_directory(target)
+        key_hint = ''
+        if bound_key_id:
+            key_hint = '\n将使用该目录绑定的密钥：%s' % self.private_service.key_label(bound_key_id)
 
         if not ask_yes_no(
                 self, '加密确认',
                 '即将加密 %d 个图片/视频文件：\n%s\n\n'
                 '将同时加密文件内容与文件名，加密后源文件会被删除，只保留加密文件。\n'
-                '另有 %d 个非媒体 / 已加密文件会被跳过。\n\n继续？'
-                % (len(files), target, skipped), default_yes=False):
+                '另有 %d 个非媒体 / 已加密文件会被跳过。%s\n\n继续？'
+                % (len(files), target, skipped, key_hint), default_yes=False):
             return
         self._run_private_batch('encrypt', target, len(files))
 

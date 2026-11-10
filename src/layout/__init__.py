@@ -11,3 +11,4 @@ from src.layout.square_close_button import SquareCloseButton
 from src.layout.styled_dialogs import (StyledDialog, MessageDialog, AboutDialog,
                                        StyledFileDialog, ProgressDialog)
 from src.layout.collect_dialog import CollectDialog
+from src.layout.vault_key_dialog import VaultKeyDialog

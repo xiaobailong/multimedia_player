@@ -117,6 +117,11 @@ class MediaActionsMixin:
             mark_action.setEnabled(is_dir)
             mark_action.triggered.connect(self._toggle_private_library_target)
 
+            # 不同私密库目录可以用不同密钥：这里给当前目录挑一把（最长前缀匹配，子目录继承）
+            bind_key_action = private_menu.addAction(u'为当前目录绑定密钥...')
+            bind_key_action.setEnabled(is_dir)
+            bind_key_action.triggered.connect(self._bind_key_for_target)
+
             menu.exec_(self.treeView.viewport().mapToGlobal(pos))
         except Exception as e:
             self.notice(e)
